@@ -1,0 +1,42 @@
+# Configuracao do Render (https://render.com) para deploy automatico.
+# Como usar:
+# 1. Suba este repositorio no GitHub.
+# 2. No Render, clique "New" -> "Blueprint" -> aponte para o repo.
+# 3. Preencha as variaveis de ambiente quando solicitado.
+#
+# O plano "starter" custa US$ 7/mes e nao dorme. Para testar antes,
+# voce pode mudar plan para "free" (so que o app dorme apos 15min).
+services:
+  - type: web
+    name: dashboard-ads-ml
+    runtime: python
+    plan: starter           # mude para "free" se quiser testar sem custo
+    region: oregon          # mais barato; ou "frankfurt" para latencia menor no Brasil
+    pythonVersion: "3.12"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
+    healthCheckPath: /healthz
+    autoDeploy: true
+    disk:
+      name: dashboard-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: APP_PUBLIC_URL
+        sync: false           # voce informa no painel (ex: https://dashboard.unclic.com.br)
+      - key: EDUZZ_WEBHOOK_SECRET
+        sync: false
+      - key: EDUZZ_PRODUCT_IDS
+        sync: false           # opcional; deixe em branco para aceitar todos
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false           # IMPORTANTE: defina aqui na primeira vez e depois remova
+      - key: DEFAULT_ACCESS_DAYS
+        value: "32"
+      - key: MAX_UPLOAD_MB
+        value: "20"
+      - key: MAX_PARALLEL_DASHBOARDS
+        value: "2"

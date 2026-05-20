@@ -1,0 +1,2 @@
+# Esta aplicacao usa apenas a biblioteca padrao do Python.
+# Nenhuma dependencia externa precisa ser instalada.
