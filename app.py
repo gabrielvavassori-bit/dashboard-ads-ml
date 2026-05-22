@@ -11,6 +11,7 @@ Endpoints publicos:
   POST /gerar           -> recebe os 2 xlsx e devolve o dashboard HTML
   GET  /healthz         -> healthcheck para o Render/Railway
   POST /webhook/eduzz   -> recebe eventos da Eduzz
+  GET/POST /eduzz/custom-delivery -> validacao de entrega customizada Eduzz
 
 Endpoints admin:
   GET  /admin           -> lista clientes
@@ -53,6 +54,7 @@ from gerar_dashboard_ads_ml import build_data, render_dashboard
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "4182"))
 APP_VERSION = "Meli beta v6 - online"
+APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "https://dashboard-ads-ml.onrender.com")
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "20"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 # Limita 2 arquivos + overhead de multipart
@@ -151,6 +153,12 @@ def _send_json(handler, payload: dict, status: int = 200):
     handler.wfile.write(data)
 
 
+def _read_and_discard_body(handler):
+    length = int(handler.headers.get("Content-Length", "0") or 0)
+    if length > 0:
+        handler.rfile.read(length)
+
+
 def _current_user(handler):
     """Retorna (user_row, session_token) ou (None, None)."""
     cookies = _get_cookies(handler)
@@ -190,6 +198,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/healthz":
                 _send_json(self, {"ok": True})
+                return
+            if path in ("/eduzz/custom-delivery", "/eduzz-delivery"):
+                self._eduzz_custom_delivery()
                 return
             if path == "/login":
                 user, _ = _current_user(self)
@@ -240,6 +251,17 @@ class Handler(BaseHTTPRequestHandler):
             tb = traceback.format_exc()
             _send_html(self, templates.render_error_page(str(exc), tb), 500)
 
+    def do_OPTIONS(self):
+        url = urlparse(self.path)
+        if url.path in ("/eduzz/custom-delivery", "/eduzz-delivery"):
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     # ----------- POST -----------
     def do_POST(self):
         url = urlparse(self.path)
@@ -256,6 +278,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/webhook/eduzz":
                 self._post_webhook()
+                return
+            if path in ("/eduzz/custom-delivery", "/eduzz-delivery"):
+                self._eduzz_custom_delivery()
                 return
             if path == "/admin/login":
                 self._post_admin_login()
@@ -383,6 +408,18 @@ class Handler(BaseHTTPRequestHandler):
         signature = self.headers.get("X-Signature") or self.headers.get("x-signature") or ""
         result = eduzz_webhook.process_event(raw, signature)
         _send_json(self, {"ok": result["ok"], "message": result["message"]}, result["status"])
+
+    def _eduzz_custom_delivery(self):
+        # A entrega customizada da Eduzz faz um envio de teste para validar a URL.
+        # Nao persistimos o payload aqui: o webhook assinado em /webhook/eduzz e
+        # quem ativa ou suspende acesso com seguranca.
+        _read_and_discard_body(self)
+        _send_json(self, {
+            "success": True,
+            "message": "Entrega Eduzz recebida com sucesso.",
+            "access_url": APP_PUBLIC_URL,
+            "app": "Dashboard ADS Mercado Livre - Un Clic Marketplace",
+        })
 
     def _post_admin_login(self):
         form = _parse_form(self)
