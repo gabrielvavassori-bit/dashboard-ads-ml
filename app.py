@@ -27,6 +27,9 @@ Variaveis de ambiente:
   APP_PUBLIC_URL          URL publica do app (ex: https://dashboard.unclic.com.br)
   EDUZZ_WEBHOOK_SECRET    Chave configurada na Eduzz para assinar webhooks
   EDUZZ_PRODUCT_IDS       IDs dos produtos validos, separados por virgula (opcional)
+  EDUZZ_CLIENT_ID         Client ID do aplicativo OAuth Eduzz
+  EDUZZ_CLIENT_SECRET     Client secret do aplicativo OAuth Eduzz
+  EDUZZ_RECONCILE_SECRET  Segredo do endpoint interno de reconciliacao
   DEFAULT_ACCESS_DAYS     Dias de acesso quando o payload nao traz nextChargeDate
   ADMIN_EMAIL             Email do admin
   ADMIN_PASSWORD          Senha do admin (so usada no boot para criar/atualizar)
@@ -36,6 +39,7 @@ import html as _html
 import json
 import os
 import pathlib
+import secrets
 import tempfile
 import traceback
 import threading
@@ -43,10 +47,11 @@ from email import policy
 from email.parser import BytesParser
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import auth
 import db
+import eduzz_api
 import templates
 import webhook as eduzz_webhook
 from gerar_dashboard_ads_ml import build_data, render_dashboard
@@ -227,6 +232,23 @@ class Handler(BaseHTTPRequestHandler):
                     auth.destroy_admin_session(token)
                 _redirect(self, "/admin/login", set_cookie=auth.make_admin_clear_cookie())
                 return
+            if path == "/admin/eduzz/connect":
+                admin, _ = _current_admin(self)
+                if not admin:
+                    _redirect(self, "/admin/login")
+                    return
+                _redirect(self, eduzz_api.authorization_url())
+                return
+            if path == "/admin/eduzz/status":
+                admin, _ = _current_admin(self)
+                if not admin:
+                    _send_json(self, {"ok": False, "message": "Nao autorizado"}, 401)
+                    return
+                _send_json(self, {"ok": True, **eduzz_api.connection_status()})
+                return
+            if path == "/oauth/eduzz/callback":
+                self._eduzz_oauth_callback(url)
+                return
             if path == "/admin" or path == "/admin/":
                 admin, _ = _current_admin(self)
                 if not admin:
@@ -278,6 +300,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/webhook/eduzz":
                 self._post_webhook()
+                return
+            if path == "/internal/eduzz/reconcile":
+                self._post_eduzz_reconcile()
                 return
             if path in ("/eduzz/custom-delivery", "/eduzz-delivery"):
                 self._eduzz_custom_delivery()
@@ -408,6 +433,36 @@ class Handler(BaseHTTPRequestHandler):
         signature = self.headers.get("X-Signature") or self.headers.get("x-signature") or ""
         result = eduzz_webhook.process_event(raw, signature)
         _send_json(self, {"ok": result["ok"], "message": result["message"]}, result["status"])
+
+    def _eduzz_oauth_callback(self, url):
+        query = parse_qs(url.query or "")
+        error = (query.get("error", [""])[0] or "").strip()
+        if error:
+            detail = (query.get("error_description", [""])[0] or error).strip()
+            _redirect(self, f"/admin?info={quote('Eduzz recusou a conexao: ' + detail)}")
+            return
+        code = (query.get("code", [""])[0] or "").strip()
+        state = (query.get("state", [""])[0] or "").strip()
+        try:
+            eduzz_api.exchange_code(code, state)
+            _redirect(self, f"/admin?info={quote('API Eduzz conectada com sucesso')}")
+        except eduzz_api.EduzzAPIError as exc:
+            _send_html(self, templates.render_error_page(str(exc)), 400)
+
+    def _post_eduzz_reconcile(self):
+        expected = os.environ.get("EDUZZ_RECONCILE_SECRET", "")
+        supplied = (
+            self.headers.get("X-Internal-Secret")
+            or self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        )
+        if not expected or not supplied or not secrets.compare_digest(expected, supplied):
+            _send_json(self, {"ok": False, "message": "Nao autorizado"}, 401)
+            return
+        try:
+            result = eduzz_api.reconcile_subscriptions()
+            _send_json(self, {"ok": True, "result": result})
+        except eduzz_api.EduzzAPIError as exc:
+            _send_json(self, {"ok": False, "message": str(exc)}, 503)
 
     def _eduzz_custom_delivery(self):
         # A entrega customizada da Eduzz faz um envio de teste para validar a URL.

@@ -13,6 +13,7 @@ import pathlib
 import sqlite3
 import threading
 import time
+import hashlib
 
 # Em Render/Railway, monte um disco persistente apontando para /var/data.
 # Localmente cai em ./data/app.db
@@ -67,7 +68,17 @@ CREATE TABLE IF NOT EXISTS webhook_events (
     event_id     TEXT PRIMARY KEY,
     event_name   TEXT NOT NULL,
     received_at  INTEGER NOT NULL,
-    payload      TEXT NOT NULL
+    payload      TEXT NOT NULL,
+    payload_hash TEXT,
+    status       TEXT NOT NULL DEFAULT 'processed',
+    processed_at INTEGER,
+    error        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+    state_hash TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL,
+    used_at    INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS admins (
@@ -93,6 +104,31 @@ def init_db():
         conn = get_conn()
         try:
             conn.executescript(SCHEMA)
+            columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(webhook_events)")
+            }
+            migrations = {
+                "payload_hash": "ALTER TABLE webhook_events ADD COLUMN payload_hash TEXT",
+                "status": (
+                    "ALTER TABLE webhook_events ADD COLUMN status "
+                    "TEXT NOT NULL DEFAULT 'processed'"
+                ),
+                "processed_at": "ALTER TABLE webhook_events ADD COLUMN processed_at INTEGER",
+                "error": "ALTER TABLE webhook_events ADD COLUMN error TEXT",
+            }
+            for column, statement in migrations.items():
+                if column not in columns:
+                    conn.execute(statement)
+            conn.execute(
+                """UPDATE webhook_events
+                   SET status='processed',
+                       processed_at=COALESCE(processed_at, received_at)
+                   WHERE status IS NULL OR status=''"""
+            )
+            conn.execute(
+                """CREATE INDEX IF NOT EXISTS idx_webhook_events_status
+                   ON webhook_events(status)"""
+            )
         finally:
             conn.close()
 
@@ -280,21 +316,142 @@ def delete_session(token: str):
 def webhook_event_seen(event_id: str) -> bool:
     conn = get_conn()
     try:
-        cur = conn.execute("SELECT 1 FROM webhook_events WHERE event_id=?", (event_id,))
-        return cur.fetchone() is not None
+        cur = conn.execute(
+            "SELECT status FROM webhook_events WHERE event_id=?",
+            (event_id,),
+        )
+        row = cur.fetchone()
+        return bool(row and row["status"] in ("processed", "ignored"))
+    finally:
+        conn.close()
+
+
+def webhook_event_claim(
+    event_id: str,
+    event_name: str,
+    payload_metadata: str,
+    payload_hash: str,
+) -> str:
+    """
+    Reserve an event for processing.
+
+    Returns claimed, processed, or in_progress. Failed events can be claimed
+    again so an Eduzz retry is not discarded.
+    """
+    with _lock:
+        conn = get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT status FROM webhook_events WHERE event_id=?",
+                (event_id,),
+            ).fetchone()
+            if row:
+                if row["status"] in ("processed", "ignored"):
+                    conn.execute("COMMIT")
+                    return "processed"
+                if row["status"] == "processing":
+                    conn.execute("COMMIT")
+                    return "in_progress"
+                conn.execute(
+                    """UPDATE webhook_events
+                       SET event_name=?, received_at=?, payload=?,
+                           payload_hash=?, status='processing',
+                           processed_at=NULL, error=NULL
+                       WHERE event_id=?""",
+                    (event_name, now(), payload_metadata, payload_hash, event_id),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO webhook_events
+                       (event_id, event_name, received_at, payload,
+                        payload_hash, status, processed_at, error)
+                       VALUES (?,?,?,?,?,'processing',NULL,NULL)""",
+                    (event_id, event_name, now(), payload_metadata, payload_hash),
+                )
+            conn.execute("COMMIT")
+            return "claimed"
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def webhook_event_finish(event_id: str, status: str, error: str = ""):
+    if status not in ("processed", "ignored", "failed"):
+        raise ValueError("Invalid webhook status.")
+    conn = get_conn()
+    try:
+        conn.execute(
+            """UPDATE webhook_events
+               SET status=?, processed_at=?, error=?
+               WHERE event_id=?""",
+            (status, now(), (error or "")[:500] or None, event_id),
+        )
     finally:
         conn.close()
 
 
 def webhook_event_save(event_id: str, event_name: str, payload: str):
+    """Compatibility helper for older callers."""
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    state = webhook_event_claim(event_id, event_name, "{}", digest)
+    if state == "claimed":
+        webhook_event_finish(event_id, "processed")
+
+
+def get_webhook_event(event_id: str):
     conn = get_conn()
     try:
+        return conn.execute(
+            "SELECT * FROM webhook_events WHERE event_id=?",
+            (event_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+# ---------- OAUTH STATES ----------
+
+def save_oauth_state(state: str, ttl_seconds: int = 600):
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM oauth_states WHERE expires_at < ?", (now(),))
         conn.execute(
-            "INSERT OR IGNORE INTO webhook_events (event_id, event_name, received_at, payload) VALUES (?,?,?,?)",
-            (event_id, event_name, now(), payload),
+            """INSERT OR REPLACE INTO oauth_states(state_hash, expires_at, used_at)
+               VALUES (?,?,NULL)""",
+            (state_hash, now() + ttl_seconds),
         )
     finally:
         conn.close()
+
+
+def consume_oauth_state(state: str) -> bool:
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    with _lock:
+        conn = get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """SELECT expires_at, used_at FROM oauth_states
+                   WHERE state_hash=?""",
+                (state_hash,),
+            ).fetchone()
+            valid = bool(row and not row["used_at"] and row["expires_at"] >= now())
+            if valid:
+                conn.execute(
+                    "UPDATE oauth_states SET used_at=? WHERE state_hash=?",
+                    (now(), state_hash),
+                )
+            conn.execute("COMMIT")
+            return valid
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
 
 # ---------- ADMINS ----------

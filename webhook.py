@@ -18,6 +18,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 
 import db
@@ -55,25 +56,33 @@ def verify_signature(raw_body: bytes, signature_header: str) -> bool:
     return hmac.compare_digest(expected, sig)
 
 
+def _product_ids(payload: dict) -> set:
+    """Extract product IDs from invoice and contract webhook variants."""
+    data = payload.get("data", {}) or {}
+    product_ids = set()
+    if isinstance(data.get("product"), dict):
+        product_ids.add(str(
+            data["product"].get("id")
+            or data["product"].get("productId")
+            or ""
+        ))
+    for prod in data.get("products", []) or []:
+        if isinstance(prod, dict):
+            product_ids.add(str(prod.get("id") or prod.get("productId") or ""))
+    # Official invoice payloads expose the product under items[].productId.
+    for item in data.get("items", []) or []:
+        if isinstance(item, dict):
+            product_ids.add(str(item.get("productId") or item.get("product_id") or ""))
+    for k in ("productId", "product_id"):
+        product_ids.add(str(data.get(k) or ""))
+    return {pid for pid in product_ids if pid}
+
+
 def _product_match(payload: dict) -> bool:
     """Se EDUZZ_PRODUCT_IDS estiver setado, processa so eventos desse produto."""
     if not EDUZZ_PRODUCT_IDS:
         return True
-    data = payload.get("data", {}) or {}
-    # 'product' aparece em invoice_* eventos, 'products' (array) em contract_*
-    pid = ""
-    if isinstance(data.get("product"), dict):
-        pid = str(data["product"].get("id", ""))
-    if pid in EDUZZ_PRODUCT_IDS:
-        return True
-    for prod in data.get("products", []) or []:
-        if str(prod.get("id", "")) in EDUZZ_PRODUCT_IDS:
-            return True
-    # alguns payloads soltos podem ter productId/product_id na raiz dos dados
-    for k in ("productId", "product_id"):
-        if str(data.get(k, "")) in EDUZZ_PRODUCT_IDS:
-            return True
-    return False
+    return bool(_product_ids(payload) & EDUZZ_PRODUCT_IDS)
 
 
 def _extract_buyer(payload: dict):
@@ -93,6 +102,23 @@ def _extract_contract(payload: dict):
         "id": str(contract.get("id") or data.get("id") or ""),
         "status": (contract.get("status") or "").lower(),
     }
+
+
+def _normalize_status(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (value or "").lower())
+
+
+def _event_metadata(payload: dict) -> str:
+    """Persist only non-PII metadata; the raw payload stays out of SQLite."""
+    data = payload.get("data", {}) or {}
+    contract = data.get("contract") or {}
+    invoice = data.get("invoice") or {}
+    metadata = {
+        "product_ids": sorted(_product_ids(payload)),
+        "contract_id": str(contract.get("id") or ""),
+        "invoice_id": str(invoice.get("id") or data.get("invoiceId") or ""),
+    }
+    return json.dumps(metadata, ensure_ascii=True, separators=(",", ":"))
 
 
 def _plan_name(payload: dict) -> str:
@@ -148,53 +174,53 @@ def process_event(raw_body: bytes, signature_header: str) -> dict:
     if not event_id or not event_name:
         return {"ok": False, "status": 400, "message": "Campos id/event ausentes"}
 
-    # Idempotencia: se ja processamos esse event_id, devolvemos OK sem refazer.
-    if db.webhook_event_seen(event_id):
+    claim = db.webhook_event_claim(
+        event_id,
+        event_name,
+        _event_metadata(payload),
+        hashlib.sha256(raw_body).hexdigest(),
+    )
+    if claim == "processed":
         return {"ok": True, "status": 200, "message": "Evento ja processado"}
+    if claim == "in_progress":
+        return {"ok": True, "status": 202, "message": "Evento em processamento"}
 
-    db.webhook_event_save(event_id, event_name, raw_body.decode("utf-8", errors="replace"))
+    try:
+        if not _product_match(payload):
+            db.webhook_event_finish(event_id, "ignored")
+            return {
+                "ok": True,
+                "status": 200,
+                "message": "Evento ignorado (produto fora do filtro)",
+            }
 
-    # Filtro de produto (se configurado)
-    if not _product_match(payload):
-        return {"ok": True, "status": 200, "message": "Evento ignorado (produto fora do filtro)"}
+        buyer = _extract_buyer(payload)
+        contract = _extract_contract(payload)
+        plan = _plan_name(payload)
 
-    buyer = _extract_buyer(payload)
-    contract = _extract_contract(payload)
-    plan = _plan_name(payload)
+        if not buyer["email"]:
+            db.webhook_event_finish(event_id, "ignored")
+            return {
+                "ok": True,
+                "status": 200,
+                "message": "Sem email do comprador, evento ignorado",
+            }
 
-    if not buyer["email"]:
-        return {"ok": True, "status": 200, "message": "Sem email do comprador, evento ignorado"}
+        revoke_events = {
+            "myeduzz.invoice_refunded",
+            "myeduzz.invoice_canceled",
+            "myeduzz.invoice_expired",
+            "myeduzz.invoice_waiting_refund",
+        }
+        eligible_contract_statuses = {
+            "uptodate",
+            "trialing",
+            "trial",
+            "free",
+            "active",
+        }
 
-    # Mapeamento de eventos -> (status_user, expires_at)
-    activate_events = {
-        "myeduzz.invoice_paid",
-        "myeduzz.contract_created",
-    }
-    revoke_events = {
-        "myeduzz.invoice_refunded",
-        "myeduzz.invoice_canceled",
-        "myeduzz.invoice_expired",
-        "myeduzz.invoice_waiting_refund",
-    }
-
-    if event_name in activate_events:
-        expires_at = _next_due_or_default(payload)
-        user_id = db.upsert_user_from_webhook(
-            email=buyer["email"],
-            name=buyer["name"],
-            buyer_id=buyer["id"],
-            contract_id=contract["id"],
-            plan=plan,
-            status="active",
-            expires_at=expires_at,
-        )
-        db.log_audit(user_id, "webhook.activate", f"{event_name} plan={plan}")
-        return {"ok": True, "status": 200, "message": f"Acesso ativado para {buyer['email']}"}
-
-    if event_name == "myeduzz.contract_updated":
-        # contract.status: upToDate | late | canceled | finished | trialing ...
-        cstatus = contract["status"]
-        if cstatus in ("uptodate", "trialing", "trial", "active"):
+        if event_name == "myeduzz.invoice_paid":
             expires_at = _next_due_or_default(payload)
             user_id = db.upsert_user_from_webhook(
                 email=buyer["email"],
@@ -205,23 +231,70 @@ def process_event(raw_body: bytes, signature_header: str) -> dict:
                 status="active",
                 expires_at=expires_at,
             )
-            db.log_audit(user_id, "webhook.contract_active", f"{cstatus}")
-            return {"ok": True, "status": 200, "message": "Contrato em dia"}
-        else:
-            # late, canceled, finished, etc -> suspende. Quem voltar a pagar reativa via invoice_paid.
+            db.log_audit(user_id, "webhook.activate", f"{event_name} plan={plan}")
+            db.webhook_event_finish(event_id, "processed")
+            return {"ok": True, "status": 200, "message": "Acesso ativado"}
+
+        if event_name in (
+            "myeduzz.contract_created",
+            "myeduzz.contract_updated",
+        ):
+            cstatus = _normalize_status(contract["status"])
+            if cstatus in eligible_contract_statuses:
+                expires_at = _next_due_or_default(payload)
+                user_id = db.upsert_user_from_webhook(
+                    email=buyer["email"],
+                    name=buyer["name"],
+                    buyer_id=buyer["id"],
+                    contract_id=contract["id"],
+                    plan=plan,
+                    status="active",
+                    expires_at=expires_at,
+                )
+                db.log_audit(user_id, "webhook.contract_active", cstatus)
+                db.webhook_event_finish(event_id, "processed")
+                return {"ok": True, "status": 200, "message": "Contrato elegivel"}
+
+            if event_name == "myeduzz.contract_updated":
+                user = db.get_user_by_email(buyer["email"])
+                if user:
+                    db.set_user_status(user["id"], "suspended")
+                    db.log_audit(user["id"], "webhook.contract_suspended", cstatus)
+            db.webhook_event_finish(event_id, "processed")
+            return {
+                "ok": True,
+                "status": 200,
+                "message": f"Contrato nao elegivel ({cstatus or 'sem status'})",
+            }
+
+        if event_name in revoke_events:
             user = db.get_user_by_email(buyer["email"])
             if user:
-                db.set_user_status(user["id"], "suspended")
-                db.log_audit(user["id"], "webhook.contract_suspended", f"{cstatus}")
-            return {"ok": True, "status": 200, "message": f"Contrato {cstatus} - acesso suspenso"}
+                if "refund" in event_name:
+                    new_status = "refunded"
+                elif "expired" in event_name:
+                    new_status = "expired"
+                else:
+                    new_status = "suspended"
+                db.set_user_status(user["id"], new_status)
+                db.log_audit(user["id"], f"webhook.{event_name}", new_status)
+            db.webhook_event_finish(event_id, "processed")
+            return {
+                "ok": True,
+                "status": 200,
+                "message": f"Acesso revogado ({event_name})",
+            }
 
-    if event_name in revoke_events:
-        user = db.get_user_by_email(buyer["email"])
-        if user:
-            new_status = "refunded" if "refund" in event_name else "expired" if "expired" in event_name else "suspended"
-            db.set_user_status(user["id"], new_status)
-            db.log_audit(user["id"], f"webhook.{event_name}", new_status)
-        return {"ok": True, "status": 200, "message": f"Acesso revogado ({event_name})"}
-
-    # Evento valido mas que nao impacta acesso (ex: invoice_scheduled, invoice_waiting_payment)
-    return {"ok": True, "status": 200, "message": f"Evento {event_name} registrado sem acao"}
+        db.webhook_event_finish(event_id, "ignored")
+        return {
+            "ok": True,
+            "status": 200,
+            "message": f"Evento {event_name} registrado sem acao",
+        }
+    except Exception as exc:
+        db.webhook_event_finish(event_id, "failed", str(exc))
+        return {
+            "ok": False,
+            "status": 500,
+            "message": "Falha temporaria ao processar evento",
+        }

@@ -30,6 +30,14 @@ services:
         sync: false
       - key: EDUZZ_PRODUCT_IDS
         sync: false           # opcional; deixe em branco para aceitar todos
+      - key: EDUZZ_CLIENT_ID
+        sync: false
+      - key: EDUZZ_CLIENT_SECRET
+        sync: false
+      - key: EDUZZ_OAUTH_REDIRECT_URI
+        sync: false
+      - key: EDUZZ_RECONCILE_SECRET
+        generateValue: true
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD
