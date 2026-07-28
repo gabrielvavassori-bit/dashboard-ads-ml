@@ -299,7 +299,7 @@ class HTTPRouteTests(unittest.TestCase):
                 return
 
             def do_GET(self):
-                seen["path"] = self.path
+                seen.setdefault("paths", []).append(self.path)
                 seen["secret"] = self.headers.get("X-COMPETITIVE-WORKER-SECRET")
                 body = json.dumps({
                     "ok": True,
@@ -335,7 +335,18 @@ class HTTPRouteTests(unittest.TestCase):
             self.assertFalse(body["token_exposed"])
             self.assertNotIn("access_token", body)
             self.assertEqual(seen["secret"], os.environ["COMPETITIVE_WORKER_SECRET"])
-            self.assertEqual(seen["path"], "/internal/dash-ads/ml-context?client=conta-ativa")
+            self.assertEqual(seen["paths"][0], "/internal/dash-ads/ml-context?client=conta-ativa")
+            request = Request(
+                f"{self.base_url}/internal/dash-ads/online-cache-refresh?client=conta-ativa&max_items=3&bad=ignored",
+                headers={"X-COMPETITIVE-WORKER-SECRET": os.environ["COMPETITIVE_WORKER_SECRET"]},
+                method="GET",
+            )
+            with urlopen(request, timeout=5) as response:
+                cache_body = json.loads(response.read())
+            self.assertEqual(response.status, 200)
+            self.assertTrue(cache_body["ok"])
+            self.assertNotIn("access_token", cache_body)
+            self.assertEqual(seen["paths"][1], "/internal/dash-ads/online-cache-refresh?client=conta-ativa&max_items=3")
         finally:
             app.AGENTE_ML_BASE_URL = original_base
             fake.shutdown()

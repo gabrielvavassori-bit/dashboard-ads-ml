@@ -485,13 +485,16 @@ class Handler(BaseHTTPRequestHandler):
             "/internal/dash-ads/ml-context": "/internal/dash-ads/ml-context",
             "/internal/dash-ads/ads-api-reconciliacao": "/internal/dash-ads/ads-api-reconciliacao",
             "/internal/dash-ads/vendas-items-reconciliacao": "/internal/dash-ads/vendas-items-reconciliacao",
+            "/internal/dash-ads/online-cache-refresh": "/internal/dash-ads/online-cache-refresh",
+            "/internal/dash-ads/online-cache-status": "/internal/dash-ads/online-cache-status",
+            "/internal/dash-ads/online-cache-latest": "/internal/dash-ads/online-cache-latest",
         }
         upstream_path = route_map.get(path)
         if not upstream_path:
             _send_json(self, {"ok": False, "message": "Rota diagnostica nao permitida"}, 404)
             return
 
-        allowed_params = {"client", "client_id", "advertiser_id", "items", "date_from", "date_to"}
+        allowed_params = {"client", "client_id", "advertiser_id", "items", "date_from", "date_to", "max_items"}
         query = parse_qs(url.query or "", keep_blank_values=True)
         clean_query = {
             key: values[-1]
