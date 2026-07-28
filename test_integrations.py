@@ -10,7 +10,7 @@ import sys
 import tempfile
 import threading
 import unittest
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
@@ -23,6 +23,7 @@ os.environ["EDUZZ_PRODUCT_IDS"] = "3032224"
 os.environ["EDUZZ_CLIENT_ID"] = "test-client"
 os.environ["EDUZZ_CLIENT_SECRET"] = "test-client-secret"
 os.environ["APP_PUBLIC_URL"] = "http://127.0.0.1:4182"
+os.environ["COMPETITIVE_WORKER_SECRET"] = "local-worker-secret"
 
 import db
 import eduzz_api
@@ -282,6 +283,64 @@ class HTTPRouteTests(unittest.TestCase):
             urlopen(request, timeout=5)
         self.assertEqual(raised.exception.code, 401)
         raised.exception.close()
+
+    def test_dash_ads_diagnostic_proxy_requires_secret(self):
+        request = Request(f"{self.base_url}/internal/dash-ads/ml-context?client=conta-ativa", method="GET")
+        with self.assertRaises(HTTPError) as raised:
+            urlopen(request, timeout=5)
+        self.assertEqual(raised.exception.code, 401)
+        raised.exception.close()
+
+    def test_dash_ads_diagnostic_proxy_sanitizes_response(self):
+        seen = {}
+
+        class FakeAgenteML(BaseHTTPRequestHandler):
+            def log_message(self, format, *args):  # noqa: A002
+                return
+
+            def do_GET(self):
+                seen["path"] = self.path
+                seen["secret"] = self.headers.get("X-COMPETITIVE-WORKER-SECRET")
+                body = json.dumps({
+                    "ok": True,
+                    "client_id": "conta-ativa",
+                    "ml_user_id": 14252670,
+                    "nickname": "LONAS_ONLINE",
+                    "advertiser_id": "164424",
+                    "access_token": "nao-deve-voltar",
+                }).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        fake = ThreadingHTTPServer(("127.0.0.1", 0), FakeAgenteML)
+        thread = threading.Thread(target=fake.serve_forever, daemon=True)
+        original_base = app.AGENTE_ML_BASE_URL
+        app.AGENTE_ML_BASE_URL = f"http://127.0.0.1:{fake.server_port}"
+        thread.start()
+        try:
+            request = Request(
+                f"{self.base_url}/internal/dash-ads/ml-context?client=conta-ativa&bad=ignored",
+                headers={"X-COMPETITIVE-WORKER-SECRET": os.environ["COMPETITIVE_WORKER_SECRET"]},
+                method="GET",
+            )
+            with urlopen(request, timeout=5) as response:
+                body = json.loads(response.read())
+            self.assertEqual(response.status, 200)
+            self.assertTrue(body["ok"])
+            self.assertEqual(body["client_id"], "conta-ativa")
+            self.assertEqual(body["advertiser_id"], "164424")
+            self.assertFalse(body["token_exposed"])
+            self.assertNotIn("access_token", body)
+            self.assertEqual(seen["secret"], os.environ["COMPETITIVE_WORKER_SECRET"])
+            self.assertEqual(seen["path"], "/internal/dash-ads/ml-context?client=conta-ativa")
+        finally:
+            app.AGENTE_ML_BASE_URL = original_base
+            fake.shutdown()
+            fake.server_close()
+            thread.join(timeout=3)
 
 
 if __name__ == "__main__":

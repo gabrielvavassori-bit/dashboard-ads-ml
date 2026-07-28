@@ -47,7 +47,9 @@ from email import policy
 from email.parser import BytesParser
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote, urlencode, urlparse
+from urllib.request import Request, urlopen
 
 import auth
 import db
@@ -64,6 +66,7 @@ MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "20"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 # Limita 2 arquivos + overhead de multipart
 MAX_BODY_BYTES = MAX_UPLOAD_BYTES * 2 + 1 * 1024 * 1024
+AGENTE_ML_BASE_URL = os.environ.get("AGENTE_ML_BASE_URL", "https://agente-ml.onrender.com").rstrip("/")
 
 # Serializa geracoes pesadas para nao estourar memoria em planos pequenos.
 # 2 dashboards em paralelo eh saudavel ate em 512MB-1GB RAM.
@@ -203,6 +206,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/healthz":
                 _send_json(self, {"ok": True})
+                return
+            if path.startswith("/internal/dash-ads/"):
+                self._internal_dash_ads_diagnostico(path, url)
                 return
             if path in ("/eduzz/custom-delivery", "/eduzz-delivery"):
                 self._eduzz_custom_delivery()
@@ -463,6 +469,81 @@ class Handler(BaseHTTPRequestHandler):
             _send_json(self, {"ok": True, "result": result})
         except eduzz_api.EduzzAPIError as exc:
             _send_json(self, {"ok": False, "message": str(exc)}, 503)
+
+    def _internal_dash_ads_diagnostico(self, path: str, url):
+        expected = os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")
+        supplied = (
+            self.headers.get("X-COMPETITIVE-WORKER-SECRET")
+            or self.headers.get("X-Internal-Secret")
+            or self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        )
+        if not expected or not supplied or not secrets.compare_digest(expected, supplied):
+            _send_json(self, {"ok": False, "message": "Nao autorizado"}, 401)
+            return
+
+        route_map = {
+            "/internal/dash-ads/ml-context": "/internal/dash-ads/ml-context",
+            "/internal/dash-ads/ads-api-reconciliacao": "/internal/dash-ads/ads-api-reconciliacao",
+            "/internal/dash-ads/vendas-items-reconciliacao": "/internal/dash-ads/vendas-items-reconciliacao",
+        }
+        upstream_path = route_map.get(path)
+        if not upstream_path:
+            _send_json(self, {"ok": False, "message": "Rota diagnostica nao permitida"}, 404)
+            return
+
+        allowed_params = {"client", "client_id", "advertiser_id", "items", "date_from", "date_to"}
+        query = parse_qs(url.query or "", keep_blank_values=True)
+        clean_query = {
+            key: values[-1]
+            for key, values in query.items()
+            if key in allowed_params and values
+        }
+        upstream_url = f"{AGENTE_ML_BASE_URL}{upstream_path}"
+        if clean_query:
+            upstream_url = f"{upstream_url}?{urlencode(clean_query)}"
+
+        req = Request(
+            upstream_url,
+            headers={
+                "Accept": "application/json",
+                "X-COMPETITIVE-WORKER-SECRET": expected,
+            },
+            method="GET",
+        )
+        try:
+            with urlopen(req, timeout=45) as response:
+                raw = response.read(2_000_000)
+                status = response.status
+        except HTTPError as exc:
+            raw = exc.read(2_000_000)
+            status = exc.code
+        except (URLError, TimeoutError) as exc:
+            _send_json(self, {
+                "ok": False,
+                "source": "dash-ads",
+                "upstream": "agente-ml",
+                "message": "Falha ao consultar agente-ml.",
+                "error": exc.__class__.__name__,
+                "token_exposed": False,
+            }, 502)
+            return
+
+        try:
+            payload = json.loads(raw.decode("utf-8", errors="replace"))
+        except json.JSONDecodeError:
+            payload = {
+                "ok": False,
+                "message": "agente-ml retornou resposta nao JSON.",
+                "http_status": status,
+            }
+        if isinstance(payload, dict):
+            payload.pop("access_token", None)
+            payload.pop("refresh_token", None)
+            payload.pop("client_secret", None)
+            payload.setdefault("token_exposed", False)
+            payload.setdefault("diagnostic_source", "agente-ml")
+            payload.setdefault("dash_proxy", True)
+        _send_json(self, payload if isinstance(payload, dict) else {"ok": False, "payload": payload}, status)
 
     def _eduzz_custom_delivery(self):
         # A entrega customizada da Eduzz faz um envio de teste para validar a URL.
