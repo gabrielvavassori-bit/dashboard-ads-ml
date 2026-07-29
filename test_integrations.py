@@ -13,7 +13,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 
 TEST_DIR = tempfile.TemporaryDirectory()
@@ -26,6 +26,7 @@ os.environ["APP_PUBLIC_URL"] = "http://127.0.0.1:4182"
 os.environ["COMPETITIVE_WORKER_SECRET"] = "local-worker-secret"
 
 import db
+import auth
 import eduzz_api
 import webhook
 import app
@@ -257,6 +258,27 @@ class HTTPRouteTests(unittest.TestCase):
         cls.server.server_close()
         cls.thread.join(timeout=3)
 
+    def _login_cookie(self, email="cliente@example.com"):
+        user_id = db.upsert_user_from_webhook(
+            email=email,
+            name="Cliente Teste",
+            buyer_id="buyer-1",
+            contract_id="contract-1",
+            plan="ADS ML",
+            status="active",
+            expires_at=None,
+        )
+        db.set_password(user_id, auth.hash_password("123456"))
+        token = auth.new_session_token()
+        db.create_session(user_id, token, "127.0.0.1", "tests")
+        return user_id, f"{auth.SESSION_COOKIE}={token}"
+
+    def _no_redirect_opener(self):
+        class NoRedirect(HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        return build_opener(NoRedirect)
+
     def test_health_and_custom_delivery(self):
         with urlopen(f"{self.base_url}/healthz", timeout=5) as response:
             self.assertEqual(response.status, 200)
@@ -352,6 +374,67 @@ class HTTPRouteTests(unittest.TestCase):
             fake.shutdown()
             fake.server_close()
             thread.join(timeout=3)
+
+    def test_online_redirects_to_agent_report_when_link_exists(self):
+        user_id, cookie = self._login_cookie("linked@example.com")
+        db.upsert_user_ml_link(
+            user_id,
+            client_id="conta-ativa",
+            ml_user_id="14252670",
+            nickname="LONAS_ONLINE",
+            advertiser_id="164424",
+        )
+        opener = self._no_redirect_opener()
+        request = Request(f"{self.base_url}/online", headers={"Cookie": cookie}, method="GET")
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        self.assertEqual(
+            raised.exception.headers.get("Location"),
+            f"{app.AGENTE_ML_BASE_URL}/relatorio?client=conta-ativa",
+        )
+        raised.exception.close()
+
+    def test_internal_ml_link_attach_and_finish_flow(self):
+        user_id, cookie = self._login_cookie("attach@example.com")
+        bridge_state = "mlink-test-state"
+        db.save_ml_link_state(bridge_state, user_id, return_to="/online")
+        payload = json.dumps({
+            "bridge_state": bridge_state,
+            "client_id": "conta-ativa",
+            "ml_user_id": "14252670",
+            "nickname": "LONAS_ONLINE",
+            "official_store": "Lonas Online",
+            "advertiser_id": "164424",
+            "seller_id": "seller-1",
+            "site_id": "MLB",
+        }).encode("utf-8")
+        request = Request(
+            f"{self.base_url}/internal/ml-link/attach",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "X-Internal-Secret": os.environ["COMPETITIVE_WORKER_SECRET"],
+            },
+            method="POST",
+        )
+        with urlopen(request, timeout=5) as response:
+            body = json.loads(response.read())
+        self.assertEqual(response.status, 200)
+        self.assertTrue(body["ok"])
+        link = db.get_active_ml_link_for_user(user_id)
+        self.assertEqual(link["client_id"], "conta-ativa")
+        opener = self._no_redirect_opener()
+        finish_request = Request(
+            f"{self.base_url}/ml-link/finish?state={bridge_state}",
+            headers={"Cookie": cookie},
+            method="GET",
+        )
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(finish_request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        self.assertEqual(raised.exception.headers.get("Location"), "/online")
+        raised.exception.close()
 
 
 if __name__ == "__main__":

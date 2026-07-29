@@ -67,6 +67,7 @@ MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 # Limita 2 arquivos + overhead de multipart
 MAX_BODY_BYTES = MAX_UPLOAD_BYTES * 2 + 1 * 1024 * 1024
 AGENTE_ML_BASE_URL = os.environ.get("AGENTE_ML_BASE_URL", "https://agente-ml.onrender.com").rstrip("/")
+ML_LINK_ATTACH_SECRET = (os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")).strip()
 
 # Serializa geracoes pesadas para nao estourar memoria em planos pequenos.
 # 2 dashboards em paralelo eh saudavel ate em 512MB-1GB RAM.
@@ -165,6 +166,194 @@ def _read_and_discard_body(handler):
     length = int(handler.headers.get("Content-Length", "0") or 0)
     if length > 0:
         handler.rfile.read(length)
+
+
+def _absolute_app_url(path: str) -> str:
+    return f"{APP_PUBLIC_URL.rstrip('/')}{path}"
+
+
+def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
+    secret = os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")
+    if not secret:
+        return {"ok": False, "message": "Segredo interno do Dash ADS nao configurado."}
+    query = urlencode({k: v for k, v in (params or {}).items() if v not in (None, "")})
+    url = f"{AGENTE_ML_BASE_URL}{path}"
+    if query:
+        url = f"{url}?{query}"
+    req = Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "X-COMPETITIVE-WORKER-SECRET": secret,
+        },
+        method="GET",
+    )
+    try:
+        with urlopen(req, timeout=45) as response:
+            raw = response.read(2_000_000)
+            status = response.status
+    except HTTPError as exc:
+        raw = exc.read(2_000_000)
+        status = exc.code
+    except (URLError, TimeoutError) as exc:
+        return {
+            "ok": False,
+            "http_status": 502,
+            "message": "Falha ao consultar agente-ml.",
+            "error": exc.__class__.__name__,
+        }
+    try:
+        payload = json.loads(raw.decode("utf-8", errors="replace"))
+    except json.JSONDecodeError:
+        payload = {"ok": False, "message": "agente-ml retornou resposta nao JSON."}
+    if isinstance(payload, dict):
+        payload.pop("access_token", None)
+        payload.pop("refresh_token", None)
+        payload.pop("client_secret", None)
+        payload.setdefault("http_status", status)
+        payload.setdefault("token_exposed", False)
+    return payload if isinstance(payload, dict) else {"ok": False, "payload": payload, "http_status": status}
+
+
+def _normalize_mlb_code(value) -> str:
+    text_value = str(value or "").strip().upper()
+    return text_value if text_value.startswith("MLB") else ""
+
+
+def _build_online_beta_payload(data: dict, client: str, advertiser_id: str = "") -> dict:
+    period = (data.get("meta") or {}).get("period") or {}
+    date_from = period.get("dateFrom") or ""
+    date_to = period.get("dateTo") or ""
+    context = _fetch_dash_ads_json("/internal/dash-ads/ml-context", {"client": client})
+    resolved_advertiser_id = advertiser_id or context.get("advertiser_id") or ""
+    api_reconciliation = _fetch_dash_ads_json(
+        "/internal/dash-ads/ads-api-reconciliacao",
+        {
+            "client": client,
+            "advertiser_id": resolved_advertiser_id,
+            "date_from": date_from,
+            "date_to": date_to,
+        },
+    )
+    latest = _fetch_dash_ads_json(
+        "/internal/dash-ads/online-cache-latest",
+        {"client": client, "advertiser_id": resolved_advertiser_id},
+    )
+    latest_period = (((latest.get("latest") or {}).get("date_from")) or latest.get("date_from") or "", ((latest.get("latest") or {}).get("date_to")) or latest.get("date_to") or "")
+    period_match = bool(date_from and date_to and api_reconciliation.get("date_from") == date_from and api_reconciliation.get("date_to") == date_to)
+
+    api_rows_raw = api_reconciliation.get("items") or []
+    api_by_code = {}
+    for raw in api_rows_raw:
+        if not isinstance(raw, dict):
+            continue
+        code = _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
+        if not code:
+            continue
+        target = api_by_code.setdefault(code, {
+            "code": code,
+            "title": raw.get("title") or "",
+            "campaignIds": set(),
+            "totalAmount": 0.0,
+            "directAmount": 0.0,
+            "indirectAmount": 0.0,
+            "cost": 0.0,
+            "clicks": 0.0,
+            "prints": 0.0,
+            "units": 0.0,
+            "directUnits": 0.0,
+            "indirectUnits": 0.0,
+            "ctr": 0.0,
+            "cvr": 0.0,
+            "roas": 0.0,
+        })
+        total_amount = float(raw.get("total_amount") or 0)
+        direct_amount = float(raw.get("direct_amount") or 0)
+        target["campaignIds"].add(str(raw.get("campaign_id") or "").strip())
+        target["totalAmount"] += total_amount
+        target["directAmount"] += direct_amount
+        target["indirectAmount"] += max(0.0, total_amount - direct_amount)
+        target["cost"] += float(raw.get("cost") or 0)
+        target["clicks"] += float(raw.get("clicks") or 0)
+        target["prints"] += float(raw.get("prints") or 0)
+        target["units"] += float(raw.get("units_quantity") or 0)
+        target["directUnits"] += float(raw.get("direct_units_quantity") or 0)
+        target["indirectUnits"] += float(raw.get("indirect_units_quantity") or 0)
+    for target in api_by_code.values():
+        target["campaignIds"] = ", ".join(sorted(x for x in target["campaignIds"] if x))
+        target["ctr"] = (target["clicks"] / target["prints"]) if target["prints"] else 0.0
+        target["cvr"] = (target["units"] / target["clicks"]) if target["clicks"] else 0.0
+        target["roas"] = (target["totalAmount"] / target["cost"]) if target["cost"] else 0.0
+
+    compare_rows = []
+    for item in data.get("items", []):
+        code = _normalize_mlb_code(item.get("code"))
+        if not code:
+            continue
+        api_item = api_by_code.get(code)
+        xlsx_ads_revenue = float(item.get("adsRevenue") or 0)
+        xlsx_investment = float(item.get("investment") or 0)
+        xlsx_clicks = float(item.get("clicks") or 0)
+        xlsx_direct = float(item.get("adsDirectRevenue") or 0)
+        xlsx_indirect = float(item.get("adsIndirectRevenue") or 0)
+        if api_item:
+            api_ads_revenue = float(api_item.get("totalAmount") or 0)
+            api_investment = float(api_item.get("cost") or 0)
+            api_clicks = float(api_item.get("clicks") or 0)
+            revenue_delta = api_ads_revenue - xlsx_ads_revenue
+            investment_delta = api_investment - xlsx_investment
+            clicks_delta = api_clicks - xlsx_clicks
+            ok = abs(revenue_delta) <= 1.0 and abs(investment_delta) <= 1.0 and abs(clicks_delta) <= 1.0
+        else:
+            api_ads_revenue = 0.0
+            api_investment = 0.0
+            api_clicks = 0.0
+            revenue_delta = 0.0 - xlsx_ads_revenue
+            investment_delta = 0.0 - xlsx_investment
+            clicks_delta = 0.0 - xlsx_clicks
+            ok = False
+        compare_rows.append({
+            "code": code,
+            "sku": item.get("sku") or "",
+            "title": item.get("title") or "",
+            "xlsxCampaign": item.get("campaign") or "",
+            "apiCampaign": (api_item or {}).get("campaignIds", ""),
+            "xlsxAdsRevenue": xlsx_ads_revenue,
+            "apiAdsRevenue": api_ads_revenue,
+            "xlsxDirectRevenue": xlsx_direct,
+            "xlsxIndirectRevenue": xlsx_indirect,
+            "apiDirectRevenue": float((api_item or {}).get("directAmount") or 0),
+            "apiIndirectRevenue": float((api_item or {}).get("indirectAmount") or 0),
+            "xlsxInvestment": xlsx_investment,
+            "apiInvestment": api_investment,
+            "xlsxClicks": xlsx_clicks,
+            "apiClicks": api_clicks,
+            "revenueDelta": revenue_delta,
+            "investmentDelta": investment_delta,
+            "clicksDelta": clicks_delta,
+            "status": "OK" if ok else ("Sem retorno API" if not api_item else "Divergente"),
+        })
+    compare_rows.sort(key=lambda item: (0 if item["status"] != "OK" else 1, -abs(item["revenueDelta"]), item["code"]))
+
+    return {
+        "enabled": True,
+        "client": client,
+        "advertiserId": resolved_advertiser_id,
+        "context": context,
+        "apiReconciliation": api_reconciliation,
+        "latest": latest,
+        "xlsxPeriod": {"dateFrom": date_from, "dateTo": date_to},
+        "apiPeriod": {"dateFrom": api_reconciliation.get("date_from") or "", "dateTo": api_reconciliation.get("date_to") or ""},
+        "cachePeriod": {"dateFrom": latest_period[0], "dateTo": latest_period[1]},
+        "periodMatch": period_match,
+        "items": compare_rows,
+        "summary": {
+            "totalItems": len(compare_rows),
+            "matchedItems": len([item for item in compare_rows if item["status"] == "OK"]),
+            "divergentItems": len([item for item in compare_rows if item["status"] == "Divergente"]),
+            "missingItems": len([item for item in compare_rows if item["status"] == "Sem retorno API"]),
+        },
+    }
 
 
 def _current_user(handler):
@@ -271,7 +460,63 @@ class Handler(BaseHTTPRequestHandler):
                 if not user:
                     _redirect(self, "/login")
                     return
-                _send_html(self, templates.render_app_shell(user["name"] or user["email"], APP_VERSION))
+                link = db.get_active_ml_link_for_user(user["id"])
+                linked_name = ""
+                if link:
+                    linked_name = link["official_store"] or link["nickname"] or link["client_id"] or ""
+                _send_html(self, templates.render_app_shell(user["name"] or user["email"], APP_VERSION, linked_client_name=linked_name))
+                return
+            if path == "/online":
+                user, _ = _current_user(self)
+                if not user:
+                    _redirect(self, "/login")
+                    return
+                link = db.get_active_ml_link_for_user(user["id"])
+                if not link:
+                    _redirect(self, "/ml-link/start?return_to=/online")
+                    return
+                client_id = (link["client_id"] or "").strip()
+                if not client_id:
+                    db.mark_user_ml_link_disconnected(user["id"])
+                    _redirect(self, "/ml-link/start?return_to=/online")
+                    return
+                _redirect(self, f"{AGENTE_ML_BASE_URL}/relatorio?client={quote(client_id)}")
+                return
+            if path == "/ml-link/start":
+                user, _ = _current_user(self)
+                if not user:
+                    _redirect(self, "/login")
+                    return
+                qs = parse_qs(url.query or "")
+                return_to = (qs.get("return_to", ["/online"])[0] or "/online").strip()
+                if not return_to.startswith("/"):
+                    return_to = "/online"
+                bridge_state = f"mlink-{secrets.token_hex(16)}"
+                db.save_ml_link_state(bridge_state, user["id"], return_to=return_to)
+                connect_url = (
+                    f"{AGENTE_ML_BASE_URL}/conectar-conta?"
+                    f"{urlencode({'bridge_state': bridge_state, 'return_to': _absolute_app_url('/ml-link/finish')})}"
+                )
+                _redirect(self, connect_url)
+                return
+            if path == "/ml-link/finish":
+                user, _ = _current_user(self)
+                if not user:
+                    _redirect(self, "/login")
+                    return
+                qs = parse_qs(url.query or "")
+                bridge_state = (qs.get("state", [""])[0] or "").strip()
+                if not bridge_state:
+                    _redirect(self, "/?info=ativacao-invalida")
+                    return
+                state_row = db.consume_ml_link_state(bridge_state)
+                if not state_row:
+                    _send_html(self, templates.render_error_page("Nao consegui concluir a vinculacao da conta Mercado Livre."), 400)
+                    return
+                if state_row["user_id"] != user["id"]:
+                    _send_html(self, templates.render_error_page("A vinculacao desta conta nao pertence a sua sessao atual."), 403)
+                    return
+                _redirect(self, state_row["return_to"] or "/online")
                 return
 
             _send_html(self, templates.render_error_page("Pagina nao encontrada."), 404)
@@ -309,6 +554,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/internal/eduzz/reconcile":
                 self._post_eduzz_reconcile()
+                return
+            if path == "/internal/ml-link/attach":
+                self._post_internal_ml_link_attach()
                 return
             if path in ("/eduzz/custom-delivery", "/eduzz-delivery"):
                 self._eduzz_custom_delivery()
@@ -402,15 +650,25 @@ class Handler(BaseHTTPRequestHandler):
             _redirect(self, "/login")
             return
         try:
-            files, _ = _parse_multipart(self)
+            files, fields = _parse_multipart(self)
         except ValueError as exc:
-            _send_html(self, templates.render_app_shell(user["name"] or user["email"], APP_VERSION, str(exc)), 400)
+            link = db.get_active_ml_link_for_user(user["id"])
+            linked_name = link["official_store"] or link["nickname"] or link["client_id"] if link else ""
+            _send_html(self, templates.render_app_shell(user["name"] or user["email"], APP_VERSION, str(exc), linked_client_name=linked_name), 400)
             return
         if "sales" not in files or "ads" not in files:
-            _send_html(self, templates.render_app_shell(
-                user["name"] or user["email"], APP_VERSION,
-                "Envie os dois arquivos: planilha de vendas e relatorio de publicidade."
-            ), 400)
+            link = db.get_active_ml_link_for_user(user["id"])
+            linked_name = link["official_store"] or link["nickname"] or link["client_id"] if link else ""
+            _send_html(
+                self,
+                templates.render_app_shell(
+                    user["name"] or user["email"],
+                    APP_VERSION,
+                    "Envie os dois arquivos: planilha de vendas e relatorio de publicidade.",
+                    linked_client_name=linked_name,
+                ),
+                400,
+            )
             return
         # Serializa por seguranca de memoria
         with _dashboard_semaphore:
@@ -421,7 +679,15 @@ class Handler(BaseHTTPRequestHandler):
                 sales_path.write_bytes(files["sales"])
                 ads_path.write_bytes(files["ads"])
                 try:
-                    dashboard = render_dashboard(build_data(sales_path, ads_path))
+                    dashboard_data = build_data(sales_path, ads_path)
+                    link = db.get_active_ml_link_for_user(user["id"])
+                    if link and (link["client_id"] or "").strip():
+                        dashboard_data["onlineBeta"] = _build_online_beta_payload(
+                            dashboard_data,
+                            client=(link["client_id"] or "").strip(),
+                            advertiser_id=(link["advertiser_id"] or "").strip(),
+                        )
+                    dashboard = render_dashboard(dashboard_data)
                 except Exception as exc:
                     tb = traceback.format_exc()
                     db.log_audit(user["id"], "dashboard.fail", str(exc)[:300], _client_ip(self))
@@ -429,6 +695,51 @@ class Handler(BaseHTTPRequestHandler):
                     return
         db.log_audit(user["id"], "dashboard.ok", "", _client_ip(self))
         _send_html(self, dashboard)
+
+    def _post_internal_ml_link_attach(self):
+        if not ML_LINK_ATTACH_SECRET:
+            _send_json(self, {"ok": False, "message": "Segredo interno nao configurado"}, 500)
+            return
+        supplied = (
+            self.headers.get("X-Internal-Secret")
+            or self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        )
+        if not supplied or not secrets.compare_digest(ML_LINK_ATTACH_SECRET, supplied):
+            _read_and_discard_body(self)
+            _send_json(self, {"ok": False, "message": "Nao autorizado"}, 401)
+            return
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        if length <= 0 or length > 50_000:
+            _send_json(self, {"ok": False, "message": "Body invalido"}, 400)
+            return
+        raw = self.rfile.read(length)
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except json.JSONDecodeError:
+            _send_json(self, {"ok": False, "message": "JSON invalido"}, 400)
+            return
+        bridge_state = str(payload.get("bridge_state") or "").strip()
+        if not bridge_state:
+            _send_json(self, {"ok": False, "message": "bridge_state obrigatorio"}, 400)
+            return
+        state_row = db.get_ml_link_state(bridge_state)
+        if not state_row or state_row["expires_at"] < db.now():
+            _send_json(self, {"ok": False, "message": "bridge_state expirado ou inexistente"}, 400)
+            return
+        db.upsert_user_ml_link(
+            state_row["user_id"],
+            client_id=str(payload.get("client_id") or "").strip(),
+            ml_user_id=str(payload.get("ml_user_id") or "").strip(),
+            nickname=str(payload.get("nickname") or "").strip(),
+            official_store=str(payload.get("official_store") or "").strip(),
+            advertiser_id=str(payload.get("advertiser_id") or "").strip(),
+            seller_id=str(payload.get("seller_id") or "").strip(),
+            site_id=str(payload.get("site_id") or "").strip(),
+            status="active",
+        )
+        db.mark_ml_link_state_attached(bridge_state)
+        db.log_audit(state_row["user_id"], "ml_link.ok", str(payload.get("client_id") or ""), _client_ip(self))
+        _send_json(self, {"ok": True}, 200)
 
     def _post_webhook(self):
         length = int(self.headers.get("Content-Length", "0") or 0)

@@ -107,7 +107,7 @@ def render_register(error: str = "", email: str = "") -> str:
     return _layout("Cadastrar", body)
 
 
-def render_app_shell(user_name: str, version: str, error: str = "") -> str:
+def render_app_shell(user_name: str, version: str, error: str = "", linked_client_name: str = "") -> str:
     """Tela principal apos login - formulario de upload dos arquivos."""
     err_html = f'<div class="alert err">{_html.escape(error)}</div>' if error else ""
     extra_css = """
@@ -116,8 +116,21 @@ def render_app_shell(user_name: str, version: str, error: str = "") -> str:
     .topbar small { color:#667085; }
     .upload { border:1px dashed #98a2b3; border-radius:10px; padding:14px; background:#f8fafc; }
     .box { background:#f0f4f8; border:1px solid #d9e1ec; border-radius:10px; padding:14px; margin-top:18px; font-size:14px; color:#344054;}
+    .modebar { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:18px 0 12px; }
+    .mode-card { border:1px solid #d9e1ec; border-radius:12px; padding:16px; background:#fff; }
+    .mode-card h3 { margin:0 0 8px; font-size:16px; }
+    .mode-card p { margin:0 0 12px; font-size:14px; color:#475467; }
+    .mode-card a { display:inline-block; padding:11px 14px; border-radius:10px; font-weight:800; text-decoration:none; }
+    .mode-card a.primary { background:#102033; color:#fff; }
+    .mode-card a.secondary { background:#eef2ff; color:#1e3a8a; }
     """
     extra_head = f"<style>{extra_css}</style>"
+    linked_html = (
+        f'<div class="alert ok">Conta Mercado Livre vinculada: <b>{_html.escape(linked_client_name)}</b>. '
+        f'Voce ja pode abrir o modo online.</div>'
+        if linked_client_name else
+        '<div class="hint" style="margin-bottom:8px">Se sua conta ainda nao estiver vinculada, o modo online vai abrir a ativacao automaticamente.</div>'
+    )
     body = f"""
     <div class="topbar">
       <div>
@@ -132,7 +145,20 @@ def render_app_shell(user_name: str, version: str, error: str = "") -> str:
 
     <p>Envie a planilha de vendas do Mercado Livre e o relatorio de publicidade. O dashboard sera gerado na hora, sem alterar seus arquivos.</p>
     {err_html}
-    <form method="post" enctype="multipart/form-data" action="/gerar">
+    {linked_html}
+    <div class="modebar">
+      <div class="mode-card">
+        <h3>Modo online beta</h3>
+        <p>Abre o painel online usando a conta Mercado Livre vinculada. Se ainda nao existir vinculo, a ativacao com OAuth comeca automaticamente.</p>
+        <a class="primary" href="/online">Abrir online beta</a>
+      </div>
+      <div class="mode-card">
+        <h3>Modo offline</h3>
+        <p>Use dois XLSX: vendas + publicidade. Ideal para validacao manual, comparacao e cenarios sem conta vinculada.</p>
+        <a class="secondary" href="#offline-form">Usar uploads offline</a>
+      </div>
+    </div>
+    <form method="post" enctype="multipart/form-data" action="/gerar" id="offline-form">
       <label>1. Planilha de vendas do Mercado Livre</label>
       <input type="file" name="sales" accept=".xlsx" required class="upload">
       <div class="hint">Use o arquivo baixado direto do Mercado Livre. Se ele ja tiver abas consolidadas, o app aproveita automaticamente.</div>

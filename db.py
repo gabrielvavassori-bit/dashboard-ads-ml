@@ -81,6 +81,38 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     used_at    INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS user_ml_links (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id          INTEGER NOT NULL,
+    client_id        TEXT NOT NULL,
+    ml_user_id       TEXT,
+    nickname         TEXT,
+    official_store   TEXT,
+    advertiser_id    TEXT,
+    seller_id        TEXT,
+    site_id          TEXT,
+    status           TEXT NOT NULL DEFAULT 'active',
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL,
+    last_verified_at INTEGER,
+    UNIQUE(user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_ml_links_client  ON user_ml_links(client_id);
+CREATE INDEX IF NOT EXISTS idx_user_ml_links_status  ON user_ml_links(status);
+
+CREATE TABLE IF NOT EXISTS ml_link_states (
+    state_hash  TEXT PRIMARY KEY,
+    user_id     INTEGER NOT NULL,
+    return_to   TEXT NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL,
+    attached_at INTEGER,
+    used_at     INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS admins (
     email         TEXT PRIMARY KEY COLLATE NOCASE,
     password_hash TEXT NOT NULL,
@@ -199,6 +231,80 @@ def get_user_by_id(user_id: int):
     try:
         cur = conn.execute("SELECT * FROM users WHERE id=?", (user_id,))
         return cur.fetchone()
+    finally:
+        conn.close()
+
+
+def get_active_ml_link_for_user(user_id: int):
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """SELECT * FROM user_ml_links
+               WHERE user_id=? AND status='active'
+               ORDER BY updated_at DESC LIMIT 1""",
+            (user_id,),
+        )
+        return cur.fetchone()
+    finally:
+        conn.close()
+
+
+def upsert_user_ml_link(
+    user_id: int,
+    client_id: str,
+    ml_user_id: str = "",
+    nickname: str = "",
+    official_store: str = "",
+    advertiser_id: str = "",
+    seller_id: str = "",
+    site_id: str = "",
+    status: str = "active",
+):
+    conn = get_conn()
+    try:
+        ts = now()
+        conn.execute(
+            """INSERT INTO user_ml_links
+               (user_id, client_id, ml_user_id, nickname, official_store,
+                advertiser_id, seller_id, site_id, status, created_at, updated_at, last_verified_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                 client_id=excluded.client_id,
+                 ml_user_id=excluded.ml_user_id,
+                 nickname=excluded.nickname,
+                 official_store=excluded.official_store,
+                 advertiser_id=excluded.advertiser_id,
+                 seller_id=excluded.seller_id,
+                 site_id=excluded.site_id,
+                 status=excluded.status,
+                 updated_at=excluded.updated_at,
+                 last_verified_at=excluded.last_verified_at""",
+            (
+                user_id,
+                client_id,
+                ml_user_id,
+                nickname,
+                official_store,
+                advertiser_id,
+                seller_id,
+                site_id,
+                status,
+                ts,
+                ts,
+                ts,
+            ),
+        )
+    finally:
+        conn.close()
+
+
+def mark_user_ml_link_disconnected(user_id: int):
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE user_ml_links SET status='disconnected', updated_at=? WHERE user_id=?",
+            (now(), user_id),
+        )
     finally:
         conn.close()
 
@@ -426,6 +532,79 @@ def save_oauth_state(state: str, ttl_seconds: int = 600):
         )
     finally:
         conn.close()
+
+
+def save_ml_link_state(state: str, user_id: int, return_to: str = "/online", ttl_seconds: int = 900):
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    conn = get_conn()
+    try:
+        ts = now()
+        conn.execute("DELETE FROM ml_link_states WHERE expires_at < ?", (ts,))
+        conn.execute(
+            """INSERT OR REPLACE INTO ml_link_states
+               (state_hash, user_id, return_to, expires_at, created_at, attached_at, used_at)
+               VALUES (?,?,?,?,?,NULL,NULL)""",
+            (state_hash, user_id, return_to or "/online", ts + ttl_seconds, ts),
+        )
+    finally:
+        conn.close()
+
+
+def get_ml_link_state(state: str):
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """SELECT * FROM ml_link_states
+               WHERE state_hash=?""",
+            (state_hash,),
+        )
+        return cur.fetchone()
+    finally:
+        conn.close()
+
+
+def mark_ml_link_state_attached(state: str):
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE ml_link_states SET attached_at=? WHERE state_hash=?",
+            (now(), state_hash),
+        )
+    finally:
+        conn.close()
+
+
+def consume_ml_link_state(state: str):
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    with _lock:
+        conn = get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """SELECT * FROM ml_link_states
+                   WHERE state_hash=?""",
+                (state_hash,),
+            ).fetchone()
+            valid = bool(
+                row
+                and not row["used_at"]
+                and row["expires_at"] >= now()
+                and row["attached_at"]
+            )
+            if valid:
+                conn.execute(
+                    "UPDATE ml_link_states SET used_at=? WHERE state_hash=?",
+                    (now(), state_hash),
+                )
+            conn.execute("COMMIT")
+            return row if valid else None
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
 
 def consume_oauth_state(state: str) -> bool:
