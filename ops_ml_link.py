@@ -38,7 +38,7 @@ def bind_user(
 ):
     user = db.get_user_by_email(email)
     if not user:
-        raise SystemExit(f"Usuário não encontrado: {email}")
+        raise SystemExit(f"Usuario nao encontrado: {email}")
 
     db.upsert_user_ml_link(
         user["id"],
@@ -51,6 +51,29 @@ def bind_user(
         site_id=site_id,
         status="active",
     )
+    inspect_user(email)
+
+
+def verify_user(
+    email: str,
+    client_id: str,
+    ml_user_id: str,
+    advertiser_id: str,
+):
+    user = db.get_user_by_email(email)
+    if not user:
+        raise SystemExit(f"Usuario nao encontrado: {email}")
+    link = db.get_active_ml_link_for_user(user["id"])
+    if not link:
+        raise SystemExit(f"Vinculo ML nao encontrado para: {email}")
+    if client_id and (link["client_id"] or "") != client_id:
+        raise SystemExit(f"client_id divergente: esperado={client_id} atual={link['client_id']}")
+    if ml_user_id and str(link["ml_user_id"] or "") != str(ml_user_id):
+        raise SystemExit(f"ml_user_id divergente: esperado={ml_user_id} atual={link['ml_user_id']}")
+    if advertiser_id and str(link["advertiser_id"] or "") != str(advertiser_id):
+        raise SystemExit(
+            f"advertiser_id divergente: esperado={advertiser_id} atual={link['advertiser_id']}"
+        )
     inspect_user(email)
 
 
@@ -72,12 +95,27 @@ def main():
     bind_parser.add_argument("--seller-id", default="")
     bind_parser.add_argument("--site-id", default="MLB")
 
+    verify_parser = subparsers.add_parser("verify")
+    verify_parser.add_argument("--email", required=True)
+    verify_parser.add_argument("--client-id", default="")
+    verify_parser.add_argument("--ml-user-id", default="")
+    verify_parser.add_argument("--advertiser-id", default="")
+
     args = parser.parse_args()
+    email = args.email.strip().lower()
     if args.command == "inspect":
-        inspect_user(args.email.strip().lower())
+        inspect_user(email)
+        return
+    if args.command == "verify":
+        verify_user(
+            email=email,
+            client_id=(args.client_id or "").strip(),
+            ml_user_id=(args.ml_user_id or "").strip(),
+            advertiser_id=(args.advertiser_id or "").strip(),
+        )
         return
     bind_user(
-        email=args.email.strip().lower(),
+        email=email,
         client_id=args.client_id.strip(),
         ml_user_id=args.ml_user_id.strip(),
         nickname=args.nickname.strip(),
