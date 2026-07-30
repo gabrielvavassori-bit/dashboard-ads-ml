@@ -261,9 +261,22 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
         else:
             origin_label = '<span class="pill active">Eduzz</span>'
             origin_note = '<div style="font-size:12px;color:#667085">Controle atual pela Eduzz</div>'
+        ml_link_html = ""
+        if u.get("ml_link_label"):
+            ml_link_html = (
+                f'<div style="font-size:12px;color:#1e3a8a;margin-top:4px">'
+                f'Conta ML: <b>{_html.escape(u.get("ml_link_label") or "")}</b>'
+                f'</div>'
+            )
+            if u.get("ml_link_detail"):
+                ml_link_html += (
+                    f'<div style="font-size:11px;color:#667085">'
+                    f'{_html.escape(u.get("ml_link_detail") or "")}'
+                    f'</div>'
+                )
         rows.append(f"""
         <tr>
-          <td>{_html.escape(u['email'] or '')}<div style="font-size:12px;color:#667085">{_html.escape(u['name'] or '')}</div></td>
+          <td>{_html.escape(u['email'] or '')}<div style="font-size:12px;color:#667085">{_html.escape(u['name'] or '')}</div>{ml_link_html}</td>
           <td>{origin_label}{origin_note}</td>
           <td><span class="pill {status}">{status}</span></td>
           <td>{_html.escape(plan)}</td>
@@ -324,6 +337,49 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
         </div>
         <div>
           <button type="submit" style="margin-top:0;width:auto;white-space:nowrap">Criar / liberar</button>
+        </div>
+      </form>
+    </div>
+    <div style="border:1px solid #d9e1ec;border-radius:12px;padding:16px;margin:18px 0 22px;background:#f8fafc">
+      <div style="font-weight:800;font-size:16px;margin-bottom:6px">Vincular conta ML manualmente</div>
+      <div style="font-size:13px;color:#667085;margin-bottom:14px">
+        Use este bloco quando o OAuth estiver indisponivel ou quando voce precisar atrelar uma conta ML ja conhecida a um usuario especifico.
+      </div>
+      <form method="post" action="/admin/users/bind_ml_link" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:10px;align-items:end">
+        <div>
+          <label style="margin:0 0 6px">Email do usuario</label>
+          <input type="email" name="email" required placeholder="cliente@email.com">
+        </div>
+        <div>
+          <label style="margin:0 0 6px">Client ID</label>
+          <input type="text" name="client_id" required placeholder="conta-ativa">
+        </div>
+        <div>
+          <label style="margin:0 0 6px">ML user ID</label>
+          <input type="text" name="ml_user_id" placeholder="14252670">
+        </div>
+        <div>
+          <label style="margin:0 0 6px">Advertiser ID</label>
+          <input type="text" name="advertiser_id" placeholder="164424">
+        </div>
+        <div>
+          <label style="margin:0 0 6px">Nickname</label>
+          <input type="text" name="nickname" placeholder="LONAS_ONLINE">
+        </div>
+        <div>
+          <label style="margin:0 0 6px">Loja oficial</label>
+          <input type="text" name="official_store" placeholder="Lonas Online">
+        </div>
+        <div>
+          <label style="margin:0 0 6px">Seller ID</label>
+          <input type="text" name="seller_id" placeholder="opcional">
+        </div>
+        <div>
+          <label style="margin:0 0 6px">Site ID</label>
+          <input type="text" name="site_id" value="MLB" placeholder="MLB">
+        </div>
+        <div style="grid-column:1 / -1">
+          <button type="submit" style="margin-top:0;width:auto;white-space:nowrap">Vincular conta ML</button>
         </div>
       </form>
     </div>

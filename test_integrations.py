@@ -540,6 +540,44 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertGreater(user["expires_at"], int(app.time.time()) + (6 * 86400))
         raised.exception.close()
 
+    def test_admin_can_bind_ml_link_manually_for_existing_user(self):
+        user_id = db.upsert_manual_user(
+            email="lonas@example.com",
+            name="Lonas Online",
+            plan="cortesia",
+            status="active",
+            expires_at=None,
+        )
+        admin_cookie = self._admin_cookie()
+        payload = urlencode({
+            "email": "lonas@example.com",
+            "client_id": "conta-ativa",
+            "ml_user_id": "14252670",
+            "nickname": "LONAS_ONLINE",
+            "official_store": "Lonas Online",
+            "advertiser_id": "164424",
+            "site_id": "MLB",
+        }).encode("utf-8")
+        request = Request(
+            f"{self.base_url}/admin/users/bind_ml_link",
+            data=payload,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cookie": admin_cookie,
+            },
+            method="POST",
+        )
+        opener = self._no_redirect_opener()
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        link = db.get_active_ml_link_for_user(user_id)
+        self.assertIsNotNone(link)
+        self.assertEqual(link["client_id"], "conta-ativa")
+        self.assertEqual(link["ml_user_id"], "14252670")
+        self.assertEqual(link["advertiser_id"], "164424")
+        raised.exception.close()
+
     def test_admin_can_extend_existing_user_for_x_days(self):
         user_id = db.upsert_manual_user(
             email="renew@example.com",

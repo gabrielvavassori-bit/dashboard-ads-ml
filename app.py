@@ -19,6 +19,7 @@ Endpoints admin:
   POST /admin/login     -> processa
   GET  /admin/logout    -> sair
   POST /admin/users/manual_access
+  POST /admin/users/bind_ml_link
   POST /admin/users/<id>/reset_password
   POST /admin/users/<id>/grant_access
   POST /admin/users/<id>/set_status
@@ -454,7 +455,28 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 qs = parse_qs(url.query or "")
                 q = (qs.get("q", [""])[0] or "").strip()
-                users = db.list_users(q)
+                users = []
+                for raw_user in db.list_users(q):
+                    user = dict(raw_user)
+                    link = db.get_active_ml_link_for_user(user["id"])
+                    if link:
+                        user["ml_link_label"] = (
+                            link["official_store"]
+                            or link["nickname"]
+                            or link["client_id"]
+                            or ""
+                        )
+                        user["ml_link_detail"] = " | ".join(
+                            part for part in [
+                                link["client_id"] or "",
+                                link["ml_user_id"] or "",
+                                link["advertiser_id"] or "",
+                            ] if part
+                        )
+                    else:
+                        user["ml_link_label"] = ""
+                        user["ml_link_detail"] = ""
+                    users.append(user)
                 info = (qs.get("info", [""])[0] or "")
                 _send_html(self, templates.render_admin_users(users, q, info))
                 return
@@ -577,6 +599,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/admin/users/manual_access":
                 self._post_admin_manual_access()
+                return
+            if path == "/admin/users/bind_ml_link":
+                self._post_admin_bind_ml_link()
                 return
             if path.startswith("/admin/users/") and path.endswith("/reset_password"):
                 self._post_admin_reset_password(path)
@@ -949,6 +974,41 @@ class Handler(BaseHTTPRequestHandler):
         )
         db.log_audit(user_id, f"admin.manual_access:{days}d", admin["email"], _client_ip(self))
         _redirect(self, f"/admin?info=Acesso%20manual%20liberado%20por%20{days}%20dias")
+
+    def _post_admin_bind_ml_link(self):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        form = _parse_form(self)
+        email = (form.get("email", "") or "").strip().lower()
+        client_id = (form.get("client_id", "") or "").strip()
+        ml_user_id = (form.get("ml_user_id", "") or "").strip()
+        nickname = (form.get("nickname", "") or "").strip()
+        official_store = (form.get("official_store", "") or "").strip()
+        advertiser_id = (form.get("advertiser_id", "") or "").strip()
+        seller_id = (form.get("seller_id", "") or "").strip()
+        site_id = ((form.get("site_id", "") or "MLB").strip() or "MLB").upper()
+        if not email or not client_id:
+            _send_html(self, templates.render_error_page("Informe o email e o client_id da conta ML."), 400)
+            return
+        user = db.get_user_by_email(email)
+        if not user:
+            _send_html(self, templates.render_error_page("Usuario nao encontrado para este email."), 404)
+            return
+        db.upsert_user_ml_link(
+            user["id"],
+            client_id=client_id,
+            ml_user_id=ml_user_id,
+            nickname=nickname,
+            official_store=official_store,
+            advertiser_id=advertiser_id,
+            seller_id=seller_id,
+            site_id=site_id,
+            status="active",
+        )
+        db.log_audit(user["id"], f"admin.bind_ml_link:{client_id}", admin["email"], _client_ip(self))
+        _redirect(self, f"/admin?info=Conta%20ML%20vinculada%20com%20sucesso%20para%20{quote(email)}")
 
     def _post_admin_grant_access(self, path: str):
         admin, _ = _current_admin(self)
