@@ -191,6 +191,9 @@ def init_db():
             for column, statement in ml_link_migrations.items():
                 if column not in ml_link_columns:
                     conn.execute(statement)
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_ml_links_user_unique ON user_ml_links(user_id)"
+            )
             ml_state_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(ml_link_states)")
             }
