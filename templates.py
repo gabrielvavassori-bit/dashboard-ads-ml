@@ -131,6 +131,11 @@ def render_app_shell(user_name: str, version: str, error: str = "", linked_clien
         if linked_client_name else
         '<div class="hint" style="margin-bottom:8px">Se sua conta ainda nao estiver vinculada, o modo online vai abrir a ativacao automaticamente.</div>'
     )
+    beta_warning = """
+    <div class="alert err" style="margin-top:10px">
+      <b>Modo online em fase de testes.</b> Os dados ainda podem apresentar divergencias e nao devem ser tratados como 100% confiaveis sem validacao manual.
+    </div>
+    """
     body = f"""
     <div class="topbar">
       <div>
@@ -146,10 +151,11 @@ def render_app_shell(user_name: str, version: str, error: str = "", linked_clien
     <p>Envie a planilha de vendas do Mercado Livre e o relatorio de publicidade. O dashboard sera gerado na hora, sem alterar seus arquivos.</p>
     {err_html}
     {linked_html}
+    {beta_warning}
     <div class="modebar">
       <div class="mode-card">
         <h3>Modo online beta</h3>
-        <p>Abre o painel online usando a conta Mercado Livre vinculada. Se ainda nao existir vinculo, a ativacao com OAuth comeca automaticamente.</p>
+        <p>Abre o painel online usando a conta Mercado Livre vinculada. Se ainda nao existir vinculo, a ativacao com OAuth comeca automaticamente. Antes de seguir, o sistema exibe um alerta de beta e de possivel divergencia.</p>
         <a class="primary" href="/online">Abrir online beta</a>
       </div>
       <div class="mode-card">
@@ -174,6 +180,30 @@ def render_app_shell(user_name: str, version: str, error: str = "", linked_clien
     </div>
     """
     return _layout("Painel", body, extra_head)
+
+
+def render_online_beta_warning(linked_client_name: str = "") -> str:
+    linked_html = (
+        f'<div class="alert ok">Conta Mercado Livre vinculada: <b>{_html.escape(linked_client_name)}</b>.</div>'
+        if linked_client_name else
+        '<div class="hint">Se a conta ainda nao estiver vinculada, ao continuar o fluxo abrira a ativacao automaticamente.</div>'
+    )
+    body = f"""
+    <h1>Modo online beta</h1>
+    <p>Voce esta entrando no fluxo online com dados reais.</p>
+    <div class="alert err">
+      <b>Atencao:</b> este modo esta em fase de testes. Os dados podem apresentar divergencias de conciliacao, variacoes de corte de periodo e leituras ainda nao homologadas.
+    </div>
+    <div class="alert err">
+      Use este modo para validacao assistida. Antes de tomar decisao comercial, confira as informacoes mais sensiveis no Mercado Livre ou no relatorio detalhado offline.
+    </div>
+    {linked_html}
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px">
+      <a href="/online?confirmed=1" style="display:inline-block;padding:13px 18px;border-radius:10px;background:#102033;color:#fff;font-weight:800;text-decoration:none">Continuar mesmo assim</a>
+      <a href="/" style="display:inline-block;padding:13px 18px;border-radius:10px;border:1px solid #cfd6e4;color:#102033;font-weight:800;text-decoration:none">Voltar ao painel</a>
+    </div>
+    """
+    return _layout("Modo online beta", body)
 
 
 def render_error_page(message: str, traceback_text: str = "") -> str:
@@ -221,9 +251,20 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
         status = u["status"] or "pending"
         plan = (u["plan"] or "")[:30]
         has_pwd = "sim" if u["password_hash"] else "nao"
+        origin = u["access_origin"] or "eduzz"
+        if origin == "manual":
+            origin_label = '<span class="pill pending">Manual</span>'
+            origin_note = '<div style="font-size:12px;color:#974b00">Acesso de teste / cortesia</div>'
+        elif origin == "manual_promoted_eduzz":
+            origin_label = '<span class="pill active">Manual -> Eduzz</span>'
+            origin_note = '<div style="font-size:12px;color:#1b5e20">Teste convertido; controle atual pela Eduzz</div>'
+        else:
+            origin_label = '<span class="pill active">Eduzz</span>'
+            origin_note = '<div style="font-size:12px;color:#667085">Controle atual pela Eduzz</div>'
         rows.append(f"""
         <tr>
           <td>{_html.escape(u['email'] or '')}<div style="font-size:12px;color:#667085">{_html.escape(u['name'] or '')}</div></td>
+          <td>{origin_label}{origin_note}</td>
           <td><span class="pill {status}">{status}</span></td>
           <td>{_html.escape(plan)}</td>
           <td>{fmt_ts(u['expires_at'])}</td>
@@ -236,6 +277,10 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
             <form method="post" action="/admin/users/{u['id']}/set_status">
               <input type="hidden" name="status" value="active">
               <button type="submit">Ativar</button>
+            </form>
+            <form method="post" action="/admin/users/{u['id']}/grant_access" style="display:inline-flex;align-items:center;gap:6px">
+              <input type="number" name="days" value="7" min="1" max="365" style="width:76px;padding:6px 8px;border:1px solid #cfd6e4;border-radius:8px">
+              <button type="submit">Liberar X dias</button>
             </form>
             <form method="post" action="/admin/users/{u['id']}/set_status">
               <input type="hidden" name="status" value="suspended">
@@ -255,12 +300,39 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
       <input type="text" name="q" value="{_html.escape(query)}" placeholder="Buscar por email ou nome">
       <button type="submit" style="width:auto;display:inline-block;margin-left:8px">Buscar</button>
     </form>
+    <div style="border:1px solid #d9e1ec;border-radius:12px;padding:16px;margin:18px 0 22px;background:#f8fafc">
+      <div style="font-weight:800;font-size:16px;margin-bottom:6px">Liberar acesso manual</div>
+      <div style="font-size:13px;color:#667085;margin-bottom:14px">
+        Ideal para teste, cortesia ou liberar um cliente por um periodo especifico sem depender da Eduzz.
+      </div>
+      <form method="post" action="/admin/users/manual_access" style="display:grid;grid-template-columns:2fr 1.5fr 1fr 1fr auto;gap:10px;align-items:end">
+        <div>
+          <label style="margin:0 0 6px">Email</label>
+          <input type="email" name="email" required placeholder="cliente@email.com">
+        </div>
+        <div>
+          <label style="margin:0 0 6px">Nome</label>
+          <input type="text" name="name" placeholder="Nome do cliente">
+        </div>
+        <div>
+          <label style="margin:0 0 6px">Plano</label>
+          <input type="text" name="plan" value="cortesia" placeholder="cortesia">
+        </div>
+        <div>
+          <label style="margin:0 0 6px">Dias</label>
+          <input type="number" name="days" value="7" min="1" max="365">
+        </div>
+        <div>
+          <button type="submit" style="margin-top:0;width:auto;white-space:nowrap">Criar / liberar</button>
+        </div>
+      </form>
+    </div>
     <table>
       <thead>
-        <tr><th>Email/Nome</th><th>Status</th><th>Plano</th><th>Expira em</th><th>Senha?</th><th>Criado</th><th>Acoes</th></tr>
+        <tr><th>Email/Nome</th><th>Origem</th><th>Status</th><th>Plano</th><th>Expira em</th><th>Senha?</th><th>Criado</th><th>Acoes</th></tr>
       </thead>
       <tbody>
-        {''.join(rows) if rows else '<tr><td colspan="7" style="text-align:center;color:#667085;padding:24px">Nenhum cliente encontrado.</td></tr>'}
+        {''.join(rows) if rows else '<tr><td colspan="8" style="text-align:center;color:#667085;padding:24px">Nenhum cliente encontrado.</td></tr>'}
       </tbody>
     </table>
     """

@@ -12,7 +12,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 
@@ -155,6 +155,24 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(second["status"], 200)
         self.assertEqual(db.get_webhook_event("event-retry")["status"], "processed")
 
+    def test_manual_user_is_promoted_to_eduzz_on_paid_webhook(self):
+        db.upsert_manual_user(
+            email="manual2eduzz@example.com",
+            name="Manual Antes",
+            plan="cortesia",
+            status="active",
+            expires_at=int(app.time.time()) + (7 * 86400),
+        )
+        custom_payload = payload("event-manual-promote", "myeduzz.invoice_paid")
+        custom_payload["data"]["buyer"]["email"] = "manual2eduzz@example.com"
+        raw, signature = signed(custom_payload)
+        result = webhook.process_event(raw, signature)
+        user = db.get_user_by_email("manual2eduzz@example.com")
+        self.assertEqual(result["status"], 200)
+        self.assertEqual(user["status"], "active")
+        self.assertEqual(user["access_origin"], "manual_promoted_eduzz")
+        self.assertEqual(user["eduzz_contract_id"], "contract-1")
+
     def test_invalid_signature_is_rejected(self):
         raw, _ = signed(payload("event-signature", "myeduzz.invoice_paid"))
         result = webhook.process_event(raw, "invalid")
@@ -273,6 +291,11 @@ class HTTPRouteTests(unittest.TestCase):
         db.create_session(user_id, token, "127.0.0.1", "tests")
         return user_id, f"{auth.SESSION_COOKIE}={token}"
 
+    def _admin_cookie(self):
+        db.ensure_admin("admin@example.com", auth.hash_password("123456"))
+        token = auth.create_admin_session("admin@example.com")
+        return f"{auth.ADMIN_COOKIE}={token}"
+
     def _no_redirect_opener(self):
         class NoRedirect(HTTPRedirectHandler):
             def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -385,7 +408,7 @@ class HTTPRouteTests(unittest.TestCase):
             advertiser_id="164424",
         )
         opener = self._no_redirect_opener()
-        request = Request(f"{self.base_url}/online", headers={"Cookie": cookie}, method="GET")
+        request = Request(f"{self.base_url}/online?confirmed=1", headers={"Cookie": cookie}, method="GET")
         with self.assertRaises(HTTPError) as raised:
             opener.open(request, timeout=5)
         self.assertEqual(raised.exception.code, 302)
@@ -395,10 +418,27 @@ class HTTPRouteTests(unittest.TestCase):
         )
         raised.exception.close()
 
+    def test_online_requires_beta_confirmation_before_redirect(self):
+        user_id, cookie = self._login_cookie("warn@example.com")
+        db.upsert_user_ml_link(
+            user_id,
+            client_id="conta-aviso",
+            ml_user_id="14252670",
+            nickname="LONAS_ONLINE",
+            advertiser_id="164424",
+        )
+        request = Request(f"{self.base_url}/online", headers={"Cookie": cookie}, method="GET")
+        with urlopen(request, timeout=5) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        self.assertEqual(response.status, 200)
+        self.assertIn("Modo online beta", body)
+        self.assertIn("fase de testes", body)
+        self.assertIn("/online?confirmed=1", body)
+
     def test_internal_ml_link_attach_and_finish_flow(self):
         user_id, cookie = self._login_cookie("attach@example.com")
         bridge_state = "mlink-test-state"
-        db.save_ml_link_state(bridge_state, user_id, return_to="/online")
+        db.save_ml_link_state(bridge_state, user_id, return_to="/online?confirmed=1")
         payload = json.dumps({
             "bridge_state": bridge_state,
             "client_id": "conta-ativa",
@@ -433,8 +473,89 @@ class HTTPRouteTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as raised:
             opener.open(finish_request, timeout=5)
         self.assertEqual(raised.exception.code, 302)
-        self.assertEqual(raised.exception.headers.get("Location"), "/online")
+        self.assertEqual(raised.exception.headers.get("Location"), "/online?confirmed=1")
         raised.exception.close()
+
+    def test_admin_can_create_manual_access_with_expiration(self):
+        admin_cookie = self._admin_cookie()
+        payload = urlencode({
+            "email": "manual@example.com",
+            "name": "Manual Teste",
+            "plan": "cortesia",
+            "days": "7",
+        }).encode("utf-8")
+        request = Request(
+            f"{self.base_url}/admin/users/manual_access",
+            data=payload,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cookie": admin_cookie,
+            },
+            method="POST",
+        )
+        opener = self._no_redirect_opener()
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        user = db.get_user_by_email("manual@example.com")
+        self.assertIsNotNone(user)
+        self.assertEqual(user["status"], "active")
+        self.assertEqual(user["plan"], "cortesia")
+        self.assertGreater(user["expires_at"], int(app.time.time()) + (6 * 86400))
+        raised.exception.close()
+
+    def test_admin_can_extend_existing_user_for_x_days(self):
+        user_id = db.upsert_manual_user(
+            email="renew@example.com",
+            name="Cliente Renovado",
+            plan="cortesia",
+            status="suspended",
+            expires_at=None,
+        )
+        admin_cookie = self._admin_cookie()
+        payload = urlencode({"days": "15"}).encode("utf-8")
+        request = Request(
+            f"{self.base_url}/admin/users/{user_id}/grant_access",
+            data=payload,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cookie": admin_cookie,
+            },
+            method="POST",
+        )
+        opener = self._no_redirect_opener()
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        user = db.get_user_by_id(user_id)
+        self.assertEqual(user["status"], "active")
+        self.assertGreater(user["expires_at"], int(app.time.time()) + (14 * 86400))
+        raised.exception.close()
+
+    def test_manual_user_keeps_manual_origin_after_admin_extension(self):
+        user_id = db.upsert_manual_user(
+            email="manual-origin@example.com",
+            name="Origem Manual",
+            plan="cortesia",
+            status="active",
+            expires_at=None,
+        )
+        admin_cookie = self._admin_cookie()
+        payload = urlencode({"days": "10"}).encode("utf-8")
+        request = Request(
+            f"{self.base_url}/admin/users/{user_id}/grant_access",
+            data=payload,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cookie": admin_cookie,
+            },
+            method="POST",
+        )
+        opener = self._no_redirect_opener()
+        with self.assertRaises(HTTPError):
+            opener.open(request, timeout=5)
+        user = db.get_user_by_id(user_id)
+        self.assertEqual(user["access_origin"], "manual")
 
 
 if __name__ == "__main__":

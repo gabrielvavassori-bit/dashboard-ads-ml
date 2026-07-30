@@ -117,6 +117,79 @@ def text(value):
     return "" if value is None else str(value).strip()
 
 
+def deduplicate_ads_rows(ads_rows):
+    deduped_rows = []
+    seen = {}
+    duplicate_examples = []
+    removed_rows = 0
+    removed_revenue = 0.0
+    removed_investment = 0.0
+    removed_clicks = 0.0
+    removed_impressions = 0.0
+    removed_sales = 0.0
+
+    for row_number, row in ads_rows:
+        if row_number < 3:
+            deduped_rows.append((row_number, row))
+            continue
+        code = text(row.get(5)).upper()
+        if not code.startswith("MLB"):
+            deduped_rows.append((row_number, row))
+            continue
+        key = tuple(row.get(col, "") for col in range(1, 21))
+        first_seen_row = seen.get(key)
+        if first_seen_row is not None:
+            removed_rows += 1
+            removed_revenue += number(row.get(12))
+            removed_investment += number(row.get(13))
+            removed_impressions += number(row.get(7))
+            removed_clicks += number(row.get(8))
+            removed_sales += number(row.get(18))
+            if len(duplicate_examples) < 12:
+                duplicate_examples.append({
+                    "code": code,
+                    "campaign": text(row.get(3)),
+                    "status": text(row.get(6)),
+                    "firstRow": first_seen_row,
+                    "removedRow": row_number,
+                    "adsRevenue": number(row.get(12)),
+                    "investment": number(row.get(13)),
+                })
+            continue
+        seen[key] = row_number
+        deduped_rows.append((row_number, row))
+    return deduped_rows, {
+        "hasDuplicates": removed_rows > 0,
+        "removedRows": removed_rows,
+        "removedRevenue": removed_revenue,
+        "removedInvestment": removed_investment,
+        "removedImpressions": removed_impressions,
+        "removedClicks": removed_clicks,
+        "removedAdsSales": removed_sales,
+        "examples": duplicate_examples,
+    }
+
+
+def detect_ads_period(ads_rows):
+    date_from = None
+    date_to = None
+    for row_number, row in ads_rows:
+        if row_number < 3:
+            continue
+        raw_from = text(row.get(1))
+        raw_to = text(row.get(2))
+        if re.match(r"\d{1,2}-[A-Za-z]{3}-\d{4}", raw_from):
+            parsed_from = datetime.strptime(raw_from, "%d-%b-%Y")
+            date_from = parsed_from if date_from is None or parsed_from < date_from else date_from
+        if re.match(r"\d{1,2}-[A-Za-z]{3}-\d{4}", raw_to):
+            parsed_to = datetime.strptime(raw_to, "%d-%b-%Y")
+            date_to = parsed_to if date_to is None or parsed_to > date_to else date_to
+    return {
+        "dateFrom": date_from.strftime("%Y-%m-%d") if date_from else "",
+        "dateTo": date_to.strftime("%Y-%m-%d") if date_to else "",
+    }
+
+
 def parse_ml_date(value):
     raw = text(value).lower()
     if not raw:
@@ -666,6 +739,8 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
         sales_source = "virgem"
 
     ads_rows = read_sheet(ads_file, ads_sheet)
+    ads_period = detect_ads_period(ads_rows)
+    ads_rows, ads_deduplication = deduplicate_ads_rows(ads_rows)
     ads = {}
     for row_number, row in ads_rows:
         if row_number < 3:
@@ -682,6 +757,8 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
             "impressions": 0,
             "clicks": 0,
             "adsRevenue": 0,
+            "adsDirectRevenue": 0,
+            "adsIndirectRevenue": 0,
             "investment": 0,
             "adsSales": 0,
         })
@@ -696,6 +773,8 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
         target["impressions"] += number(row.get(7))
         target["clicks"] += number(row.get(8))
         target["adsRevenue"] += number(row.get(12))
+        target["adsDirectRevenue"] += number(row.get(19))
+        target["adsIndirectRevenue"] += number(row.get(20))
         target["investment"] += number(row.get(13))
         target["adsSales"] += number(row.get(18))
 
@@ -703,15 +782,26 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
     for code, item in sales.items():
         ad = ads.get(code, {})
         item = dict(item)
-        item["adsRevenue"] = ad.get("adsRevenue", item["indirectRevenue"])
+        ads_direct_revenue = ad.get("adsDirectRevenue", 0) or 0
+        ads_indirect_revenue = ad.get("adsIndirectRevenue", 0) or 0
+        ads_total_revenue = ads_direct_revenue + ads_indirect_revenue
+        if ads_total_revenue <= 0:
+            ads_total_revenue = ad.get("adsRevenue", item["indirectRevenue"]) or 0
+        item["adsDirectRevenue"] = ads_direct_revenue
+        item["adsIndirectRevenue"] = ads_indirect_revenue
+        item["adsRevenue"] = ads_total_revenue
         item["adsInvestmentRaw"] = ad.get("investment", item["investment"])
-        item["indirectRevenue"] = ad.get("adsRevenue", item["indirectRevenue"])
-        # Receita total para TACOS deve seguir a venda bruta/receita do relatorio de vendas.
-        # A receita atribuida pelo ADS fica separada para ROAS, evitando dupla contagem.
+        item["indirectRevenue"] = item.get("indirectRevenue", 0)
         item["totalRevenue"] = item["productRevenue"]
         item["investment"] = ad.get("investment", item["investment"])
-        item["tacos"] = item["investment"] / item["totalRevenue"] if item["totalRevenue"] else 0
+        item["organicRevenue"] = max(0, (item["totalRevenue"] or 0) - (item["adsDirectRevenue"] or 0))
+        item["tacosBaseRevenue"] = (item["organicRevenue"] or 0) + (item["adsDirectRevenue"] or 0) + (item["adsIndirectRevenue"] or 0)
+        item["tacos"] = item["investment"] / item["tacosBaseRevenue"] if item["tacosBaseRevenue"] else 0
         item["roas"] = item["adsRevenue"] / item["investment"] if item["investment"] else 0
+        item["revenueOutsideAds"] = item["organicRevenue"]
+        item["adsDependencyRatio"] = ((item["adsDirectRevenue"] or 0) / item["totalRevenue"]) if item["totalRevenue"] else 0
+        item["outsideAdsRatio"] = (item["organicRevenue"] / item["totalRevenue"]) if item["totalRevenue"] else 0
+        item["adsAttributedRatio"] = ((item["adsRevenue"] or 0) / item["totalRevenue"]) if item["totalRevenue"] else 0
         item["impressions"] = ad.get("impressions", 0)
         item["clicks"] = ad.get("clicks", 0)
         item["adsSales"] = ad.get("adsSales", 0)
@@ -756,9 +846,17 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
                 "investment": ad["investment"],
                 "tacos": 0,
                 "roas": 0,
+                "adsDirectRevenue": ad.get("adsDirectRevenue", 0) or 0,
+                "adsIndirectRevenue": ad.get("adsIndirectRevenue", 0) or 0,
+                "organicRevenue": 0,
+                "tacosBaseRevenue": 0,
+                "revenueOutsideAds": 0,
+                "adsDependencyRatio": 0,
+                "outsideAdsRatio": 0,
+                "adsAttributedRatio": 0,
                 "campaign": ", ".join(sorted(ad["campaigns"])),
                 "campaignStatus": "Ativa" if ad.get("activeCampaigns") else "Sem campanha ativa",
-                "adsRevenue": ad["adsRevenue"],
+                "adsRevenue": ((ad.get("adsDirectRevenue", 0) or 0) + (ad.get("adsIndirectRevenue", 0) or 0)) or ad["adsRevenue"],
                 "impressions": ad["impressions"],
                 "clicks": ad["clicks"],
                 "adsSales": ad["adsSales"],
@@ -793,6 +891,9 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
     total_revenue = sum(item["totalRevenue"] for item in items)
     total_investment = sum(item["investment"] for item in items)
     total_ads_revenue = sum(item.get("adsRevenue", 0) for item in items)
+    total_ads_direct_revenue = sum(item.get("adsDirectRevenue", 0) for item in items)
+    total_organic_revenue = sum(item.get("organicRevenue", 0) for item in items)
+    total_tacos_base_revenue = sum(item.get("tacosBaseRevenue", 0) for item in items)
     total_clicks = sum(item.get("clicks", 0) for item in all_decision_items)
     total_ads_sales = sum(item.get("adsSales", 0) for item in all_decision_items)
     kpis = {
@@ -802,10 +903,13 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
         "units": sum(item["units"] for item in items),
         "revenue": total_revenue,
         "adsRevenue": total_ads_revenue,
+        "adsDirectRevenue": total_ads_direct_revenue,
+        "organicRevenue": total_organic_revenue,
+        "tacosBaseRevenue": total_tacos_base_revenue,
         "investment": total_investment,
         "investmentNoAdsSales": sum(item["investment"] for item in all_decision_items if item["investment"] > 0 and item.get("adsRevenue", 0) <= 0),
         "cvr": total_ads_sales / total_clicks if total_clicks else 0,
-        "tacos": total_investment / total_revenue if total_revenue else 0,
+        "tacos": total_investment / total_tacos_base_revenue if total_tacos_base_revenue else 0,
         "roas": total_ads_revenue / total_investment if total_investment else 0,
         "adsNoSales": len([item for item in all_decision_items if item["investment"] > 0 and item.get("adsRevenue", 0) <= 0]),
         "adsOnlyNoTotalSales": len(ads_only),
@@ -814,6 +918,10 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
     }
     return {
         "kpis": kpis,
+        "meta": {
+            "period": ads_period,
+            "adsDeduplication": ads_deduplication,
+        },
         "items": sorted(all_decision_items, key=lambda item: (
             0 if not item.get("sku") else
             1 if item["action"] == "Investigar urgente" else
@@ -999,6 +1107,10 @@ def render_dashboard(data):
     .sortbtn:hover {{ color:var(--navy); text-decoration:underline; }}
     input {{ width:280px; border:1px solid var(--line); border-radius:8px; padding:10px 12px; }}
     .note {{ color:var(--muted); font-size:13px; margin-top:8px; }}
+    .beta-grid {{ display:grid; grid-template-columns:repeat(4,minmax(180px,1fr)); gap:10px; margin-bottom:12px; }}
+    .status-ok {{ color:var(--green); font-weight:800; }}
+    .status-warn {{ color:var(--orange); font-weight:800; }}
+    .status-bad {{ color:var(--red); font-weight:800; }}
     @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} }}
   </style>
 </head>
@@ -1025,6 +1137,7 @@ def render_dashboard(data):
     <nav class="page-nav" aria-label="Visoes do dashboard">
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
       <button class="page-tab" data-view="abc" type="button">Curva ABC</button>
+      <button class="page-tab" data-view="online-beta" type="button">Online Beta</button>
     </nav>
     <section class="view active" id="view-operational">
       <section class="grid">
@@ -1097,12 +1210,27 @@ def render_dashboard(data):
         <div class="scroll-frame" id="abcTable"></div>
       </section>
     </section>
+    <section class="view" id="view-online-beta">
+      <section class="card">
+        <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
+          <div>
+            <h2>Online Beta</h2>
+            <p class="note">Leitura somente consulta para comparar o XLSX com o dado autenticado do cliente no agente-ml. Nao altera cache, campanha nem planilha.</p>
+          </div>
+          <div class="muted" id="onlineBetaPeriod"></div>
+        </div>
+        <div class="beta-grid" id="onlineBetaSummary"></div>
+        <div id="onlineBetaStatus" class="note"></div>
+        <div class="scroll-frame" id="onlineBetaTable" style="margin-top:12px"></div>
+      </section>
+    </section>
   </main>
   <script>
     const DATA = {payload};
     const brl = value => value.toLocaleString('pt-BR', {{ style:'currency', currency:'BRL' }});
     const pct = value => (value * 100).toLocaleString('pt-BR', {{ minimumFractionDigits:2, maximumFractionDigits:2 }}) + '%';
     const num = value => value.toLocaleString('pt-BR', {{ maximumFractionDigits:0 }});
+    const safe = value => String(value || '').replace(/[&<>"]/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[ch]));
     let current = 'items';
     let sortState = {{ key:'investment', direction:1 }};
     let abcMode = 'sku';
@@ -1461,8 +1589,9 @@ def render_dashboard(data):
         ['Produtos analisados', num(k.products), ''],
         ['Receita total', brl(k.revenue), 'good'],
         ['Receita atribuida ADS', brl(k.adsRevenue), ''],
+        ['Receita organica estimada', brl(k.organicRevenue || 0), ''],
         ['Investimento ADS', brl(k.investment), ''],
-        ['CVR ADS geral', pct(k.cvr), ''],
+        ['Base TACOS comercial', brl(k.tacosBaseRevenue || 0), ''],
         ['TACOS geral', pct(k.tacos), k.tacos > .03 ? 'danger' : 'good'],
         ['ROAS geral', k.roas.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}}), ''],
         ['Investiu sem venda ADS', num(k.adsNoSales), k.adsNoSales ? 'danger' : 'good'],
@@ -1570,6 +1699,62 @@ def render_dashboard(data):
         }});
       }});
     }}
+    function renderOnlineBeta() {{
+      const beta = DATA.onlineBeta || {{}};
+      const summaryNode = document.getElementById('onlineBetaSummary');
+      const statusNode = document.getElementById('onlineBetaStatus');
+      const periodNode = document.getElementById('onlineBetaPeriod');
+      const tableNode = document.getElementById('onlineBetaTable');
+      if (!beta.enabled) {{
+        summaryNode.innerHTML = '';
+        periodNode.textContent = 'Online Beta indisponivel nesta analise.';
+        statusNode.textContent = 'Preencha o cliente ML no envio para habilitar a leitura online autenticada.';
+        tableNode.innerHTML = '';
+        return;
+      }}
+      const periodMatch = !!beta.periodMatch;
+      const periodText = `XLSX: ${{beta.xlsxPeriod?.dateFrom || '-'}} a ${{beta.xlsxPeriod?.dateTo || '-'}} | API/cache: ${{beta.apiPeriod?.dateFrom || '-'}} a ${{beta.apiPeriod?.dateTo || '-'}}`;
+      periodNode.textContent = periodText;
+      const summary = beta.summary || {{}};
+      summaryNode.innerHTML = [
+        ['Cliente', beta.client || '-', ''],
+        ['Advertiser', beta.advertiserId || '-', ''],
+        ['Itens OK', num(summary.matchedItems || 0), 'good'],
+        ['Itens divergentes', num((summary.divergentItems || 0) + (summary.missingItems || 0)), (summary.divergentItems || summary.missingItems) ? 'danger' : 'good'],
+      ].map(([label, value, cls]) => `<div class="card kpi ${{cls}}"><small>${{label}}</small><strong>${{value}}</strong></div>`).join('');
+      const latest = beta.latest || {{}};
+      const latestAds = latest.ads || {{}};
+      const latestSales = latest.latest?.sales || latest.sales || {{}};
+      statusNode.innerHTML = `
+        <span class="${{periodMatch ? 'status-ok' : 'status-warn'}}">${{periodMatch ? 'Periodo padronizado entre XLSX e leitura online.' : 'Periodo online diferente do XLSX; reconciliacao precisa ser lida com cautela.'}}</span><br>
+        Cache online: ${{safe(latest.latest?.updated_at || latest.updated_at || '-')}} | Ads online: ${{num(latestAds.items_total || 0)}} linhas | Vendas online em cache: ${{num(latestSales.items_cached || 0)}} itens.
+      `;
+      const rows = (beta.items || []).map(item => `
+        <tr>
+          <td><span class="code">${{safe(item.code)}}</span><div class="muted">${{safe(item.sku || '')}}</div></td>
+          <td>${{safe(item.xlsxCampaign || '-')}}<div class="muted">API campanha: ${{safe(item.apiCampaign || '-')}}</div></td>
+          <td class="num">${{brl(item.xlsxAdsRevenue || 0)}}<div class="muted">dir ${{brl(item.xlsxDirectRevenue || 0)}} | ind ${{brl(item.xlsxIndirectRevenue || 0)}}</div></td>
+          <td class="num">${{brl(item.apiAdsRevenue || 0)}}<div class="muted">dir ${{brl(item.apiDirectRevenue || 0)}} | ind ${{brl(item.apiIndirectRevenue || 0)}}</div></td>
+          <td class="num">${{brl(item.xlsxInvestment || 0)}}</td>
+          <td class="num">${{brl(item.apiInvestment || 0)}}</td>
+          <td class="num">${{num(item.xlsxClicks || 0)}}</td>
+          <td class="num">${{num(item.apiClicks || 0)}}</td>
+          <td class="num">${{brl(item.revenueDelta || 0)}}</td>
+          <td><span class="${{item.status === 'OK' ? 'status-ok' : (item.status === 'Divergente' ? 'status-bad' : 'status-warn')}}">${{safe(item.status)}}</span></td>
+        </tr>
+      `).join('');
+      tableNode.innerHTML = `
+        <table class="ops-table">
+          <colgroup>
+            <col style="width:150px"><col style="width:260px"><col style="width:150px"><col style="width:150px"><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:90px"><col style="width:110px"><col style="width:120px">
+          </colgroup>
+          <thead><tr>
+            <th>MLB</th><th>Campanha</th><th class="num">XLSX receita ADS</th><th class="num">API receita ADS</th><th class="num">XLSX invest.</th><th class="num">API invest.</th><th class="num">XLSX cliques</th><th class="num">API cliques</th><th class="num">Delta receita</th><th>Status</th>
+          </tr></thead>
+          <tbody>${{rows || '<tr><td colspan="10">Nenhum item reconciliado nesta analise.</td></tr>'}}</tbody>
+        </table>
+      `;
+    }}
     document.querySelectorAll('button[data-tab]').forEach(button => {{
       button.addEventListener('click', () => {{
         document.querySelectorAll('button[data-tab]').forEach(b => b.classList.remove('active'));
@@ -1620,7 +1805,7 @@ def render_dashboard(data):
     document.getElementById('downloadHtml').addEventListener('click', downloadDashboardHtml);
     document.getElementById('search').addEventListener('input', renderTable);
     document.getElementById('abcSearch').addEventListener('input', renderAbc);
-    renderKpis(); renderAbc(); renderAlerts(); renderTable();
+    renderKpis(); renderAbc(); renderAlerts(); renderTable(); renderOnlineBeta();
   </script>
 </body>
 </html>"""

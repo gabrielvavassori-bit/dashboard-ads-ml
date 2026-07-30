@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS users (
     name              TEXT,
     eduzz_buyer_id    TEXT,
     eduzz_contract_id TEXT,
+    access_origin     TEXT NOT NULL DEFAULT 'eduzz',
     plan              TEXT,
     status            TEXT NOT NULL DEFAULT 'pending',  -- pending | active | suspended | refunded | expired
     expires_at        INTEGER,                          -- timestamp unix; NULL = sem expiração
@@ -161,6 +162,20 @@ def init_db():
                 """CREATE INDEX IF NOT EXISTS idx_webhook_events_status
                    ON webhook_events(status)"""
             )
+            user_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(users)")
+            }
+            if "access_origin" not in user_columns:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN access_origin TEXT NOT NULL DEFAULT 'eduzz'"
+                )
+                conn.execute(
+                    """UPDATE users
+                       SET access_origin=CASE
+                         WHEN COALESCE(eduzz_buyer_id,'')<>'' OR COALESCE(eduzz_contract_id,'')<>'' THEN 'eduzz'
+                         ELSE 'manual'
+                       END"""
+                )
         finally:
             conn.close()
 
@@ -186,31 +201,75 @@ def upsert_user_from_webhook(
         return None
     conn = get_conn()
     try:
-        cur = conn.execute("SELECT id, password_hash FROM users WHERE email=?", (email,))
+        cur = conn.execute("SELECT id, access_origin FROM users WHERE email=?", (email,))
         row = cur.fetchone()
         ts = now()
         if row:
+            access_origin = "manual_promoted_eduzz" if row["access_origin"] == "manual" else "eduzz"
             conn.execute(
                 """UPDATE users
                    SET name=COALESCE(?, name),
                        eduzz_buyer_id=COALESCE(?, eduzz_buyer_id),
                        eduzz_contract_id=COALESCE(?, eduzz_contract_id),
+                       access_origin=?,
                        plan=COALESCE(?, plan),
                        status=?,
                        expires_at=?,
                        updated_at=?
                    WHERE id=?""",
-                (name, buyer_id, contract_id, plan, status, expires_at, ts, row["id"]),
+                (name, buyer_id, contract_id, access_origin, plan, status, expires_at, ts, row["id"]),
             )
             return row["id"]
         else:
             cur = conn.execute(
                 """INSERT INTO users
-                   (email, name, eduzz_buyer_id, eduzz_contract_id, plan, status, expires_at, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
-                (email, name, buyer_id, contract_id, plan, status, expires_at, ts, ts),
+                   (email, name, eduzz_buyer_id, eduzz_contract_id, access_origin, plan, status, expires_at, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (email, name, buyer_id, contract_id, "eduzz", plan, status, expires_at, ts, ts),
             )
             return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def upsert_manual_user(
+    email: str,
+    name: str = "",
+    plan: str = "",
+    status: str = "active",
+    expires_at=None,
+):
+    """Cria ou atualiza um usuario manualmente pelo painel admin."""
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    name = (name or "").strip()
+    plan = (plan or "").strip()
+    conn = get_conn()
+    try:
+        cur = conn.execute("SELECT id FROM users WHERE email=?", (email,))
+        row = cur.fetchone()
+        ts = now()
+        if row:
+            conn.execute(
+                """UPDATE users
+                   SET name=?,
+                       access_origin='manual',
+                       plan=?,
+                       status=?,
+                       expires_at=?,
+                       updated_at=?
+                   WHERE id=?""",
+                (name or None, plan or None, status, expires_at, ts, row["id"]),
+            )
+            return row["id"]
+        cur = conn.execute(
+            """INSERT INTO users
+               (email, name, access_origin, plan, status, expires_at, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (email, name or None, "manual", plan or None, status, expires_at, ts, ts),
+        )
+        return cur.lastrowid
     finally:
         conn.close()
 
@@ -428,6 +487,17 @@ def webhook_event_seen(event_id: str) -> bool:
         )
         row = cur.fetchone()
         return bool(row and row["status"] in ("processed", "ignored"))
+    finally:
+        conn.close()
+
+
+def set_user_access_window(user_id: int, status: str = "active", expires_at=None, plan: str = ""):
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE users SET status=?, expires_at=?, plan=COALESCE(?, plan), updated_at=? WHERE id=?",
+            (status, expires_at, plan or None, now(), user_id),
+        )
     finally:
         conn.close()
 

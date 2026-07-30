@@ -18,7 +18,9 @@ Endpoints admin:
   GET  /admin/login     -> login admin
   POST /admin/login     -> processa
   GET  /admin/logout    -> sair
+  POST /admin/users/manual_access
   POST /admin/users/<id>/reset_password
+  POST /admin/users/<id>/grant_access
   POST /admin/users/<id>/set_status
 
 Variaveis de ambiente:
@@ -43,6 +45,7 @@ import secrets
 import tempfile
 import traceback
 import threading
+import time
 from email import policy
 from email.parser import BytesParser
 from http.cookies import SimpleCookie
@@ -471,14 +474,22 @@ class Handler(BaseHTTPRequestHandler):
                 if not user:
                     _redirect(self, "/login")
                     return
+                qs = parse_qs(url.query or "")
+                confirmed = (qs.get("confirmed", [""])[0] or "").strip() == "1"
                 link = db.get_active_ml_link_for_user(user["id"])
+                linked_name = ""
+                if link:
+                    linked_name = link["official_store"] or link["nickname"] or link["client_id"] or ""
+                if not confirmed:
+                    _send_html(self, templates.render_online_beta_warning(linked_name))
+                    return
                 if not link:
-                    _redirect(self, "/ml-link/start?return_to=/online")
+                    _redirect(self, "/ml-link/start?return_to=/online?confirmed=1")
                     return
                 client_id = (link["client_id"] or "").strip()
                 if not client_id:
                     db.mark_user_ml_link_disconnected(user["id"])
-                    _redirect(self, "/ml-link/start?return_to=/online")
+                    _redirect(self, "/ml-link/start?return_to=/online?confirmed=1")
                     return
                 _redirect(self, f"{AGENTE_ML_BASE_URL}/relatorio?client={quote(client_id)}")
                 return
@@ -564,8 +575,14 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/admin/login":
                 self._post_admin_login()
                 return
+            if path == "/admin/users/manual_access":
+                self._post_admin_manual_access()
+                return
             if path.startswith("/admin/users/") and path.endswith("/reset_password"):
                 self._post_admin_reset_password(path)
+                return
+            if path.startswith("/admin/users/") and path.endswith("/grant_access"):
+                self._post_admin_grant_access(path)
                 return
             if path.startswith("/admin/users/") and path.endswith("/set_status"):
                 self._post_admin_set_status(path)
@@ -900,6 +917,62 @@ class Handler(BaseHTTPRequestHandler):
         db.reset_user_password(user_id)
         db.log_audit(user_id, "admin.reset_password", admin["email"], _client_ip(self))
         _redirect(self, "/admin?info=Senha%20resetada%20com%20sucesso")
+
+    def _post_admin_manual_access(self):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        form = _parse_form(self)
+        email = (form.get("email", "") or "").strip().lower()
+        name = (form.get("name", "") or "").strip()
+        plan = (form.get("plan", "") or "").strip() or "cortesia"
+        raw_days = (form.get("days", "") or "").strip()
+        if not email:
+            _send_html(self, templates.render_error_page("Informe um email valido."), 400)
+            return
+        try:
+            days = int(raw_days or "7")
+        except ValueError:
+            _send_html(self, templates.render_error_page("Dias invalidos."), 400)
+            return
+        if days < 1 or days > 365:
+            _send_html(self, templates.render_error_page("Dias devem ficar entre 1 e 365."), 400)
+            return
+        expires_at = int(time.time()) + (days * 86400)
+        user_id = db.upsert_manual_user(
+            email=email,
+            name=name,
+            plan=plan,
+            status="active",
+            expires_at=expires_at,
+        )
+        db.log_audit(user_id, f"admin.manual_access:{days}d", admin["email"], _client_ip(self))
+        _redirect(self, f"/admin?info=Acesso%20manual%20liberado%20por%20{days}%20dias")
+
+    def _post_admin_grant_access(self, path: str):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        try:
+            user_id = int(path.split("/")[3])
+        except (ValueError, IndexError):
+            _send_html(self, templates.render_error_page("ID invalido."), 400)
+            return
+        form = _parse_form(self)
+        try:
+            days = int((form.get("days", "") or "").strip())
+        except ValueError:
+            _send_html(self, templates.render_error_page("Dias invalidos."), 400)
+            return
+        if days < 1 or days > 365:
+            _send_html(self, templates.render_error_page("Dias devem ficar entre 1 e 365."), 400)
+            return
+        expires_at = int(time.time()) + (days * 86400)
+        db.set_user_access_window(user_id, status="active", expires_at=expires_at)
+        db.log_audit(user_id, f"admin.grant_access:{days}d", admin["email"], _client_ip(self))
+        _redirect(self, f"/admin?info=Acesso%20renovado%20por%20{days}%20dias")
 
     def _post_admin_set_status(self, path: str):
         admin, _ = _current_admin(self)
