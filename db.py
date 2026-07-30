@@ -176,6 +176,26 @@ def init_db():
                          ELSE 'manual'
                        END"""
                 )
+            ml_link_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(user_ml_links)")
+            }
+            ml_link_migrations = {
+                "ml_user_id": "ALTER TABLE user_ml_links ADD COLUMN ml_user_id TEXT",
+                "nickname": "ALTER TABLE user_ml_links ADD COLUMN nickname TEXT",
+                "official_store": "ALTER TABLE user_ml_links ADD COLUMN official_store TEXT",
+                "advertiser_id": "ALTER TABLE user_ml_links ADD COLUMN advertiser_id TEXT",
+                "seller_id": "ALTER TABLE user_ml_links ADD COLUMN seller_id TEXT",
+                "site_id": "ALTER TABLE user_ml_links ADD COLUMN site_id TEXT",
+                "last_verified_at": "ALTER TABLE user_ml_links ADD COLUMN last_verified_at INTEGER",
+            }
+            for column, statement in ml_link_migrations.items():
+                if column not in ml_link_columns:
+                    conn.execute(statement)
+            ml_state_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(ml_link_states)")
+            }
+            if "attached_at" not in ml_state_columns:
+                conn.execute("ALTER TABLE ml_link_states ADD COLUMN attached_at INTEGER")
         finally:
             conn.close()
 

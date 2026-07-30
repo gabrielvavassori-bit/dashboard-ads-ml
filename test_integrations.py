@@ -192,6 +192,25 @@ class IntegrationTests(unittest.TestCase):
                        payload TEXT NOT NULL)"""
                 )
                 connection.execute(
+                    """CREATE TABLE user_ml_links (
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       user_id INTEGER NOT NULL,
+                       client_id TEXT NOT NULL,
+                       status TEXT NOT NULL DEFAULT 'active',
+                       created_at INTEGER NOT NULL,
+                       updated_at INTEGER NOT NULL,
+                       UNIQUE(user_id))"""
+                )
+                connection.execute(
+                    """CREATE TABLE ml_link_states (
+                       state_hash TEXT PRIMARY KEY,
+                       user_id INTEGER NOT NULL,
+                       return_to TEXT NOT NULL,
+                       expires_at INTEGER NOT NULL,
+                       created_at INTEGER NOT NULL,
+                       used_at INTEGER)"""
+                )
+                connection.execute(
                     "INSERT INTO webhook_events VALUES (?,?,?,?)",
                     ("old-event", "myeduzz.invoice_paid", 1, "{}"),
                 )
@@ -205,9 +224,15 @@ class IntegrationTests(unittest.TestCase):
                 "c=db.get_conn(); "
                 "cols={r['name'] for r in c.execute("
                 "'PRAGMA table_info(webhook_events)')}; "
+                "ml_cols={r['name'] for r in c.execute("
+                "'PRAGMA table_info(user_ml_links)')}; "
+                "ml_state_cols={r['name'] for r in c.execute("
+                "'PRAGMA table_info(ml_link_states)')}; "
                 "row=c.execute(\"SELECT status FROM webhook_events "
                 "WHERE event_id='old-event'\").fetchone(); "
                 "assert {'payload_hash','status','processed_at','error'} <= cols; "
+                "assert {'ml_user_id','nickname','official_store','advertiser_id','seller_id','site_id','last_verified_at'} <= ml_cols; "
+                "assert {'attached_at'} <= ml_state_cols; "
                 "assert row['status']=='processed'; c.close()"
             )
             result = subprocess.run(
