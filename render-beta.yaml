@@ -1,0 +1,45 @@
+# Blueprint separado para ambiente beta do Dashboard ADS.
+# Nao altera o servico principal ja em producao.
+# Use este arquivo para criar um segundo web service no Render.
+services:
+  - type: web
+    name: dashboard-ads-ml-beta
+    runtime: python
+    plan: starter
+    region: oregon
+    pythonVersion: "3.12"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
+    healthCheckPath: /healthz
+    autoDeploy: false
+    disk:
+      name: dashboard-beta-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: APP_PUBLIC_URL
+        sync: false
+      - key: EDUZZ_WEBHOOK_SECRET
+        sync: false
+      - key: EDUZZ_PRODUCT_IDS
+        sync: false
+      - key: EDUZZ_CLIENT_ID
+        sync: false
+      - key: EDUZZ_CLIENT_SECRET
+        sync: false
+      - key: EDUZZ_OAUTH_REDIRECT_URI
+        sync: false
+      - key: EDUZZ_RECONCILE_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: DEFAULT_ACCESS_DAYS
+        value: "7"
+      - key: MAX_UPLOAD_MB
+        value: "20"
+      - key: MAX_PARALLEL_DASHBOARDS
+        value: "2"
