@@ -13,6 +13,7 @@ def _row_to_dict(row):
 def inspect_user(email: str):
     user = db.get_user_by_email(email)
     link = db.get_active_ml_link_for_user(user["id"]) if user else None
+    recent_audit = db.list_recent_audit_for_user(user["id"], limit=5) if user else []
     print(
         json.dumps(
             {
@@ -20,6 +21,7 @@ def inspect_user(email: str):
                 "email": email,
                 "user": _row_to_dict(user),
                 "active_ml_link": _row_to_dict(link),
+                "recent_audit": [_row_to_dict(row) for row in recent_audit],
             },
             ensure_ascii=False,
         )
@@ -39,18 +41,22 @@ def bind_user(
     user = db.get_user_by_email(email)
     if not user:
         raise SystemExit(f"Usuario nao encontrado: {email}")
-
-    db.upsert_user_ml_link(
-        user["id"],
-        client_id=client_id,
-        ml_user_id=ml_user_id,
-        nickname=nickname,
-        official_store=official_store,
-        advertiser_id=advertiser_id,
-        seller_id=seller_id,
-        site_id=site_id,
-        status="active",
-    )
+    try:
+        db.upsert_user_ml_link(
+            user["id"],
+            client_id=client_id,
+            ml_user_id=ml_user_id,
+            nickname=nickname,
+            official_store=official_store,
+            advertiser_id=advertiser_id,
+            seller_id=seller_id,
+            site_id=site_id,
+            status="active",
+        )
+        db.log_audit(user["id"], "ops_ml_link.bind.ok", client_id)
+    except Exception as exc:
+        db.log_audit(user["id"], "ops_ml_link.bind.error", f"{exc.__class__.__name__}: {exc}"[:300])
+        raise
     inspect_user(email)
 
 

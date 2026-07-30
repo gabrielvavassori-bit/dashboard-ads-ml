@@ -814,3 +814,18 @@ def log_audit(user_id, action: str, detail: str = "", ip: str = ""):
         )
     finally:
         conn.close()
+
+
+def list_recent_audit_for_user(user_id: int, limit: int = 10):
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """SELECT * FROM audit_log
+               WHERE user_id=?
+               ORDER BY created_at DESC, id DESC
+               LIMIT ?""",
+            (user_id, limit),
+        )
+        return cur.fetchall()
+    finally:
+        conn.close()
