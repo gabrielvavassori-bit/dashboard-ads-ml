@@ -274,12 +274,31 @@ def upsert_manual_user(
         conn.close()
 
 
+def _expire_overdue_active_users(conn, where_clause: str = "", params=()):
+    """Normaliza usuarios ativos que ja passaram da data de expiracao."""
+    sql = (
+        "UPDATE users "
+        "SET status='expired', updated_at=? "
+        "WHERE status='active' "
+        "AND expires_at IS NOT NULL "
+        "AND expires_at > 0 "
+        "AND expires_at < ?"
+    )
+    sql_params = [now(), now()]
+    if where_clause:
+        sql += f" AND {where_clause}"
+        sql_params.extend(params)
+    conn.execute(sql, tuple(sql_params))
+
+
 def get_user_by_email(email: str):
     if not email:
         return None
     conn = get_conn()
     try:
-        cur = conn.execute("SELECT * FROM users WHERE email=?", (email.strip().lower(),))
+        normalized_email = email.strip().lower()
+        _expire_overdue_active_users(conn, "email=?", (normalized_email,))
+        cur = conn.execute("SELECT * FROM users WHERE email=?", (normalized_email,))
         return cur.fetchone()
     finally:
         conn.close()
@@ -288,6 +307,7 @@ def get_user_by_email(email: str):
 def get_user_by_id(user_id: int):
     conn = get_conn()
     try:
+        _expire_overdue_active_users(conn, "id=?", (user_id,))
         cur = conn.execute("SELECT * FROM users WHERE id=?", (user_id,))
         return cur.fetchone()
     finally:
@@ -371,6 +391,7 @@ def mark_user_ml_link_disconnected(user_id: int):
 def list_users(query: str = "", limit: int = 200):
     conn = get_conn()
     try:
+        _expire_overdue_active_users(conn)
         if query:
             q = f"%{query.lower()}%"
             cur = conn.execute(
@@ -449,6 +470,11 @@ def get_session(token: str):
         return None
     conn = get_conn()
     try:
+        _expire_overdue_active_users(
+            conn,
+            "id IN (SELECT user_id FROM sessions WHERE token=?)",
+            (token,),
+        )
         cur = conn.execute(
             """SELECT s.*, u.email, u.name, u.status, u.expires_at, u.password_hash
                FROM sessions s JOIN users u ON u.id = s.user_id

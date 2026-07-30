@@ -260,6 +260,42 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(db.get_user_by_email("api@example.com")["status"], "active")
         self.assertIsNone(db.get_user_by_email("unknown@example.com"))
 
+    def test_subscription_reconciliation_reactivates_existing_expired_eduzz_user(self):
+        db.upsert_user_from_webhook(
+            email="reativar@example.com",
+            name="Cliente Expirado",
+            buyer_id="buyer-old",
+            contract_id="contract-old",
+            plan="ADS ML",
+            status="expired",
+            expires_at=int(app.time.time()) - 86400,
+        )
+        original = eduzz_api.request_json
+        eduzz_api.request_json = lambda path, params=None: {
+            "items": [
+                {
+                    "id": "contract-reactivate",
+                    "status": "upToDate",
+                    "productId": "3032224",
+                    "customer": {
+                        "id": "buyer-new",
+                        "name": "Cliente Reativado",
+                        "email": "reativar@example.com",
+                    },
+                    "nextChargeDate": "2030-01-15T00:00:00Z",
+                }
+            ]
+        }
+        try:
+            result = eduzz_api.reconcile_subscriptions()
+        finally:
+            eduzz_api.request_json = original
+        user = db.get_user_by_email("reativar@example.com")
+        self.assertEqual(result["activated"], 1)
+        self.assertEqual(user["status"], "active")
+        self.assertGreater(user["expires_at"], int(app.time.time()))
+        self.assertEqual(user["access_origin"], "eduzz")
+
 
 class HTTPRouteTests(unittest.TestCase):
     @classmethod
@@ -585,6 +621,32 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertIsNone(user["expires_at"])
         self.assertTrue(auth.user_is_active(user))
         raised.exception.close()
+
+    def test_list_users_normalizes_overdue_active_users(self):
+        db.upsert_manual_user(
+            email="overdue-list@example.com",
+            name="Expirado na Lista",
+            plan="cortesia",
+            status="active",
+            expires_at=int(app.time.time()) - 3600,
+        )
+        users = db.list_users("overdue-list@example.com")
+        self.assertEqual(len(users), 1)
+        self.assertEqual(users[0]["status"], "expired")
+
+    def test_get_session_normalizes_overdue_active_user(self):
+        user_id = db.upsert_manual_user(
+            email="overdue-session@example.com",
+            name="Expirado na Sessao",
+            plan="cortesia",
+            status="active",
+            expires_at=int(app.time.time()) - 3600,
+        )
+        token = auth.new_session_token()
+        db.create_session(user_id, token, "127.0.0.1", "tests")
+        sess = db.get_session(token)
+        self.assertEqual(sess["status"], "expired")
+        self.assertFalse(auth.user_is_active(sess))
 
 
 if __name__ == "__main__":
