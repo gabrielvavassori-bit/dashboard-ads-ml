@@ -365,37 +365,59 @@ def upsert_user_ml_link(
     conn = get_conn()
     try:
         ts = now()
-        conn.execute(
-            """INSERT INTO user_ml_links
-               (user_id, client_id, ml_user_id, nickname, official_store,
-                advertiser_id, seller_id, site_id, status, created_at, updated_at, last_verified_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-               ON CONFLICT(user_id) DO UPDATE SET
-                 client_id=excluded.client_id,
-                 ml_user_id=excluded.ml_user_id,
-                 nickname=excluded.nickname,
-                 official_store=excluded.official_store,
-                 advertiser_id=excluded.advertiser_id,
-                 seller_id=excluded.seller_id,
-                 site_id=excluded.site_id,
-                 status=excluded.status,
-                 updated_at=excluded.updated_at,
-                 last_verified_at=excluded.last_verified_at""",
-            (
-                user_id,
-                client_id,
-                ml_user_id,
-                nickname,
-                official_store,
-                advertiser_id,
-                seller_id,
-                site_id,
-                status,
-                ts,
-                ts,
-                ts,
-            ),
-        )
+        existing = conn.execute(
+            "SELECT id FROM user_ml_links WHERE user_id=? ORDER BY updated_at DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """UPDATE user_ml_links
+                   SET client_id=?,
+                       ml_user_id=?,
+                       nickname=?,
+                       official_store=?,
+                       advertiser_id=?,
+                       seller_id=?,
+                       site_id=?,
+                       status=?,
+                       updated_at=?,
+                       last_verified_at=?
+                   WHERE id=?""",
+                (
+                    client_id,
+                    ml_user_id,
+                    nickname,
+                    official_store,
+                    advertiser_id,
+                    seller_id,
+                    site_id,
+                    status,
+                    ts,
+                    ts,
+                    existing["id"],
+                ),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO user_ml_links
+                   (user_id, client_id, ml_user_id, nickname, official_store,
+                    advertiser_id, seller_id, site_id, status, created_at, updated_at, last_verified_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    user_id,
+                    client_id,
+                    ml_user_id,
+                    nickname,
+                    official_store,
+                    advertiser_id,
+                    seller_id,
+                    site_id,
+                    status,
+                    ts,
+                    ts,
+                    ts,
+                ),
+            )
     finally:
         conn.close()
 
