@@ -989,7 +989,12 @@ class Handler(BaseHTTPRequestHandler):
         if new_status not in ("active", "suspended", "expired", "refunded", "pending"):
             _send_html(self, templates.render_error_page("Status invalido."), 400)
             return
-        db.set_user_status(user_id, new_status)
+        if new_status == "active":
+            # Ativacao manual via admin precisa realmente destravar o acesso.
+            # Se o usuario estava vencido, manter expires_at antigo continua bloqueando no login.
+            db.set_user_access_window(user_id, status="active", expires_at=None)
+        else:
+            db.set_user_status(user_id, new_status)
         db.log_audit(user_id, f"admin.set_status:{new_status}", admin["email"], _client_ip(self))
         _redirect(self, f"/admin?info=Status%20alterado%20para%20{new_status}")
 

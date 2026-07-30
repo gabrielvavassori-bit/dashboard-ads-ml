@@ -557,6 +557,35 @@ class HTTPRouteTests(unittest.TestCase):
         user = db.get_user_by_id(user_id)
         self.assertEqual(user["access_origin"], "manual")
 
+    def test_admin_activate_clears_expired_access_window(self):
+        user_id = db.upsert_manual_user(
+            email="expired-activate@example.com",
+            name="Expirado Reativado",
+            plan="cortesia",
+            status="expired",
+            expires_at=int(app.time.time()) - 86400,
+        )
+        admin_cookie = self._admin_cookie()
+        payload = urlencode({"status": "active"}).encode("utf-8")
+        request = Request(
+            f"{self.base_url}/admin/users/{user_id}/set_status",
+            data=payload,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cookie": admin_cookie,
+            },
+            method="POST",
+        )
+        opener = self._no_redirect_opener()
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        user = db.get_user_by_id(user_id)
+        self.assertEqual(user["status"], "active")
+        self.assertIsNone(user["expires_at"])
+        self.assertTrue(auth.user_is_active(user))
+        raised.exception.close()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
