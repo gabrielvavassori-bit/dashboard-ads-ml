@@ -55,6 +55,7 @@ def bind_user(
 
 
 def main():
+    db.init_db()
     parser = argparse.ArgumentParser(description="Inspeciona ou vincula user_ml_links por email.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
