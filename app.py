@@ -240,6 +240,34 @@ def _number(value) -> float:
         return 0.0
 
 
+def _deduplicate_online_ads_rows(ads_rows: list) -> tuple[list, dict]:
+    deduped_rows = []
+    seen = set()
+    removed_rows = 0
+    removed_investment = 0.0
+    removed_ads_revenue = 0.0
+
+    for raw in ads_rows:
+        if not isinstance(raw, dict):
+            deduped_rows.append(raw)
+            continue
+        key = json.dumps(raw, sort_keys=True, ensure_ascii=True, default=str)
+        if key in seen:
+            removed_rows += 1
+            removed_investment += _number(raw.get("cost"))
+            removed_ads_revenue += _number(raw.get("total_amount"))
+            continue
+        seen.add(key)
+        deduped_rows.append(raw)
+
+    return deduped_rows, {
+        "hasDuplicates": removed_rows > 0,
+        "removedRows": removed_rows,
+        "removedInvestment": removed_investment,
+        "removedAdsRevenue": removed_ads_revenue,
+    }
+
+
 def _build_online_dashboard_data(client: str, advertiser_id: str = "") -> tuple[dict | None, str]:
     """Converte apenas o cache autenticado do agente em dados para o Dash ADS."""
     latest_payload = _fetch_dash_ads_json(
@@ -265,6 +293,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "") -> tuple[
     sales_by_item = sales.get("items") if isinstance(sales.get("items"), dict) else {}
     if not ads_rows:
         return None, "Ainda nao existem dados de publicidade em cache para esta conta. Aguarde a coleta online e tente novamente."
+    ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
 
     items = []
     for raw in ads_rows:
@@ -362,6 +391,11 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "") -> tuple[
         f"Modo online beta: leitura autenticada do cache da conta. A cobertura de vendas esta {cache_status}; "
         "confira pelo XLSX detalhado antes de qualquer decisao financeira definitiva."
     )
+    if ads_deduplication["hasDuplicates"]:
+        notice += (
+            f" Foram removidas {ads_deduplication['removedRows']} linhas duplicadas exatas do cache de Ads "
+            "antes dos calculos."
+        )
     return {
         "kpis": {
             "clientName": client,
@@ -386,6 +420,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "") -> tuple[
         "meta": {
             "period": {"dateFrom": latest_date_from, "dateTo": latest_date_to},
             "onlineMode": {"enabled": True, "notice": notice, "complete": complete, "updatedAt": latest.get("updated_at") or ads.get("updated_at") or ""},
+            "adsDeduplication": ads_deduplication,
         },
         "items": sorted(items, key=lambda item: (-item["investment"], -item["totalRevenue"])),
         "decisionItems": [item for item in items if item.get("sku")],

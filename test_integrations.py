@@ -524,6 +524,42 @@ class HTTPRouteTests(unittest.TestCase):
         finally:
             app._build_online_dashboard_data = original
 
+    def test_online_dashboard_deduplicates_exact_ads_cache_rows(self):
+        duplicate_row = {
+            "item_id": "MLB123",
+            "campaign_id": "456",
+            "status": "active",
+            "sku": "SKU-123",
+            "title": "Produto Teste",
+            "cost": 10,
+            "total_amount": 100,
+            "direct_amount": 70,
+            "units_quantity": 2,
+            "prints": 1000,
+            "clicks": 50,
+            "price": 50,
+        }
+        payload = {
+            "ok": True,
+            "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
+            "ads": {"items": [dict(duplicate_row), dict(duplicate_row)]},
+            "sales": {"items": {"MLB123": {"revenue_total": 200, "units_total": 4}}},
+        }
+        original_fetch = app._fetch_dash_ads_json
+        app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
+        try:
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+        finally:
+            app._fetch_dash_ads_json = original_fetch
+
+        self.assertEqual(message, "")
+        self.assertEqual(data["kpis"]["products"], 1)
+        self.assertEqual(data["kpis"]["investment"], 10)
+        self.assertEqual(data["kpis"]["adsRevenue"], 100)
+        self.assertEqual(data["kpis"]["revenue"], 200)
+        self.assertEqual(data["meta"]["adsDeduplication"]["removedRows"], 1)
+        self.assertIn("linhas duplicadas exatas", data["meta"]["onlineMode"]["notice"])
+
     def test_online_requires_beta_confirmation_before_redirect(self):
         user_id, cookie = self._login_cookie("warn@example.com")
         db.upsert_user_ml_link(
