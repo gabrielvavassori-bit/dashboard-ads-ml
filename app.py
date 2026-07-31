@@ -60,7 +60,16 @@ import db
 import eduzz_api
 import templates
 import webhook as eduzz_webhook
-from gerar_dashboard_ads_ml import build_data, render_dashboard
+from gerar_dashboard_ads_ml import (
+    aggregate_by_sku,
+    apply_abc,
+    apply_alerts,
+    build_data,
+    cvr_class,
+    decision,
+    mark_possible_catalog,
+    render_dashboard,
+)
 
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "4182"))
@@ -222,6 +231,172 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
 def _normalize_mlb_code(value) -> str:
     text_value = str(value or "").strip().upper()
     return text_value if text_value.startswith("MLB") else ""
+
+
+def _number(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _build_online_dashboard_data(client: str, advertiser_id: str = "") -> tuple[dict | None, str]:
+    """Converte apenas o cache autenticado do agente em dados para o Dash ADS."""
+    latest_payload = _fetch_dash_ads_json(
+        "/internal/dash-ads/online-cache-latest",
+        {"client": client, "advertiser_id": advertiser_id},
+    )
+    if not latest_payload.get("ok"):
+        refresh = _fetch_dash_ads_json(
+            "/internal/dash-ads/online-cache-refresh",
+            {"client": client, "advertiser_id": advertiser_id, "max_items": 25},
+        )
+        if not refresh.get("ok"):
+            return None, "Nao foi possivel preparar os dados online agora. Tente novamente em alguns minutos."
+        latest_payload = _fetch_dash_ads_json(
+            "/internal/dash-ads/online-cache-latest",
+            {"client": client, "advertiser_id": advertiser_id},
+        )
+
+    latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
+    ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
+    sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
+    ads_rows = ads.get("items") if isinstance(ads.get("items"), list) else []
+    sales_by_item = sales.get("items") if isinstance(sales.get("items"), dict) else {}
+    if not ads_rows:
+        return None, "Ainda nao existem dados de publicidade em cache para esta conta. Aguarde a coleta online e tente novamente."
+
+    items = []
+    for raw in ads_rows:
+        if not isinstance(raw, dict):
+            continue
+        code = _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
+        if not code:
+            continue
+        sale = sales_by_item.get(code) if isinstance(sales_by_item.get(code), dict) else {}
+        investment = _number(raw.get("cost"))
+        ads_revenue = _number(raw.get("total_amount"))
+        ads_direct_revenue = _number(raw.get("direct_amount"))
+        ads_indirect_revenue = max(0.0, ads_revenue - ads_direct_revenue)
+        total_revenue = _number(sale.get("revenue_total"))
+        units = _number(sale.get("units_total"))
+        ads_sales = _number(raw.get("units_quantity"))
+        impressions = _number(raw.get("prints"))
+        clicks = _number(raw.get("clicks"))
+        organic_revenue = max(0.0, total_revenue - ads_direct_revenue)
+        tacos_base = organic_revenue + ads_direct_revenue + ads_indirect_revenue
+        campaign_id = str(raw.get("campaign_id") or "").strip()
+        status = str(raw.get("status") or "").strip().lower()
+        active = status.startswith("active") or status.startswith("ativo")
+        last_price = _number(raw.get("price"))
+        item = {
+            "sku": str(raw.get("sku") or "").strip(),
+            "code": code,
+            "title": str(raw.get("title") or "").strip(),
+            "lastSaleDate": "",
+            "lastSaleSort": 0,
+            "lastPrice": last_price,
+            "avgSalePrice": (total_revenue / units) if units else last_price,
+            "units": units,
+            "productRevenue": total_revenue,
+            "indirectRevenue": ads_indirect_revenue,
+            "totalRevenue": total_revenue,
+            "investment": investment,
+            "adsRevenue": ads_revenue,
+            "adsDirectRevenue": ads_direct_revenue,
+            "adsIndirectRevenue": ads_indirect_revenue,
+            "organicRevenue": organic_revenue,
+            "tacosBaseRevenue": tacos_base,
+            "revenueOutsideAds": organic_revenue,
+            "adsDependencyRatio": (ads_direct_revenue / total_revenue) if total_revenue else 0.0,
+            "outsideAdsRatio": (organic_revenue / total_revenue) if total_revenue else 0.0,
+            "adsAttributedRatio": (ads_revenue / total_revenue) if total_revenue else 0.0,
+            "campaign": f"Campanha {campaign_id}" if campaign_id else "Sem campanha identificada",
+            "adsCampaigns": f"Campanha {campaign_id}" if campaign_id else "",
+            "campaignStatus": "Ativa" if active else "Sem campanha ativa",
+            "impressions": impressions,
+            "clicks": clicks,
+            "adsSales": ads_sales,
+            "ctr": (clicks / impressions) if impressions else 0.0,
+            "cvr": (ads_sales / clicks) if clicks else 0.0,
+            "cpc": (investment / clicks) if clicks else 0.0,
+            "tacos": (investment / tacos_base) if tacos_base else 0.0,
+            "roas": (ads_revenue / investment) if investment else 0.0,
+            "avgAdsOrder": (ads_revenue / ads_sales) if ads_sales else last_price,
+            "maxCpc": 0.0,
+            "possibleCatalog": False,
+        }
+        item["maxCpc"] = item["avgAdsOrder"] * 0.03 * item["cvr"] if item["avgAdsOrder"] and item["cvr"] else 0.0
+        item["cvrClass"] = cvr_class(item["cvr"] * 100)
+        apply_alerts(item)
+        item["action"], item["reason"] = decision(item)
+        items.append(item)
+
+    if not items:
+        return None, "O cache online nao trouxe anuncios validos para esta conta."
+    mark_possible_catalog(items)
+    for item in items:
+        apply_alerts(item)
+        item["action"], item["reason"] = decision(item)
+    sku_ads = aggregate_by_sku(items)
+    apply_abc(items, "totalRevenue", "abcCode")
+    apply_abc(sku_ads, "totalRevenue", "abcSku")
+    sku_abc = {item["sku"]: item["abcSku"] for item in sku_ads}
+    for item in items:
+        item["abcSku"] = sku_abc.get(item.get("sku") or "(sem SKU)", "C")
+
+    sales_state = latest.get("sales") if isinstance(latest.get("sales"), dict) else {}
+    complete = bool(sales_state.get("complete"))
+    total_revenue = sum(item["totalRevenue"] for item in items)
+    total_investment = sum(item["investment"] for item in items)
+    total_ads_revenue = sum(item["adsRevenue"] for item in items)
+    total_ads_direct = sum(item["adsDirectRevenue"] for item in items)
+    total_organic = sum(item["organicRevenue"] for item in items)
+    total_tacos_base = sum(item["tacosBaseRevenue"] for item in items)
+    total_clicks = sum(item["clicks"] for item in items)
+    total_ads_sales = sum(item["adsSales"] for item in items)
+    latest_date_from = latest.get("date_from") or ads.get("date_from") or ""
+    latest_date_to = latest.get("date_to") or ads.get("date_to") or ""
+    cache_status = "completo" if complete else "parcial"
+    notice = (
+        f"Modo online beta: leitura autenticada do cache da conta. A cobertura de vendas esta {cache_status}; "
+        "confira pelo XLSX detalhado antes de qualquer decisao financeira definitiva."
+    )
+    return {
+        "kpis": {
+            "clientName": client,
+            "salesSource": "online-beta",
+            "products": len(items),
+            "units": sum(item["units"] for item in items),
+            "revenue": total_revenue,
+            "adsRevenue": total_ads_revenue,
+            "adsDirectRevenue": total_ads_direct,
+            "organicRevenue": total_organic,
+            "tacosBaseRevenue": total_tacos_base,
+            "investment": total_investment,
+            "investmentNoAdsSales": sum(item["investment"] for item in items if item["investment"] > 0 and item["adsRevenue"] <= 0),
+            "cvr": total_ads_sales / total_clicks if total_clicks else 0.0,
+            "tacos": total_investment / total_tacos_base if total_tacos_base else 0.0,
+            "roas": total_ads_revenue / total_investment if total_investment else 0.0,
+            "adsNoSales": len([item for item in items if item["investment"] > 0 and item["adsRevenue"] <= 0]),
+            "adsOnlyNoTotalSales": len([item for item in items if item["investment"] > 0 and item["totalRevenue"] <= 0]),
+            "tacosHigh": len([item for item in items if item["investment"] > 0 and item["tacos"] > 0.03]),
+            "salesNoAds": len([item for item in items if item["units"] > 0 and item["investment"] == 0]),
+        },
+        "meta": {
+            "period": {"dateFrom": latest_date_from, "dateTo": latest_date_to},
+            "onlineMode": {"enabled": True, "notice": notice, "complete": complete, "updatedAt": latest.get("updated_at") or ads.get("updated_at") or ""},
+        },
+        "items": sorted(items, key=lambda item: (-item["investment"], -item["totalRevenue"])),
+        "decisionItems": [item for item in items if item.get("sku")],
+        "adsNoSales": [item for item in items if item["investment"] > 0 and item["adsRevenue"] <= 0],
+        "highTacos": [item for item in items if item["investment"] > 0 and item["tacos"] > 0.03],
+        "salesNoAds": [item for item in items if item["units"] > 0 and item["investment"] == 0],
+        "skuAds": sku_ads,
+        "adsByProduct": [item for item in items if item.get("sku")],
+        "finishedNoSku": [item for item in items if not item.get("sku")],
+        "onlineBeta": {"enabled": True, "client": client, "latest": latest_payload, "summary": {"totalItems": len(items)}},
+    }, ""
 
 
 def _build_online_beta_payload(data: dict, client: str, advertiser_id: str = "") -> dict:
@@ -513,7 +688,14 @@ class Handler(BaseHTTPRequestHandler):
                     db.mark_user_ml_link_disconnected(user["id"])
                     _redirect(self, "/ml-link/start?return_to=/online?confirmed=1")
                     return
-                _redirect(self, f"{AGENTE_ML_BASE_URL}/relatorio?client={quote(client_id)}")
+                dashboard_data, message = _build_online_dashboard_data(
+                    client_id,
+                    advertiser_id=(link["advertiser_id"] or "").strip(),
+                )
+                if not dashboard_data:
+                    _send_html(self, templates.render_error_page(message), 503)
+                    return
+                _send_html(self, render_dashboard(dashboard_data))
                 return
             if path == "/ml-link/start":
                 user, _ = _current_user(self)

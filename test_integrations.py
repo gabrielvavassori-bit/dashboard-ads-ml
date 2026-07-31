@@ -498,7 +498,7 @@ class HTTPRouteTests(unittest.TestCase):
             fake.server_close()
             thread.join(timeout=3)
 
-    def test_online_redirects_to_agent_report_when_link_exists(self):
+    def test_online_renders_dash_ads_when_link_exists(self):
         user_id, cookie = self._login_cookie("linked@example.com")
         db.upsert_user_ml_link(
             user_id,
@@ -507,16 +507,22 @@ class HTTPRouteTests(unittest.TestCase):
             nickname="LONAS_ONLINE",
             advertiser_id="164424",
         )
-        opener = self._no_redirect_opener()
-        request = Request(f"{self.base_url}/online?confirmed=1", headers={"Cookie": cookie}, method="GET")
-        with self.assertRaises(HTTPError) as raised:
-            opener.open(request, timeout=5)
-        self.assertEqual(raised.exception.code, 302)
-        self.assertEqual(
-            raised.exception.headers.get("Location"),
-            f"{app.AGENTE_ML_BASE_URL}/relatorio?client=conta-ativa",
-        )
-        raised.exception.close()
+        original = app._build_online_dashboard_data
+        app._build_online_dashboard_data = lambda *_args, **_kwargs: ({
+            "kpis": {"clientName": "LONAS_ONLINE", "products": 0, "units": 0, "revenue": 0, "adsRevenue": 0, "adsDirectRevenue": 0, "organicRevenue": 0, "tacosBaseRevenue": 0, "investment": 0, "investmentNoAdsSales": 0, "cvr": 0, "tacos": 0, "roas": 0, "adsNoSales": 0, "adsOnlyNoTotalSales": 0, "tacosHigh": 0, "salesNoAds": 0},
+            "meta": {"onlineMode": {"notice": "Modo online beta: dados parciais."}},
+            "items": [], "decisionItems": [], "adsNoSales": [], "highTacos": [], "salesNoAds": [], "skuAds": [], "adsByProduct": [], "finishedNoSku": [], "onlineBeta": {"enabled": True},
+        }, "")
+        try:
+            request = Request(f"{self.base_url}/online?confirmed=1", headers={"Cookie": cookie}, method="GET")
+            with urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8", errors="replace")
+            self.assertEqual(response.status, 200)
+            self.assertIn("Dashboard ADS Mercado Livre", body)
+            self.assertIn("Modo online beta: dados parciais.", body)
+            self.assertNotIn("agente-ml.onrender.com/relatorio", body)
+        finally:
+            app._build_online_dashboard_data = original
 
     def test_online_requires_beta_confirmation_before_redirect(self):
         user_id, cookie = self._login_cookie("warn@example.com")

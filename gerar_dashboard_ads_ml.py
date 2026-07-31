@@ -1014,6 +1014,8 @@ def render_dashboard(data):
     logo_uri = logo_data_uri()
     client_name = data.get("kpis", {}).get("clientName") or ""
     title_suffix = f" - {html.escape(client_name)}" if client_name else ""
+    online_mode = ((data.get("meta") or {}).get("onlineMode") or {})
+    online_notice = html.escape(str(online_mode.get("notice") or ""))
     return f"""<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -1111,6 +1113,7 @@ def render_dashboard(data):
     .status-ok {{ color:var(--green); font-weight:800; }}
     .status-warn {{ color:var(--orange); font-weight:800; }}
     .status-bad {{ color:var(--red); font-weight:800; }}
+    .online-notice {{ margin:0 0 12px; padding:12px 14px; border:1px solid #fecdca; border-radius:10px; background:#fff7ed; color:#7a271a; font-weight:700; }}
     @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} }}
   </style>
 </head>
@@ -1133,6 +1136,7 @@ def render_dashboard(data):
     </div>
   </header>
   <main>
+    {f'<section class="online-notice">{online_notice}</section>' if online_notice else ''}
     <section class="kpis" id="kpis"></section>
     <nav class="page-nav" aria-label="Visoes do dashboard">
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
