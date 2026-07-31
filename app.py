@@ -56,6 +56,8 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 import auth
+import beta_bridge
+import beta_config
 import db
 import eduzz_api
 import templates
@@ -621,7 +623,9 @@ class Handler(BaseHTTPRequestHandler):
                 if user:
                     _redirect(self, "/")
                     return
-                _send_html(self, templates.render_login())
+                qs = parse_qs(url.query or "")
+                return_to = (qs.get("return_to", [""])[0] or "").strip()
+                _send_html(self, templates.render_login(return_to=return_to))
                 return
             if path == "/logout":
                 _, token = _current_user(self)
@@ -657,6 +661,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/oauth/eduzz/callback":
                 self._eduzz_oauth_callback(url)
+                return
+            if path == "/beta/authorize":
+                self._beta_authorize(url)
+                return
+            if path == "/beta/callback":
+                self._beta_callback(url)
                 return
             if path == "/admin" or path == "/admin/":
                 admin, _ = _current_admin(self)
@@ -731,6 +741,9 @@ class Handler(BaseHTTPRequestHandler):
                     _send_html(self, templates.render_error_page(message), 503)
                     return
                 _send_html(self, render_dashboard(dashboard_data))
+                return
+            if path in ("/teste", "/teste/"):
+                self._beta_entry()
                 return
             if path == "/ml-link/start":
                 user, _ = _current_user(self)
@@ -841,24 +854,27 @@ class Handler(BaseHTTPRequestHandler):
         form = _parse_form(self)
         email = (form.get("email", "") or "").strip().lower()
         password = form.get("password", "") or ""
+        return_to = (form.get("return_to", "") or "").strip()
+        if not return_to.startswith("/") or return_to.startswith("//"):
+            return_to = "/"
         if not email or not password:
-            _send_html(self, templates.render_login("Informe email e senha.", email=email), 400)
+            _send_html(self, templates.render_login("Informe email e senha.", email=email, return_to=return_to), 400)
             return
         user = db.get_user_by_email(email)
         if not user or not user["password_hash"] or not auth.verify_password(password, user["password_hash"]):
             db.log_audit(user["id"] if user else None, "login.fail", email, _client_ip(self))
-            _send_html(self, templates.render_login("Email ou senha invalidos.", email=email), 401)
+            _send_html(self, templates.render_login("Email ou senha invalidos.", email=email, return_to=return_to), 401)
             return
         if not auth.user_is_active(user):
             db.log_audit(user["id"], "login.inactive", user["status"], _client_ip(self))
             _send_html(self, templates.render_login(
-                "Sua assinatura nao esta ativa. Verifique seu pagamento na Eduzz ou fale com o suporte.", email=email
+                "Sua assinatura nao esta ativa. Verifique seu pagamento na Eduzz ou fale com o suporte.", email=email, return_to=return_to
             ), 403)
             return
         token = auth.new_session_token()
         db.create_session(user["id"], token, _client_ip(self), self.headers.get("User-Agent", "")[:200])
         db.log_audit(user["id"], "login.ok", "", _client_ip(self))
-        _redirect(self, "/", set_cookie=auth.make_set_cookie(token))
+        _redirect(self, return_to, set_cookie=auth.make_set_cookie(token))
 
     def _post_register(self):
         form = _parse_form(self)
@@ -1001,6 +1017,14 @@ class Handler(BaseHTTPRequestHandler):
         _send_json(self, {"ok": True}, 200)
 
     def _post_webhook(self):
+        if beta_config.BETA_MODE and beta_config.BETA_REJECT_BILLING_WEBHOOKS:
+            _read_and_discard_body(self)
+            _send_json(self, {
+                "ok": False,
+                "message": "Webhooks de cobranca ficam desativados no ambiente beta.",
+                "beta": True,
+            }, 404)
+            return
         length = int(self.headers.get("Content-Length", "0") or 0)
         if length <= 0 or length > 2_000_000:
             _send_json(self, {"ok": False, "message": "Body invalido"}, 400)
@@ -1127,6 +1151,14 @@ class Handler(BaseHTTPRequestHandler):
         # A entrega customizada da Eduzz faz um envio de teste para validar a URL.
         # Nao persistimos o payload aqui: o webhook assinado em /webhook/eduzz e
         # quem ativa ou suspende acesso com seguranca.
+        if beta_config.BETA_MODE and beta_config.BETA_REJECT_BILLING_WEBHOOKS:
+            _read_and_discard_body(self)
+            _send_json(self, {
+                "success": False,
+                "message": "Entrega Eduzz fica desativada no ambiente beta.",
+                "beta": True,
+            }, 404)
+            return
         _read_and_discard_body(self)
         _send_json(self, {
             "success": True,
@@ -1134,6 +1166,82 @@ class Handler(BaseHTTPRequestHandler):
             "access_url": APP_PUBLIC_URL,
             "app": "Dashboard ADS Mercado Livre - Un Clic Marketplace",
         })
+
+    def _beta_entry(self):
+        user, _ = _current_user(self)
+        if not beta_config.route_enabled():
+            _send_html(self, templates.render_error_page("Ambiente beta nao esta habilitado neste servico."), 404)
+            return
+        if not user:
+            if beta_config.BETA_SHARED_AUTH_URL and beta_config.BETA_PUBLIC_URL:
+                target = f"{beta_config.BETA_SHARED_AUTH_URL}/beta/authorize?{urlencode({'return_to': beta_config.BETA_PUBLIC_URL + '/beta/callback'})}"
+                _redirect(self, target)
+            else:
+                _redirect(self, "/login?return_to=/teste")
+            return
+        if not beta_config.email_allowed(user["email"]):
+            _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
+            return
+        link = db.get_active_ml_link_for_user(user["id"])
+        linked_name = ""
+        if link:
+            linked_name = link["official_store"] or link["nickname"] or link["client_id"] or ""
+        _send_html(self, templates.render_beta_entry(
+            user["email"],
+            linked_name,
+            beta_config.shared_bridge_ready(),
+            bool(link),
+        ))
+
+    def _beta_authorize(self, url):
+        if not beta_config.bridge_enabled() or not beta_config.BETA_PUBLIC_URL:
+            _send_html(self, templates.render_error_page("Ponte beta nao configurada neste servico."), 404)
+            return
+        qs = parse_qs(url.query or "")
+        return_to = (qs.get("return_to", [""])[0] or "").strip().rstrip("/")
+        expected = f"{beta_config.BETA_PUBLIC_URL}/beta/callback"
+        if return_to != expected:
+            _send_html(self, templates.render_error_page("Destino beta nao autorizado."), 400)
+            return
+        user, _ = _current_user(self)
+        if not user:
+            login_return = "/beta/authorize?" + urlencode({"return_to": expected})
+            _redirect(self, "/login?" + urlencode({"return_to": login_return}))
+            return
+        if not beta_config.email_allowed(user["email"]):
+            _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
+            return
+        assertion = beta_bridge.create_assertion(
+            beta_config.BETA_SHARED_AUTH_SECRET,
+            user,
+            db.get_active_ml_link_for_user(user["id"]),
+            expected,
+        )
+        _redirect(self, f"{expected}?{urlencode({'assertion': assertion})}")
+
+    def _beta_callback(self, url):
+        if not beta_config.route_enabled() or not beta_config.bridge_enabled():
+            _send_html(self, templates.render_error_page("Ambiente beta nao esta habilitado."), 404)
+            return
+        qs = parse_qs(url.query or "")
+        token = (qs.get("assertion", [""])[0] or "").strip()
+        expected = f"{beta_config.BETA_PUBLIC_URL}/beta/callback"
+        try:
+            payload = beta_bridge.verify_assertion(token, beta_config.BETA_SHARED_AUTH_SECRET, expected)
+            if not beta_config.email_allowed(payload["user"]["email"]):
+                raise ValueError("usuario fora da lista beta")
+            if not db.claim_beta_handoff(payload["nonce"], payload["exp"]):
+                raise ValueError("assertion beta ja utilizada ou expirada")
+            user_id = db.upsert_beta_identity(payload["user"])
+            ml_link = payload.get("ml") or {}
+            if ml_link.get("client_id"):
+                db.upsert_user_ml_link(user_id, **ml_link)
+            session_token = auth.new_session_token()
+            db.create_session(user_id, session_token, _client_ip(self), self.headers.get("User-Agent", "")[:200])
+            db.log_audit(user_id, "beta.bridge.login", "identity-only", _client_ip(self))
+            _redirect(self, "/teste", set_cookie=auth.make_set_cookie(session_token))
+        except (ValueError, KeyError, TypeError) as exc:
+            _send_html(self, templates.render_error_page(f"Nao foi possivel abrir o beta: {exc}"), 400)
 
     def _post_admin_login(self):
         form = _parse_form(self)

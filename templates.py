@@ -65,7 +65,7 @@ def _layout(title: str, body: str, extra_head: str = "") -> str:
 </html>"""
 
 
-def render_login(error: str = "", info: str = "", email: str = "") -> str:
+def render_login(error: str = "", info: str = "", email: str = "", return_to: str = "") -> str:
     err_html = f'<div class="alert err">{_html.escape(error)}</div>' if error else ""
     info_html = f'<div class="alert ok">{_html.escape(info)}</div>' if info else ""
     body = f"""
@@ -73,6 +73,7 @@ def render_login(error: str = "", info: str = "", email: str = "") -> str:
     <p>Acesse com o email da sua compra na Eduzz e a sua senha.</p>
     {err_html}{info_html}
     <form method="post" action="/login">
+      <input type="hidden" name="return_to" value="{_html.escape(return_to)}">
       <label>Email</label>
       <input type="email" name="email" required value="{_html.escape(email)}" autocomplete="email">
       <label>Senha</label>
@@ -204,6 +205,28 @@ def render_online_beta_warning(linked_client_name: str = "") -> str:
     </div>
     """
     return _layout("Modo online beta", body)
+
+
+def render_beta_entry(email: str, linked_client_name: str = "", bridge_ready: bool = False, ml_linked: bool = False) -> str:
+    bridge = "Configurada" if bridge_ready else "Pendente: ponte central de identidade/OAuth"
+    link = _html.escape(linked_client_name) if linked_client_name else "Nenhuma conta ML vinculada neste usuario"
+    body = f"""
+    <h1>Ambiente beta privado</h1>
+    <p>Usuario autorizado: <b>{_html.escape(email)}</b></p>
+    <div class="alert err"><b>Dados reais em avaliacao:</b> este ambiente e separado da producao e pode apresentar divergencias. Nao use o resultado para decisao financeira definitiva.</div>
+    <div class="box">
+      <p><b>Conta ML local:</b> {_html.escape(link)}</p>
+      <p><b>Vinculo local:</b> {"Ativo" if ml_linked else "Nao localizado"}</p>
+      <p><b>Ponte compartilhada de identidade/OAuth:</b> {bridge}</p>
+      <p><b>Cobranca e webhooks:</b> bloqueados neste beta.</p>
+      <p><b>Isolamento:</b> banco, cache, logs e deploy proprios; nenhum cookie, senha ou token e copiado.</p>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px">
+      <a href="/online" style="display:inline-block;padding:13px 18px;border-radius:10px;background:#102033;color:#fff;font-weight:800;text-decoration:none">Abrir fluxo online beta</a>
+      <a href="/" style="display:inline-block;padding:13px 18px;border-radius:10px;border:1px solid #cfd6e4;color:#102033;font-weight:800;text-decoration:none">Voltar ao painel</a>
+    </div>
+    """
+    return _layout("Ambiente beta privado", body)
 
 
 def render_error_page(message: str, traceback_text: str = "") -> str:

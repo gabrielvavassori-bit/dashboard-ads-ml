@@ -24,9 +24,12 @@ os.environ["EDUZZ_CLIENT_ID"] = "test-client"
 os.environ["EDUZZ_CLIENT_SECRET"] = "test-client-secret"
 os.environ["APP_PUBLIC_URL"] = "http://127.0.0.1:4182"
 os.environ["COMPETITIVE_WORKER_SECRET"] = "local-worker-secret"
+os.environ["BETA_MODE"] = "false"
+os.environ["BETA_REJECT_BILLING_WEBHOOKS"] = "true"
 
 import db
 import auth
+import beta_bridge
 import eduzz_api
 import webhook
 import app
@@ -77,6 +80,7 @@ class IntegrationTests(unittest.TestCase):
             conn.execute("DELETE FROM webhook_events")
             conn.execute("DELETE FROM oauth_states")
             conn.execute("DELETE FROM audit_log")
+            conn.execute("DELETE FROM beta_handoffs")
         finally:
             conn.close()
         token_path = pathlib.Path(TEST_DIR.name) / "eduzz_oauth_token.json"
@@ -402,6 +406,40 @@ class HTTPRouteTests(unittest.TestCase):
                 return None
         return build_opener(NoRedirect)
 
+    def test_beta_assertion_is_identity_only_and_single_use(self):
+        user_id, _ = self._login_cookie("beta@example.com")
+        user = db.get_user_by_id(user_id)
+        link = {
+            "client_id": "client-1",
+            "ml_user_id": "ml-1",
+            "nickname": "Lonas Online",
+            "official_store": "Lonas Online",
+            "advertiser_id": "adv-1",
+            "seller_id": "seller-1",
+            "site_id": "MLB",
+            "status": "active",
+        }
+        base_now = int(app.time.time())
+        token = beta_bridge.create_assertion("secret", user, link, "https://beta.example/beta/callback", now=base_now)
+        self.assertNotIn("access_token", token)
+        self.assertNotIn("refresh_token", token)
+        payload_value = beta_bridge.verify_assertion(token, "secret", "https://beta.example/beta/callback", now=base_now + 1)
+        self.assertEqual(payload_value["user"]["email"], "beta@example.com")
+        self.assertEqual(payload_value["ml"]["client_id"], "client-1")
+        self.assertTrue(db.claim_beta_handoff(payload_value["nonce"], payload_value["exp"]))
+        self.assertFalse(db.claim_beta_handoff(payload_value["nonce"], payload_value["exp"]))
+
+    def test_beta_assertion_rejects_tamper_and_expiry(self):
+        user_id, _ = self._login_cookie("beta@example.com")
+        user = db.get_user_by_id(user_id)
+        token = beta_bridge.create_assertion("secret", user, None, "https://beta.example/beta/callback", now=100)
+        body, signature = token.split(".", 1)
+        tampered = body[:-1] + ("A" if body[-1] != "A" else "B") + "." + signature
+        with self.assertRaises(ValueError):
+            beta_bridge.verify_assertion(tampered, "secret", "https://beta.example/beta/callback", now=101)
+        with self.assertRaises(ValueError):
+            beta_bridge.verify_assertion(token, "secret", "https://beta.example/beta/callback", now=221)
+
     def test_health_and_custom_delivery(self):
         with urlopen(f"{self.base_url}/healthz", timeout=5) as response:
             self.assertEqual(response.status, 200)
@@ -428,6 +466,73 @@ class HTTPRouteTests(unittest.TestCase):
             urlopen(request, timeout=5)
         self.assertEqual(raised.exception.code, 401)
         raised.exception.close()
+
+    def test_beta_entry_is_disabled_by_default(self):
+        original = app.beta_config.BETA_MODE
+        app.beta_config.BETA_MODE = False
+        try:
+            request = Request(f"{self.base_url}/teste", method="GET")
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request, timeout=5)
+            self.assertEqual(raised.exception.code, 404)
+            raised.exception.close()
+        finally:
+            app.beta_config.BETA_MODE = original
+
+    def test_beta_entry_requires_allowlist_and_shows_isolation(self):
+        user_id, cookie = self._login_cookie("beta@example.com")
+        original = (
+            app.beta_config.BETA_MODE,
+            app.beta_config.BETA_ALLOWED_EMAILS,
+            app.beta_config.BETA_SHARED_AUTH_URL,
+            app.beta_config.BETA_SHARED_AUTH_SECRET,
+            app.beta_config.BETA_SHARED_ML_URL,
+        )
+        app.beta_config.BETA_MODE = True
+        app.beta_config.BETA_ALLOWED_EMAILS = frozenset()
+        try:
+            request = Request(f"{self.base_url}/teste", headers={"Cookie": cookie}, method="GET")
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request, timeout=5)
+            self.assertEqual(raised.exception.code, 403)
+            raised.exception.close()
+            app.beta_config.BETA_ALLOWED_EMAILS = frozenset({"beta@example.com"})
+            app.beta_config.BETA_SHARED_AUTH_URL = "https://auth.example.test"
+            app.beta_config.BETA_SHARED_AUTH_SECRET = "test-secret"
+            app.beta_config.BETA_SHARED_ML_URL = "https://ml.example.test"
+            request = Request(f"{self.base_url}/teste", headers={"Cookie": cookie}, method="GET")
+            with urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8", errors="replace")
+            self.assertEqual(response.status, 200)
+            self.assertIn("Ambiente beta privado", body)
+            self.assertIn("Ponte compartilhada de identidade/OAuth", body)
+            self.assertIn("bloqueados neste beta", body)
+        finally:
+            (
+                app.beta_config.BETA_MODE,
+                app.beta_config.BETA_ALLOWED_EMAILS,
+                app.beta_config.BETA_SHARED_AUTH_URL,
+                app.beta_config.BETA_SHARED_AUTH_SECRET,
+                app.beta_config.BETA_SHARED_ML_URL,
+            ) = original
+
+    def test_beta_rejects_billing_delivery(self):
+        original = (app.beta_config.BETA_MODE, app.beta_config.BETA_REJECT_BILLING_WEBHOOKS)
+        app.beta_config.BETA_MODE = True
+        app.beta_config.BETA_REJECT_BILLING_WEBHOOKS = True
+        try:
+            request = Request(
+                f"{self.base_url}/eduzz/custom-delivery",
+                data=b'{"test":true}',
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request, timeout=5)
+            self.assertEqual(raised.exception.code, 404)
+            self.assertIn("desativada no ambiente beta", raised.exception.read().decode("utf-8", errors="replace"))
+        finally:
+            app.beta_config.BETA_MODE, app.beta_config.BETA_REJECT_BILLING_WEBHOOKS = original
 
     def test_dash_ads_diagnostic_proxy_requires_secret(self):
         request = Request(f"{self.base_url}/internal/dash-ads/ml-context?client=conta-ativa", method="GET")

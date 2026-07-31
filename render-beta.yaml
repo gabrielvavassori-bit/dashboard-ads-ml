@@ -17,22 +17,28 @@ services:
       mountPath: /var/data
       sizeGB: 1
     envVars:
+      - key: BETA_MODE
+        value: "true"
+      - key: BETA_REJECT_BILLING_WEBHOOKS
+        value: "true"
+      - key: BETA_ALLOWED_EMAILS
+        sync: false
+      - key: BETA_SHARED_AUTH_URL
+        sync: false
+      - key: BETA_SHARED_AUTH_SECRET
+        sync: false
+      - key: BETA_PUBLIC_URL
+        sync: false
+      - key: BETA_SHARED_ML_URL
+        value: https://agente-ml.onrender.com
       - key: DATA_DIR
         value: /var/data
       - key: APP_PUBLIC_URL
         sync: false
-      - key: EDUZZ_WEBHOOK_SECRET
+      - key: AGENTE_ML_BASE_URL
+        value: https://agente-ml.onrender.com
+      - key: DASH_ADS_INTERNAL_SECRET
         sync: false
-      - key: EDUZZ_PRODUCT_IDS
-        sync: false
-      - key: EDUZZ_CLIENT_ID
-        sync: false
-      - key: EDUZZ_CLIENT_SECRET
-        sync: false
-      - key: EDUZZ_OAUTH_REDIRECT_URI
-        sync: false
-      - key: EDUZZ_RECONCILE_SECRET
-        generateValue: true
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD

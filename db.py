@@ -128,6 +128,12 @@ CREATE TABLE IF NOT EXISTS audit_log (
     ip         TEXT,
     created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS beta_handoffs (
+    nonce_hash TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER NOT NULL
+);
 """
 
 
@@ -347,6 +353,71 @@ def get_active_ml_link_for_user(user_id: int):
             (user_id,),
         )
         return cur.fetchone()
+    finally:
+        conn.close()
+
+
+def claim_beta_handoff(nonce: str, expires_at: int) -> bool:
+    """Consumes a bridge nonce exactly once in this environment."""
+    if not nonce:
+        return False
+    nonce_hash = hashlib.sha256(nonce.encode("utf-8")).hexdigest()
+    ts = now()
+    with _lock:
+        conn = get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("DELETE FROM beta_handoffs WHERE expires_at<?", (ts,))
+            existing = conn.execute(
+                "SELECT nonce_hash FROM beta_handoffs WHERE nonce_hash=?",
+                (nonce_hash,),
+            ).fetchone()
+            if existing or int(expires_at) <= ts:
+                conn.execute("ROLLBACK")
+                return False
+            conn.execute(
+                "INSERT INTO beta_handoffs (nonce_hash, expires_at, used_at) VALUES (?,?,?)",
+                (nonce_hash, int(expires_at), ts),
+            )
+            conn.execute("COMMIT")
+            return True
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def upsert_beta_identity(identity: dict) -> int:
+    """Materializes a beta user without importing a password or credential."""
+    email = (identity.get("email") or "").strip().lower()
+    if not email:
+        raise ValueError("email beta ausente")
+    ts = now()
+    conn = get_conn()
+    try:
+        existing = conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+        values = (
+            identity.get("name") or "",
+            identity.get("plan") or "beta",
+            identity.get("status") or "active",
+            identity.get("expires_at"),
+            ts,
+        )
+        if existing:
+            conn.execute(
+                """UPDATE users SET name=?, plan=?, status=?, expires_at=?,
+                   access_origin='beta_bridge', updated_at=? WHERE id=?""",
+                (*values, existing["id"]),
+            )
+            return int(existing["id"])
+        cur = conn.execute(
+            """INSERT INTO users
+               (email, name, access_origin, plan, status, expires_at, created_at, updated_at)
+               VALUES (?,?, 'beta_bridge', ?,?,?,?,?)""",
+            (email, values[0], values[1], values[2], values[3], ts, ts),
+        )
+        return int(cur.lastrowid)
     finally:
         conn.close()
 
