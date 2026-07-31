@@ -266,6 +266,19 @@ def _timestamp(value):
         return None
 
 
+def _future_due_or_default(item: dict) -> int:
+    parsed = (
+        _timestamp(item.get("nextChargeDate"))
+        or _timestamp(item.get("expirationDate"))
+        or 0
+    )
+    if parsed and parsed > int(time.time()) + 300:
+        return parsed
+    return int(time.time()) + int(
+        os.environ.get("DEFAULT_ACCESS_DAYS", "32")
+    ) * 86400
+
+
 def reconcile_subscriptions() -> dict:
     """
     Reconcile clearly classified subscription records.
@@ -309,13 +322,7 @@ def reconcile_subscriptions() -> dict:
         result["matched"] += 1
         contract_id = str(item.get("id") or item.get("contractId") or "")
         if status in active_statuses:
-            expires_at = (
-                _timestamp(item.get("nextChargeDate"))
-                or _timestamp(item.get("expirationDate"))
-                or int(time.time()) + int(
-                    os.environ.get("DEFAULT_ACCESS_DAYS", "32")
-                ) * 86400
-            )
+            expires_at = _future_due_or_default(item)
             user_id = db.upsert_user_from_webhook(
                 email=buyer["email"],
                 name=buyer["name"],

@@ -133,6 +133,19 @@ class IntegrationTests(unittest.TestCase):
             "active",
         )
 
+    def test_paid_invoice_with_past_next_charge_date_falls_back_to_future_access_window(self):
+        custom_payload = payload(
+            "event-paid-past-due",
+            "myeduzz.invoice_paid",
+        )
+        custom_payload["data"]["contract"]["nextChargeDate"] = "2026-06-01T00:00:00Z"
+        raw, signature = signed(custom_payload)
+        result = webhook.process_event(raw, signature)
+        user = db.get_user_by_email("cliente@example.com")
+        self.assertEqual(result["status"], 200)
+        self.assertEqual(user["status"], "active")
+        self.assertGreater(user["expires_at"], int(app.time.time()) + (30 * 86400))
+
     def test_failed_event_can_be_retried(self):
         raw, signature = signed(payload(
             "event-retry",
@@ -320,6 +333,32 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(user["status"], "active")
         self.assertGreater(user["expires_at"], int(app.time.time()))
         self.assertEqual(user["access_origin"], "eduzz")
+
+    def test_subscription_reconciliation_active_status_never_keeps_past_due_timestamp(self):
+        original = eduzz_api.request_json
+        eduzz_api.request_json = lambda path, params=None: {
+            "items": [
+                {
+                    "id": "contract-past-due-active",
+                    "status": "upToDate",
+                    "productId": "3032224",
+                    "customer": {
+                        "id": "buyer-past",
+                        "name": "Cliente Passado",
+                        "email": "past-due-active@example.com",
+                    },
+                    "nextChargeDate": "2026-06-01T00:00:00Z",
+                }
+            ]
+        }
+        try:
+            result = eduzz_api.reconcile_subscriptions()
+        finally:
+            eduzz_api.request_json = original
+        user = db.get_user_by_email("past-due-active@example.com")
+        self.assertEqual(result["activated"], 1)
+        self.assertEqual(user["status"], "active")
+        self.assertGreater(user["expires_at"], int(app.time.time()) + (30 * 86400))
 
 
 class HTTPRouteTests(unittest.TestCase):

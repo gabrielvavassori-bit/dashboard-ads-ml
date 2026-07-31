@@ -149,7 +149,9 @@ def _next_due_or_default(payload: dict) -> int:
                 from datetime import datetime
                 txt = str(raw).replace("Z", "+00:00")
                 dt = datetime.fromisoformat(txt)
-                return int(dt.timestamp())
+                parsed_ts = int(dt.timestamp())
+                if parsed_ts > int(time.time()) + 300:
+                    return parsed_ts
             except Exception:
                 pass
     return int(time.time()) + DEFAULT_ACCESS_DAYS * 86400
