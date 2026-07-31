@@ -39,6 +39,7 @@ Variaveis de ambiente:
   MAX_UPLOAD_MB           Limite por arquivo (padrao 20)
 """
 import html as _html
+import calendar
 import json
 import os
 import pathlib
@@ -47,6 +48,7 @@ import tempfile
 import traceback
 import threading
 import time
+from datetime import date, datetime, timedelta
 from email import policy
 from email.parser import BytesParser
 from http.cookies import SimpleCookie
@@ -54,6 +56,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 import auth
 import beta_bridge
@@ -83,6 +86,7 @@ MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 MAX_BODY_BYTES = MAX_UPLOAD_BYTES * 2 + 1 * 1024 * 1024
 AGENTE_ML_BASE_URL = os.environ.get("AGENTE_ML_BASE_URL", "https://agente-ml.onrender.com").rstrip("/")
 ML_LINK_ATTACH_SECRET = (os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")).strip()
+ONLINE_TZ = ZoneInfo("America/Sao_Paulo")
 
 # Serializa geracoes pesadas para nao estourar memoria em planos pequenos.
 # 2 dashboards em paralelo eh saudavel ate em 512MB-1GB RAM.
@@ -230,6 +234,101 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
     return payload if isinstance(payload, dict) else {"ok": False, "payload": payload, "http_status": status}
 
 
+def _parse_iso_date(value: str) -> date | None:
+    try:
+        return date.fromisoformat(str(value or "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _shift_month(value: date, months: int) -> date:
+    index = value.year * 12 + value.month - 1 + months
+    year, month_index = divmod(index, 12)
+    month = month_index + 1
+    return value.replace(year=year, month=month, day=min(value.day, calendar.monthrange(year, month)[1]))
+
+
+def _resolve_online_period(mode: str = "30", month: str = "", date_from: str = "", date_to: str = "", compare: str = "previous", now: datetime | None = None) -> dict:
+    current = (now or datetime.now(ONLINE_TZ)).date()
+    yesterday = current - timedelta(days=1)
+    normalized = (mode or "30").strip().lower()
+    aliases = {"7": "7d", "15": "15d", "30": "30d", "today": "today", "hoje": "today", "yesterday": "yesterday", "ontem": "yesterday", "month": "month", "mes": "month", "custom": "custom", "personalizado": "custom"}
+    normalized = aliases.get(normalized, normalized)
+    partial = False
+    warning = ""
+    error = ""
+    if normalized == "today":
+        start = end = current
+        partial = True
+        warning = "Hoje esta em andamento; os valores podem mudar ate o fechamento do dia."
+        label = "Hoje"
+    elif normalized == "yesterday":
+        start = end = yesterday
+        label = "Ontem"
+    elif normalized in {"7d", "15d", "30d"}:
+        days = int(normalized[:-1])
+        start, end = current - timedelta(days=days), yesterday
+        label = f"Ultimos {days} dias fechados"
+    elif normalized == "month":
+        selected = _parse_iso_date(f"{month}-01") if month else current.replace(day=1)
+        if not selected:
+            error = "Mes invalido."
+            start = end = yesterday
+            label = "Periodo invalido"
+        else:
+            start = selected.replace(day=1)
+            end = selected.replace(day=calendar.monthrange(selected.year, selected.month)[1])
+            if selected.year == current.year and selected.month == current.month and end >= current:
+                end = yesterday
+                partial = True
+                warning = "O mes atual foi limitado ate ontem porque hoje ainda nao foi fechado."
+            label = f"Mes {selected.year:04d}-{selected.month:02d}"
+    elif normalized == "custom":
+        start, end = _parse_iso_date(date_from), _parse_iso_date(date_to)
+        label = "Personalizado"
+        if not start or not end:
+            error = "Informe data inicial e data final validas."
+            start, end = yesterday, yesterday
+        elif start > end:
+            error = "A data inicial nao pode ser posterior a data final."
+        elif end >= current:
+            partial = True
+            warning = "O periodo personalizado inclui hoje, que ainda esta em andamento."
+    else:
+        error = "Periodo invalido."
+        normalized, start, end, label = "30d", current - timedelta(days=30), yesterday, "Ultimos 30 dias fechados"
+
+    compare_mode = (compare or "previous").strip().lower()
+    if compare_mode not in {"none", "previous", "previous_month", "previous_year"}:
+        compare_mode = "previous"
+    compare_period = None
+    if not error and compare_mode != "none":
+        if compare_mode == "previous":
+            span = end - start
+            compare_start, compare_end = start - span - timedelta(days=1), start - timedelta(days=1)
+        elif compare_mode == "previous_month":
+            compare_start = _shift_month(start, -1)
+            compare_end = _shift_month(end, -1)
+        else:
+            try:
+                compare_start, compare_end = start.replace(year=start.year - 1), end.replace(year=end.year - 1)
+            except ValueError:
+                compare_start, compare_end = start.replace(year=start.year - 1, day=28), end.replace(year=end.year - 1, day=28)
+        compare_period = {"dateFrom": compare_start.isoformat(), "dateTo": compare_end.isoformat(), "label": compare_mode}
+    return {
+        "mode": normalized,
+        "month": month or "",
+        "dateFrom": start.isoformat(),
+        "dateTo": end.isoformat(),
+        "label": label,
+        "partial": partial,
+        "warning": warning,
+        "compareMode": compare_mode,
+        "comparePeriod": compare_period,
+        "error": error,
+    }
+
+
 def _normalize_mlb_code(value) -> str:
     text_value = str(value or "").strip().upper()
     return text_value if text_value.startswith("MLB") else ""
@@ -270,22 +369,23 @@ def _deduplicate_online_ads_rows(ads_rows: list) -> tuple[list, dict]:
     }
 
 
-def _build_online_dashboard_data(client: str, advertiser_id: str = "") -> tuple[dict | None, str]:
+def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from: str = "", date_to: str = "", requested_period: dict | None = None) -> tuple[dict | None, str]:
     """Converte apenas o cache autenticado do agente em dados para o Dash ADS."""
+    period_params = {"date_from": date_from, "date_to": date_to}
     latest_payload = _fetch_dash_ads_json(
         "/internal/dash-ads/online-cache-latest",
-        {"client": client, "advertiser_id": advertiser_id},
+        {"client": client, "advertiser_id": advertiser_id, **period_params},
     )
     if not latest_payload.get("ok"):
         refresh = _fetch_dash_ads_json(
             "/internal/dash-ads/online-cache-refresh",
-            {"client": client, "advertiser_id": advertiser_id, "max_items": 25},
+            {"client": client, "advertiser_id": advertiser_id, "max_items": 25, **period_params},
         )
         if not refresh.get("ok"):
             return None, "Nao foi possivel preparar os dados online agora. Tente novamente em alguns minutos."
         latest_payload = _fetch_dash_ads_json(
             "/internal/dash-ads/online-cache-latest",
-            {"client": client, "advertiser_id": advertiser_id},
+            {"client": client, "advertiser_id": advertiser_id, **period_params},
         )
 
     latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
@@ -388,6 +488,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "") -> tuple[
     total_ads_sales = sum(item["adsSales"] for item in items)
     latest_date_from = latest.get("date_from") or ads.get("date_from") or ""
     latest_date_to = latest.get("date_to") or ads.get("date_to") or ""
+    requested_from = date_from or (requested_period or {}).get("dateFrom") or ""
+    requested_to = date_to or (requested_period or {}).get("dateTo") or ""
+    period_match = not (requested_from or requested_to) or (latest_date_from == requested_from and latest_date_to == requested_to)
     cache_status = "completo" if complete else "parcial"
     notice = (
         f"Modo online beta: leitura autenticada do cache da conta. A cobertura de vendas esta {cache_status}; "
@@ -421,7 +524,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "") -> tuple[
         },
         "meta": {
             "period": {"dateFrom": latest_date_from, "dateTo": latest_date_to},
-            "onlineMode": {"enabled": True, "notice": notice, "complete": complete, "updatedAt": latest.get("updated_at") or ads.get("updated_at") or ""},
+            "onlineMode": {"enabled": True, "notice": notice, "complete": complete, "updatedAt": latest.get("updated_at") or ads.get("updated_at") or "", "onlinePeriod": requested_period or {}, "periodMatch": period_match},
             "adsDeduplication": ads_deduplication,
         },
         "items": sorted(items, key=lambda item: (-item["investment"], -item["totalRevenue"])),
@@ -432,7 +535,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "") -> tuple[
         "skuAds": sku_ads,
         "adsByProduct": [item for item in items if item.get("sku")],
         "finishedNoSku": [item for item in items if not item.get("sku")],
-        "onlineBeta": {"enabled": True, "client": client, "latest": latest_payload, "summary": {"totalItems": len(items)}},
+        "onlineBeta": {"enabled": True, "client": client, "latest": latest_payload, "summary": {"totalItems": len(items)}, "requestedPeriod": requested_period or {}, "apiPeriod": {"dateFrom": latest_date_from, "dateTo": latest_date_to}, "periodMatch": period_match},
     }, ""
 
 
@@ -718,6 +821,16 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 qs = parse_qs(url.query or "")
                 confirmed = (qs.get("confirmed", [""])[0] or "").strip() == "1"
+                period = _resolve_online_period(
+                    mode=qs.get("period", ["30"])[0],
+                    month=qs.get("month", [""])[0],
+                    date_from=qs.get("date_from", [""])[0],
+                    date_to=qs.get("date_to", [""])[0],
+                    compare=qs.get("compare", ["previous"])[0],
+                )
+                if period["error"]:
+                    _send_html(self, templates.render_error_page(period["error"]), 400)
+                    return
                 link = db.get_active_ml_link_for_user(user["id"])
                 linked_name = ""
                 if link:
@@ -736,6 +849,9 @@ class Handler(BaseHTTPRequestHandler):
                 dashboard_data, message = _build_online_dashboard_data(
                     client_id,
                     advertiser_id=(link["advertiser_id"] or "").strip(),
+                    date_from=period["dateFrom"],
+                    date_to=period["dateTo"],
+                    requested_period=period,
                 )
                 if not dashboard_data:
                     _send_html(self, templates.render_error_page(message), 503)

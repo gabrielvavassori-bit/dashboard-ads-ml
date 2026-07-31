@@ -1016,6 +1016,42 @@ def render_dashboard(data):
     title_suffix = f" - {html.escape(client_name)}" if client_name else ""
     online_mode = ((data.get("meta") or {}).get("onlineMode") or {})
     online_notice = html.escape(str(online_mode.get("notice") or ""))
+    online_period = online_mode.get("onlinePeriod") or {}
+    period_mode = str(online_period.get("mode") or "30d")
+    period_month = html.escape(str(online_period.get("month") or ""))
+    period_from = html.escape(str(online_period.get("dateFrom") or ""))
+    period_to = html.escape(str(online_period.get("dateTo") or ""))
+    period_compare = str(online_period.get("compareMode") or "previous")
+    period_warning = html.escape(str(online_period.get("warning") or ""))
+
+    def period_option(value, label):
+        selected = " selected" if period_mode == value else ""
+        return f'<option value="{value}"{selected}>{label}</option>'
+
+    def compare_option(value, label):
+        selected = " selected" if period_compare == value else ""
+        return f'<option value="{value}"{selected}>{label}</option>'
+
+    online_period_filter = ""
+    if online_mode.get("enabled"):
+        online_period_filter = f"""
+    <section class="card period-filter">
+      <div class="period-filter-head">
+        <div><h2>Periodo da analise online</h2><p class="note">Hoje considera o parcial ate a hora atual. Os demais periodos fecham em ontem.</p></div>
+        <div class="muted">Aplicado: {period_from} a {period_to}</div>
+      </div>
+      <form class="period-form" method="get" action="/online">
+        <input type="hidden" name="confirmed" value="1">
+        <label>Periodo<select name="period">{period_option('today', 'Hoje')}{period_option('yesterday', 'Ontem')}{period_option('7d', 'Ultimos 7 dias')}{period_option('15d', 'Ultimos 15 dias')}{period_option('30d', 'Ultimos 30 dias')}{period_option('month', 'Por mes')}{period_option('custom', 'Personalizado')}</select></label>
+        <label>Mes<input type="month" name="month" value="{period_month}"></label>
+        <label>Data inicial<input type="date" name="date_from" value="{period_from}"></label>
+        <label>Data final<input type="date" name="date_to" value="{period_to}"></label>
+        <label>Comparar com<select name="compare">{compare_option('none', 'Sem comparacao')}{compare_option('previous', 'Periodo anterior')}{compare_option('previous_month', 'Mesmo periodo do mes anterior')}{compare_option('previous_year', 'Mesmo periodo do ano anterior')}</select></label>
+        <button class="primary-action" type="submit">Atualizar leitura</button>
+      </form>
+      {f'<div class="period-warning">{period_warning}</div>' if period_warning else ''}
+    </section>
+"""
     return f"""<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -1114,6 +1150,15 @@ def render_dashboard(data):
     .status-warn {{ color:var(--orange); font-weight:800; }}
     .status-bad {{ color:var(--red); font-weight:800; }}
     .online-notice {{ margin:0 0 12px; padding:12px 14px; border:1px solid #fecdca; border-radius:10px; background:#fff7ed; color:#7a271a; font-weight:700; }}
+    .period-filter {{ margin:0 0 12px; }}
+    .period-filter-head {{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; }}
+    .period-form {{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-top:10px; }}
+    .period-form label {{ display:flex; flex-direction:column; gap:5px; color:var(--muted); font-size:12px; font-weight:800; }}
+    .period-form select, .period-form input {{ min-width:160px; width:auto; }}
+    .period-form input {{ width:160px; }}
+    .period-form button {{ align-self:flex-end; }}
+    .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
+    @media (max-width:700px) {{ .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} }}
     @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} }}
   </style>
 </head>
@@ -1137,6 +1182,7 @@ def render_dashboard(data):
   </header>
   <main>
     {f'<section class="online-notice">{online_notice}</section>' if online_notice else ''}
+    {online_period_filter}
     <section class="kpis" id="kpis"></section>
     <nav class="page-nav" aria-label="Visoes do dashboard">
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
@@ -1717,7 +1763,9 @@ def render_dashboard(data):
         return;
       }}
       const periodMatch = !!beta.periodMatch;
-      const periodText = `XLSX: ${{beta.xlsxPeriod?.dateFrom || '-'}} a ${{beta.xlsxPeriod?.dateTo || '-'}} | API/cache: ${{beta.apiPeriod?.dateFrom || '-'}} a ${{beta.apiPeriod?.dateTo || '-'}}`;
+      const requested = beta.requestedPeriod || DATA.meta?.onlineMode?.onlinePeriod || {{}};
+      const apiPeriod = beta.apiPeriod || DATA.meta?.period || {{}};
+      const periodText = `Solicitado: ${{requested.dateFrom || '-'}} a ${{requested.dateTo || '-'}} | Cache/API: ${{apiPeriod.dateFrom || '-'}} a ${{apiPeriod.dateTo || '-'}}`;
       periodNode.textContent = periodText;
       const summary = beta.summary || {{}};
       summaryNode.innerHTML = [
@@ -1729,8 +1777,10 @@ def render_dashboard(data):
       const latest = beta.latest || {{}};
       const latestAds = latest.ads || {{}};
       const latestSales = latest.latest?.sales || latest.sales || {{}};
+      const warning = requested.warning ? `<span class="status-warn">${{safe(requested.warning)}}</span><br>` : '';
       statusNode.innerHTML = `
-        <span class="${{periodMatch ? 'status-ok' : 'status-warn'}}">${{periodMatch ? 'Periodo padronizado entre XLSX e leitura online.' : 'Periodo online diferente do XLSX; reconciliacao precisa ser lida com cautela.'}}</span><br>
+        <span class="${{periodMatch ? 'status-ok' : 'status-warn'}}">${{periodMatch ? 'Periodo solicitado aplicado ao cache online.' : 'O cache retornou outro intervalo; leitura deve ser conferida.'}}</span><br>
+        ${{warning}}
         Cache online: ${{safe(latest.latest?.updated_at || latest.updated_at || '-')}} | Ads online: ${{num(latestAds.items_total || 0)}} linhas | Vendas online em cache: ${{num(latestSales.items_cached || 0)}} itens.
       `;
       const rows = (beta.items || []).map(item => `
