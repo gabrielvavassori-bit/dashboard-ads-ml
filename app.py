@@ -405,6 +405,19 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         if not code:
             continue
         sale = sales_by_item.get(code) if isinstance(sales_by_item.get(code), dict) else {}
+        sale_sku = str(
+            sale.get("sku") or sale.get("seller_sku") or sale.get("sellerSku") or ""
+        ).strip()
+        sale_title = str(
+            sale.get("title") or sale.get("item_title") or sale.get("itemTitle") or ""
+        ).strip()
+        sale_last_date = str(
+            sale.get("last_sale_date")
+            or sale.get("lastSaleDate")
+            or sale.get("last_sale_at")
+            or sale.get("lastSaleAt")
+            or ""
+        ).strip()
         investment = _number(raw.get("cost"))
         ads_revenue = _number(raw.get("total_amount"))
         ads_direct_revenue = _number(raw.get("direct_amount"))
@@ -417,14 +430,18 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         organic_revenue = max(0.0, total_revenue - ads_direct_revenue)
         tacos_base = organic_revenue + ads_direct_revenue + ads_indirect_revenue
         campaign_id = str(raw.get("campaign_id") or "").strip()
+        campaign_name = str(
+            raw.get("campaign_name") or raw.get("campaign_title") or raw.get("campaign") or ""
+        ).strip()
+        campaign_label = campaign_name or (f"Campanha {campaign_id}" if campaign_id else "Sem campanha identificada")
         status = str(raw.get("status") or "").strip().lower()
         active = status.startswith("active") or status.startswith("ativo")
         last_price = _number(raw.get("price"))
         item = {
-            "sku": str(raw.get("sku") or "").strip(),
+            "sku": str(raw.get("sku") or "").strip() or sale_sku,
             "code": code,
-            "title": str(raw.get("title") or "").strip(),
-            "lastSaleDate": "",
+            "title": str(raw.get("title") or "").strip() or sale_title,
+            "lastSaleDate": sale_last_date,
             "lastSaleSort": 0,
             "lastPrice": last_price,
             "avgSalePrice": (total_revenue / units) if units else last_price,
@@ -442,7 +459,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "adsDependencyRatio": (ads_direct_revenue / total_revenue) if total_revenue else 0.0,
             "outsideAdsRatio": (organic_revenue / total_revenue) if total_revenue else 0.0,
             "adsAttributedRatio": (ads_revenue / total_revenue) if total_revenue else 0.0,
-            "campaign": f"Campanha {campaign_id}" if campaign_id else "Sem campanha identificada",
+            "campaign": campaign_label,
+            "campaignId": campaign_id,
+            "campaignName": campaign_name,
             "adsCampaigns": f"Campanha {campaign_id}" if campaign_id else "",
             "campaignStatus": "Ativa" if active else "Sem campanha ativa",
             "impressions": impressions,
