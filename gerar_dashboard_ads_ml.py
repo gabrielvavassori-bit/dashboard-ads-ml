@@ -1192,13 +1192,13 @@ def render_dashboard(data):
     .status-warn {{ color:var(--orange); font-weight:800; }}
     .status-bad {{ color:var(--red); font-weight:800; }}
     .online-notice {{ margin:0 0 12px; padding:12px 14px; border:1px solid #fecdca; border-radius:10px; background:#fff7ed; color:#7a271a; font-weight:700; }}
-      .period-picker {{ position:relative; margin:0 0 12px; overflow:visible; }}
+      .period-picker {{ position:relative; z-index:30; margin:0 0 12px; overflow:visible; }}
       .period-picker summary {{ list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; }}
       .period-picker summary::-webkit-details-marker {{ display:none; }}
       .period-picker summary::after {{ content:'▾'; color:var(--muted); font-size:16px; }}
       .period-picker[open] summary::after {{ content:'▴'; }}
       .period-summary-meta {{ color:var(--muted); font-size:12px; font-weight:600; }}
-      .period-popover {{ position:absolute; z-index:20; right:0; top:calc(100% + 8px); width:min(560px, calc(100vw - 32px)); padding:16px; background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 30px rgba(15,23,42,.16); }}
+      .period-popover {{ position:absolute; z-index:20; right:0; top:calc(100% + 8px); width:min(560px, calc(100vw - 32px)); padding:16px; background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 30px rgba(15,23,42,.16); }}
       .period-form {{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }}
       .period-form label {{ display:flex; flex-direction:column; gap:5px; color:var(--muted); font-size:12px; font-weight:800; }}
       .period-form select, .period-form input {{ min-width:160px; width:auto; }}

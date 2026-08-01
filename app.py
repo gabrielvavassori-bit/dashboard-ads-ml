@@ -510,6 +510,12 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     requested_from = date_from or (requested_period or {}).get("dateFrom") or ""
     requested_to = date_to or (requested_period or {}).get("dateTo") or ""
     period_match = not (requested_from or requested_to) or (latest_date_from == requested_from and latest_date_to == requested_to)
+    if not period_match:
+        return None, (
+            f"Cache online fora do periodo selecionado ({latest_date_from or 'sem data'} a "
+            f"{latest_date_to or 'sem data'}). Solicitado {requested_from or 'sem data'} a "
+            f"{requested_to or 'sem data'}. Atualize a coleta online e tente novamente."
+        )
     cache_status = "completo" if complete else "parcial"
     notice = (
         f"Modo online beta: leitura autenticada do cache da conta. A cobertura de vendas esta {cache_status}; "

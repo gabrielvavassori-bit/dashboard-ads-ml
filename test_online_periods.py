@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -84,6 +85,50 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertTrue(data["meta"]["onlineMode"]["periodMatch"])
         self.assertEqual(data["onlineBeta"]["requestedPeriod"]["dateFrom"], "2026-07-24")
         self.assertEqual(data["onlineBeta"]["apiPeriod"]["dateTo"], "2026-07-30")
+
+    def test_online_builder_rejects_cache_outside_selected_period(self):
+        payload = {
+            "ok": True,
+            "latest": {
+                "date_from": "2026-07-31",
+                "date_to": "2026-07-31",
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": "2026-07-31",
+                "date_to": "2026-07-31",
+                "items_total": 1,
+                "items": [{
+                    "item_id": "MLB123",
+                    "title": "Produto teste",
+                    "cost": "10",
+                    "total_amount": "100",
+                    "direct_amount": "80",
+                    "prints": "100",
+                    "clicks": "10",
+                    "units_quantity": "1",
+                    "price": "100",
+                }],
+            },
+            "sales": {"items": {"MLB123": {"revenue_total": "120", "units_total": "2"}}},
+        }
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            data, message = app._build_online_dashboard_data(
+                client="conta-ativa",
+                advertiser_id="123",
+                date_from="2026-07-24",
+                date_to="2026-07-30",
+                requested_period={"dateFrom": "2026-07-24", "dateTo": "2026-07-30"},
+            )
+        self.assertIsNone(data)
+        self.assertIn("fora do periodo", message)
+        self.assertIn("2026-07-24", message)
+
+    def test_period_picker_has_opaque_surface_and_stack(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        self.assertIn("z-index:30", source)
+        self.assertIn("background:var(--card)", source)
+        self.assertNotIn("background:var(--surface)", source)
 
     def test_dashboard_contains_beta_period_controls(self):
         period = app._resolve_online_period("7", compare="previous", now=NOW)
