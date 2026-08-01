@@ -1021,8 +1021,25 @@ def render_dashboard(data):
     period_month = html.escape(str(online_period.get("month") or ""))
     period_from = html.escape(str(online_period.get("dateFrom") or ""))
     period_to = html.escape(str(online_period.get("dateTo") or ""))
-    period_compare = str(online_period.get("compareMode") or "previous")
+    period_compare = str(online_period.get("compareMode") or "none")
     period_warning = html.escape(str(online_period.get("warning") or ""))
+    period_labels = {
+        "today": "Hoje",
+        "yesterday": "Ontem",
+        "7d": "Ultimos 7 dias",
+        "15d": "Ultimos 15 dias",
+        "30d": "Ultimos 30 dias",
+        "month": "Por mes",
+        "custom": "Personalizado",
+    }
+    compare_labels = {
+        "none": "Nao comparar",
+        "previous": "Periodo anterior",
+        "previous_month": "Mesmo periodo do mes anterior",
+        "previous_year": "Mesmo periodo do ano anterior",
+    }
+    period_label = html.escape(period_labels.get(period_mode, "Periodo selecionado"))
+    compare_label = html.escape(compare_labels.get(period_compare, "Nao comparar"))
 
     def period_option(value, label):
         selected = " selected" if period_mode == value else ""
@@ -1035,23 +1052,48 @@ def render_dashboard(data):
     online_period_filter = ""
     if online_mode.get("enabled"):
         online_period_filter = f"""
-    <section class="card period-filter">
-      <div class="period-filter-head">
-        <div><h2>Periodo da analise online</h2><p class="note">Hoje considera o parcial ate a hora atual. Os demais periodos fecham em ontem.</p></div>
-        <div class="muted">Aplicado: {period_from} a {period_to}</div>
-      </div>
-      <form class="period-form" method="get" action="/online">
+    <details class="card period-picker">
+      <summary>
+        <span><strong>Periodo:</strong> {period_label} <span class="period-summary-meta">{period_from} a {period_to}</span></span>
+        <span class="period-summary-meta">Comparacao: {compare_label}</span>
+      </summary>
+      <div class="period-popover">
+      <form class="period-form" method="get" action="/online" data-online-period-form>
         <input type="hidden" name="confirmed" value="1">
-        <label>Periodo<select name="period">{period_option('today', 'Hoje')}{period_option('yesterday', 'Ontem')}{period_option('7d', 'Ultimos 7 dias')}{period_option('15d', 'Ultimos 15 dias')}{period_option('30d', 'Ultimos 30 dias')}{period_option('month', 'Por mes')}{period_option('custom', 'Personalizado')}</select></label>
-        <label>Mes<input type="month" name="month" value="{period_month}"></label>
-        <label>Data inicial<input type="date" name="date_from" value="{period_from}"></label>
-        <label>Data final<input type="date" name="date_to" value="{period_to}"></label>
-        <label>Comparar com<select name="compare">{compare_option('none', 'Sem comparacao')}{compare_option('previous', 'Periodo anterior')}{compare_option('previous_month', 'Mesmo periodo do mes anterior')}{compare_option('previous_year', 'Mesmo periodo do ano anterior')}</select></label>
-        <button class="primary-action" type="submit">Atualizar leitura</button>
+        <label>Periodo<select name="period" data-online-period>{period_option('today', 'Hoje')}{period_option('yesterday', 'Ontem')}{period_option('7d', 'Ultimos 7 dias')}{period_option('15d', 'Ultimos 15 dias')}{period_option('30d', 'Ultimos 30 dias')}{period_option('month', 'Por mes')}{period_option('custom', 'Personalizado')}</select></label>
+        <div class="field-group" id="period-month-field" hidden>
+          <label>Mes<input type="month" name="month" value="{period_month}"></label>
+        </div>
+        <div class="field-group" id="period-custom-fields" hidden>
+          <label>Data inicial<input type="date" name="date_from" value="{period_from}"></label>
+          <label>Data final<input type="date" name="date_to" value="{period_to}"></label>
+        </div>
+        <label>Comparar com<select name="compare">{compare_option('none', 'Nao comparar')}{compare_option('previous', 'Periodo anterior')}{compare_option('previous_month', 'Mesmo periodo do mes anterior')}{compare_option('previous_year', 'Mesmo periodo do ano anterior')}</select></label>
+        <button class="primary-action" type="submit">Aplicar periodo</button>
       </form>
-      {f'<div class="period-warning">{period_warning}</div>' if period_warning else ''}
-    </section>
-"""
+      <p class="note">Hoje usa dados parciais. Os demais periodos fecham em ontem. Para comparar, escolha uma opcao e aplique novamente.</p>
+        {f'<div class="period-warning">{period_warning}</div>' if period_warning else ''}
+      </div>
+    </details>
+    <script>
+    (() => {{
+      const form = document.querySelector('[data-online-period-form]');
+      const select = document.querySelector('[data-online-period]');
+      const month = document.getElementById('period-month-field');
+      const custom = document.getElementById('period-custom-fields');
+      if (!form || !select) return;
+      const sync = () => {{
+        if (month) month.hidden = select.value !== 'month';
+        if (custom) custom.hidden = select.value !== 'custom';
+      }};
+      select.addEventListener('change', () => {{
+        sync();
+        if (select.value !== 'month' && select.value !== 'custom') form.submit();
+      }});
+      sync();
+    }})();
+    </script>
+    """
     return f"""<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -1150,15 +1192,22 @@ def render_dashboard(data):
     .status-warn {{ color:var(--orange); font-weight:800; }}
     .status-bad {{ color:var(--red); font-weight:800; }}
     .online-notice {{ margin:0 0 12px; padding:12px 14px; border:1px solid #fecdca; border-radius:10px; background:#fff7ed; color:#7a271a; font-weight:700; }}
-    .period-filter {{ margin:0 0 12px; }}
-    .period-filter-head {{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; }}
-    .period-form {{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-top:10px; }}
-    .period-form label {{ display:flex; flex-direction:column; gap:5px; color:var(--muted); font-size:12px; font-weight:800; }}
-    .period-form select, .period-form input {{ min-width:160px; width:auto; }}
-    .period-form input {{ width:160px; }}
-    .period-form button {{ align-self:flex-end; }}
-    .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
-    @media (max-width:700px) {{ .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} }}
+      .period-picker {{ position:relative; margin:0 0 12px; overflow:visible; }}
+      .period-picker summary {{ list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; }}
+      .period-picker summary::-webkit-details-marker {{ display:none; }}
+      .period-picker summary::after {{ content:'▾'; color:var(--muted); font-size:16px; }}
+      .period-picker[open] summary::after {{ content:'▴'; }}
+      .period-summary-meta {{ color:var(--muted); font-size:12px; font-weight:600; }}
+      .period-popover {{ position:absolute; z-index:20; right:0; top:calc(100% + 8px); width:min(560px, calc(100vw - 32px)); padding:16px; background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 30px rgba(15,23,42,.16); }}
+      .period-form {{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }}
+      .period-form label {{ display:flex; flex-direction:column; gap:5px; color:var(--muted); font-size:12px; font-weight:800; }}
+      .period-form select, .period-form input {{ min-width:160px; width:auto; }}
+      .period-form input {{ width:160px; }}
+      .period-form button {{ align-self:flex-end; }}
+      .period-form .field-group {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; width:100%; }}
+      .period-form .field-group[hidden] {{ display:none; }}
+      .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
+      @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
     @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} }}
   </style>
 </head>

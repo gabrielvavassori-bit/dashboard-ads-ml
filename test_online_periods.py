@@ -24,6 +24,12 @@ class OnlinePeriodTests(unittest.TestCase):
                 self.assertEqual((period["dateFrom"], period["dateTo"]), dates)
                 self.assertFalse(period["partial"])
 
+    def test_quick_presets_do_not_require_month_or_comparison(self):
+        period = app._resolve_online_period("7", month="", compare="", now=NOW)
+        self.assertEqual((period["dateFrom"], period["dateTo"]), ("2026-07-24", "2026-07-30"))
+        self.assertEqual(period["compareMode"], "none")
+        self.assertIsNone(period["comparePeriod"])
+
     def test_today_current_month_custom_and_comparisons(self):
         today = app._resolve_online_period("today", compare="none", now=NOW)
         self.assertEqual((today["dateFrom"], today["dateTo"]), ("2026-07-31", "2026-07-31"))
@@ -83,11 +89,12 @@ class OnlinePeriodTests(unittest.TestCase):
         period = app._resolve_online_period("7", compare="previous", now=NOW)
         self.assertTrue(callable(app._build_online_dashboard_data))
         html = render_dashboard({"meta": {"onlineMode": {"enabled": True, "onlinePeriod": period}}, "onlineBeta": {"enabled": True, "requestedPeriod": period}, "items": []})
-        self.assertIn('name="period"', html)
-        self.assertIn('name="compare"', html)
+        self.assertIn('data-online-period', html)
+        self.assertIn('data-online-period-form', html)
+        self.assertIn('id="period-month-field"', html)
+        self.assertIn('id="period-custom-fields"', html)
+        self.assertIn('Nao comparar', html)
         self.assertIn("Ultimos 7 dias", html)
-        self.assertIn('name="date_from"', html)
-        self.assertIn('name="date_to"', html)
 
 
 if __name__ == "__main__":

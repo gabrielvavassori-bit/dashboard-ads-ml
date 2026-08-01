@@ -248,7 +248,7 @@ def _shift_month(value: date, months: int) -> date:
     return value.replace(year=year, month=month, day=min(value.day, calendar.monthrange(year, month)[1]))
 
 
-def _resolve_online_period(mode: str = "30", month: str = "", date_from: str = "", date_to: str = "", compare: str = "previous", now: datetime | None = None) -> dict:
+def _resolve_online_period(mode: str = "30d", month: str = "", date_from: str = "", date_to: str = "", compare: str = "none", now: datetime | None = None) -> dict:
     current = (now or datetime.now(ONLINE_TZ)).date()
     yesterday = current - timedelta(days=1)
     normalized = (mode or "30").strip().lower()
@@ -298,9 +298,9 @@ def _resolve_online_period(mode: str = "30", month: str = "", date_from: str = "
         error = "Periodo invalido."
         normalized, start, end, label = "30d", current - timedelta(days=30), yesterday, "Ultimos 30 dias fechados"
 
-    compare_mode = (compare or "previous").strip().lower()
+    compare_mode = (compare or "none").strip().lower()
     if compare_mode not in {"none", "previous", "previous_month", "previous_year"}:
-        compare_mode = "previous"
+        compare_mode = "none"
     compare_period = None
     if not error and compare_mode != "none":
         if compare_mode == "previous":
@@ -841,11 +841,11 @@ class Handler(BaseHTTPRequestHandler):
                 qs = parse_qs(url.query or "")
                 confirmed = (qs.get("confirmed", [""])[0] or "").strip() == "1"
                 period = _resolve_online_period(
-                    mode=qs.get("period", ["30"])[0],
+                    mode=qs.get("period", ["30d"])[0],
                     month=qs.get("month", [""])[0],
                     date_from=qs.get("date_from", [""])[0],
                     date_to=qs.get("date_to", [""])[0],
-                    compare=qs.get("compare", ["previous"])[0],
+                    compare=qs.get("compare", ["none"])[0],
                 )
                 if period["error"]:
                     _send_html(self, templates.render_error_page(period["error"]), 400)
