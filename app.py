@@ -372,12 +372,21 @@ def _deduplicate_online_ads_rows(ads_rows: list) -> tuple[list, dict]:
 def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from: str = "", date_to: str = "", requested_period: dict | None = None) -> tuple[dict | None, str]:
     """Converte apenas o cache autenticado do agente em dados para o Dash ADS."""
     requested_at = datetime.now().astimezone().isoformat(timespec="seconds")
-    period_params = {"date_from": date_from, "date_to": date_to}
+    requested_from = date_from or (requested_period or {}).get("dateFrom") or ""
+    requested_to = date_to or (requested_period or {}).get("dateTo") or ""
+    period_params = {"date_from": requested_from, "date_to": requested_to}
     latest_payload = _fetch_dash_ads_json(
         "/internal/dash-ads/online-cache-latest",
         {"client": client, "advertiser_id": advertiser_id, **period_params},
     )
-    if not latest_payload.get("ok"):
+    initial_latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
+    initial_ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
+    initial_from = initial_latest.get("date_from") or initial_ads.get("date_from") or ""
+    initial_to = initial_latest.get("date_to") or initial_ads.get("date_to") or ""
+    period_mismatch = bool(requested_from or requested_to) and (
+        initial_from != requested_from or initial_to != requested_to
+    )
+    if not latest_payload.get("ok") or period_mismatch:
         refresh = _fetch_dash_ads_json(
             "/internal/dash-ads/online-cache-refresh",
             {"client": client, "advertiser_id": advertiser_id, "max_items": 25, **period_params},
@@ -508,8 +517,6 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     total_ads_sales = sum(item["adsSales"] for item in items)
     latest_date_from = latest.get("date_from") or ads.get("date_from") or ""
     latest_date_to = latest.get("date_to") or ads.get("date_to") or ""
-    requested_from = date_from or (requested_period or {}).get("dateFrom") or ""
-    requested_to = date_to or (requested_period or {}).get("dateTo") or ""
     period_match = not (requested_from or requested_to) or (latest_date_from == requested_from and latest_date_to == requested_to)
     if not period_match:
         return None, (

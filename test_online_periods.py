@@ -92,8 +92,8 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIsInstance(snapshot["snapshotAgeSeconds"], int)
         self.assertEqual(data["onlineBeta"]["snapshot"], snapshot)
 
-    def test_online_builder_rejects_cache_outside_selected_period(self):
-        payload = {
+    def test_online_builder_refreshes_cache_outside_selected_period(self):
+        stale_payload = {
             "ok": True,
             "latest": {
                 "date_from": "2026-07-31",
@@ -118,7 +118,19 @@ class OnlinePeriodTests(unittest.TestCase):
             },
             "sales": {"items": {"MLB123": {"revenue_total": "120", "units_total": "2"}}},
         }
-        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+        fresh_payload = {
+            **stale_payload,
+            "latest": {**stale_payload["latest"], "date_from": "2026-07-24", "date_to": "2026-07-30"},
+            "ads": {**stale_payload["ads"], "date_from": "2026-07-24", "date_to": "2026-07-30"},
+        }
+        calls = []
+        responses = [stale_payload, {"ok": True}, fresh_payload]
+
+        def fake_fetch(path, params):
+            calls.append((path, params.copy()))
+            return responses.pop(0)
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fake_fetch):
             data, message = app._build_online_dashboard_data(
                 client="conta-ativa",
                 advertiser_id="123",
@@ -126,9 +138,81 @@ class OnlinePeriodTests(unittest.TestCase):
                 date_to="2026-07-30",
                 requested_period={"dateFrom": "2026-07-24", "dateTo": "2026-07-30"},
             )
-        self.assertIsNone(data)
-        self.assertIn("fora do periodo", message)
-        self.assertIn("2026-07-24", message)
+        self.assertIsNotNone(data)
+        self.assertEqual(message, "")
+        self.assertEqual([path for path, _ in calls], [
+            "/internal/dash-ads/online-cache-latest",
+            "/internal/dash-ads/online-cache-refresh",
+            "/internal/dash-ads/online-cache-latest",
+        ])
+        self.assertEqual(calls[1][1]["date_from"], "2026-07-24")
+        self.assertEqual(calls[1][1]["date_to"], "2026-07-30")
+
+    def test_online_builder_uses_requested_period_when_explicit_dates_are_empty(self):
+        payload = {
+            "ok": True,
+            "latest": {
+                "date_from": "2026-07-03",
+                "date_to": "2026-08-01",
+                "updated_at": "2026-08-02T09:00:00-03:00",
+                "sales": {"complete": True},
+            },
+        "ads": {
+            "date_from": "2026-07-03",
+            "date_to": "2026-08-01",
+            "items_total": 1,
+            "items": [{
+                "item_id": "MLB123",
+                "campaign_id": "C1",
+                "campaign_name": "Campanha teste",
+                "status": "active",
+                "sku": "SKU-123",
+                "title": "Produto teste",
+                "cost": "10",
+                "total_amount": "20",
+                "direct_amount": "15",
+                "units_quantity": "1",
+                "price": "120",
+                "prints": "100",
+                "clicks": "5",
+            }],
+        },
+        "sales": {"items": {
+            "MLB123": {
+                "revenue_total": "120",
+                "units_total": "2",
+                "sku": "SKU-123",
+                "title": "Produto teste",
+            }
+        }},
+        }
+        calls = []
+
+        def fake_fetch(path, params):
+            calls.append((path, params.copy()))
+            return payload
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fake_fetch):
+            _, error = app._build_online_dashboard_data(
+                client="conta-ativa",
+                advertiser_id="123",
+                date_from="",
+                date_to="",
+                requested_period={
+                    "dateFrom": "2026-07-03",
+                    "dateTo": "2026-08-01",
+                },
+            )
+
+        self.assertEqual(error, "")
+        self.assertTrue(calls)
+        self.assertTrue(
+            all(
+                params.get("date_from") == "2026-07-03"
+                and params.get("date_to") == "2026-08-01"
+                for _, params in calls
+            )
+        )
 
     def test_period_picker_has_opaque_surface_and_stack(self):
         source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
