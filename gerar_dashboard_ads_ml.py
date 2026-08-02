@@ -1812,10 +1812,16 @@ def render_dashboard(data):
         return;
       }}
       const periodMatch = !!beta.periodMatch;
-      const requested = beta.requestedPeriod || DATA.meta?.onlineMode?.onlinePeriod || {{}};
-      const apiPeriod = beta.apiPeriod || DATA.meta?.period || {{}};
-      const periodText = `Solicitado: ${{requested.dateFrom || '-'}} a ${{requested.dateTo || '-'}} | Cache/API: ${{apiPeriod.dateFrom || '-'}} a ${{apiPeriod.dateTo || '-'}}`;
-      periodNode.textContent = periodText;
+  const requested = beta.requestedPeriod || DATA.meta?.onlineMode?.onlinePeriod || {{}};
+  const apiPeriod = beta.apiPeriod || DATA.meta?.period || {{}};
+  const periodText = `Solicitado: ${{requested.dateFrom || '-'}} a ${{requested.dateTo || '-'}} | Cache/API: ${{apiPeriod.dateFrom || '-'}} a ${{apiPeriod.dateTo || '-'}}`;
+  const snapshot = beta.snapshot || DATA.meta?.onlineMode?.snapshot || {{}};
+  const snapshotAgeSeconds = Number(snapshot.snapshotAgeSeconds);
+  const snapshotAge = Number.isFinite(snapshotAgeSeconds)
+    ? ` (${{Math.max(0, Math.floor(snapshotAgeSeconds / 60))}} min de idade)`
+    : '';
+  const snapshotText = `Solicitado em: ${{snapshot.requestedAt || '-'}} | Snapshot utilizado: ${{snapshot.snapshotAt || '-'}}${{snapshotAge}}`;
+  periodNode.textContent = `${{periodText}} | ${{snapshotText}}`;
       const summary = beta.summary || {{}};
       summaryNode.innerHTML = [
         ['Cliente', beta.client || '-', ''],
@@ -1830,7 +1836,8 @@ def render_dashboard(data):
       statusNode.innerHTML = `
         <span class="${{periodMatch ? 'status-ok' : 'status-warn'}}">${{periodMatch ? 'Periodo solicitado aplicado ao cache online.' : 'O cache retornou outro intervalo; leitura deve ser conferida.'}}</span><br>
         ${{warning}}
-        Cache online: ${{safe(latest.latest?.updated_at || latest.updated_at || '-')}} | Ads online: ${{num(latestAds.items_total || 0)}} linhas | Vendas online em cache: ${{num(latestSales.items_cached || 0)}} itens.
+    Fonte: ${{safe(snapshot.snapshotSource || 'cache online')}} | Frequência prevista: ${{safe(snapshot.snapshotCadence || '-')}}<br>
+    Cache online: ${{safe(latest.latest?.updated_at || latest.updated_at || '-')}} | Ads online: ${{num(latestAds.items_total || 0)}} linhas | Vendas online em cache: ${{num(latestSales.items_cached || 0)}} itens.
       `;
       const rows = (beta.items || []).map(item => `
         <tr>

@@ -371,6 +371,7 @@ def _deduplicate_online_ads_rows(ads_rows: list) -> tuple[list, dict]:
 
 def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from: str = "", date_to: str = "", requested_period: dict | None = None) -> tuple[dict | None, str]:
     """Converte apenas o cache autenticado do agente em dados para o Dash ADS."""
+    requested_at = datetime.now().astimezone().isoformat(timespec="seconds")
     period_params = {"date_from": date_from, "date_to": date_to}
     latest_payload = _fetch_dash_ads_json(
         "/internal/dash-ads/online-cache-latest",
@@ -516,6 +517,23 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             f"{latest_date_to or 'sem data'}). Solicitado {requested_from or 'sem data'} a "
             f"{requested_to or 'sem data'}. Atualize a coleta online e tente novamente."
         )
+    snapshot_at = str(latest.get("updated_at") or ads.get("updated_at") or "").strip()
+    snapshot_age_seconds = None
+    try:
+        snapshot_dt = datetime.fromisoformat(snapshot_at.replace("Z", "+00:00"))
+        requested_dt = datetime.fromisoformat(requested_at)
+        if snapshot_dt.tzinfo is None:
+            snapshot_dt = snapshot_dt.replace(tzinfo=requested_dt.tzinfo)
+        snapshot_age_seconds = max(0, int((requested_dt - snapshot_dt).total_seconds()))
+    except (TypeError, ValueError):
+        pass
+    snapshot_meta = {
+        "requestedAt": requested_at,
+        "snapshotAt": snapshot_at,
+        "snapshotAgeSeconds": snapshot_age_seconds,
+        "snapshotSource": "agente-ml / online-cache-latest",
+        "snapshotCadence": "diario as 06:00 (America/Sao_Paulo) + atualizacao sob demanda",
+    }
     cache_status = "completo" if complete else "parcial"
     notice = (
         f"Modo online beta: leitura autenticada do cache da conta. A cobertura de vendas esta {cache_status}; "
@@ -549,7 +567,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         },
         "meta": {
             "period": {"dateFrom": latest_date_from, "dateTo": latest_date_to},
-            "onlineMode": {"enabled": True, "notice": notice, "complete": complete, "updatedAt": latest.get("updated_at") or ads.get("updated_at") or "", "onlinePeriod": requested_period or {}, "periodMatch": period_match},
+            "onlineMode": {"enabled": True, "notice": notice, "complete": complete, "updatedAt": snapshot_at, "onlinePeriod": requested_period or {}, "periodMatch": period_match, "snapshot": snapshot_meta},
             "adsDeduplication": ads_deduplication,
         },
         "items": sorted(items, key=lambda item: (-item["investment"], -item["totalRevenue"])),
@@ -560,7 +578,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         "skuAds": sku_ads,
         "adsByProduct": [item for item in items if item.get("sku")],
         "finishedNoSku": [item for item in items if not item.get("sku")],
-        "onlineBeta": {"enabled": True, "client": client, "latest": latest_payload, "summary": {"totalItems": len(items)}, "requestedPeriod": requested_period or {}, "apiPeriod": {"dateFrom": latest_date_from, "dateTo": latest_date_to}, "periodMatch": period_match},
+        "onlineBeta": {"enabled": True, "client": client, "latest": latest_payload, "summary": {"totalItems": len(items)}, "requestedPeriod": requested_period or {}, "apiPeriod": {"dateFrom": latest_date_from, "dateTo": latest_date_to}, "periodMatch": period_match, "snapshot": snapshot_meta},
     }, ""
 
 

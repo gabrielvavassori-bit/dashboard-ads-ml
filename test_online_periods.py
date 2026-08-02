@@ -85,6 +85,12 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertTrue(data["meta"]["onlineMode"]["periodMatch"])
         self.assertEqual(data["onlineBeta"]["requestedPeriod"]["dateFrom"], "2026-07-24")
         self.assertEqual(data["onlineBeta"]["apiPeriod"]["dateTo"], "2026-07-30")
+        snapshot = data["meta"]["onlineMode"]["snapshot"]
+        self.assertEqual(snapshot["snapshotAt"], "2026-07-31T12:00:00-03:00")
+        self.assertEqual(snapshot["snapshotSource"], "agente-ml / online-cache-latest")
+        self.assertTrue(snapshot["requestedAt"])
+        self.assertIsInstance(snapshot["snapshotAgeSeconds"], int)
+        self.assertEqual(data["onlineBeta"]["snapshot"], snapshot)
 
     def test_online_builder_rejects_cache_outside_selected_period(self):
         payload = {
@@ -135,6 +141,8 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertTrue(callable(app._build_online_dashboard_data))
         html = render_dashboard({"meta": {"onlineMode": {"enabled": True, "onlinePeriod": period}}, "onlineBeta": {"enabled": True, "requestedPeriod": period}, "items": []})
         self.assertIn('data-online-period', html)
+        self.assertIn("Snapshot utilizado", html)
+        self.assertIn("Frequência prevista", html)
         self.assertIn('data-online-period-form', html)
         self.assertIn('id="period-month-field"', html)
         self.assertIn('id="period-custom-fields"', html)
