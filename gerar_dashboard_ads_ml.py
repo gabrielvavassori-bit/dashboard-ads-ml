@@ -1559,6 +1559,7 @@ def render_dashboard(data):
     }})();
     </script>
     """
+    online_beta_tab = '<button class="page-tab" data-view="online-beta" type="button">Online Beta</button>' if (data.get("onlineBeta") or {}).get("enabled") else ""
     return f"""<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -1720,7 +1721,7 @@ def render_dashboard(data):
     <nav class="page-nav" aria-label="Visoes do dashboard">
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
       <button class="page-tab" data-view="abc" type="button">Curva ABC</button>
-      <button class="page-tab" data-view="online-beta" type="button">Online Beta</button>
+      {online_beta_tab}
     </nav>
     <section class="view active" id="view-operational">
       <section class="grid">

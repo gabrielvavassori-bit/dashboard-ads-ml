@@ -628,6 +628,7 @@ class HTTPRouteTests(unittest.TestCase):
             self.assertIn("Dashboard ADS Mercado Livre", body)
             self.assertIn("Modo online beta: dados parciais.", body)
             self.assertIn('data-view-mode="campaign"', body)
+            self.assertIn('data-view="online-beta"', body)
             self.assertIn("Ver leitura", body)
             self.assertIn("Dependencia de Ads &gt; 50%", body)
             self.assertIn("Pilares de prioridade", body)
