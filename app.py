@@ -379,24 +379,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         "/internal/dash-ads/online-cache-latest",
         {"client": client, "advertiser_id": advertiser_id, **period_params},
     )
-    initial_latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
-    initial_ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
-    initial_from = initial_latest.get("date_from") or initial_ads.get("date_from") or ""
-    initial_to = initial_latest.get("date_to") or initial_ads.get("date_to") or ""
-    period_mismatch = bool(requested_from or requested_to) and (
-        initial_from != requested_from or initial_to != requested_to
-    )
-    if not latest_payload.get("ok") or period_mismatch:
-        refresh = _fetch_dash_ads_json(
-            "/internal/dash-ads/online-cache-refresh",
-            {"client": client, "advertiser_id": advertiser_id, "max_items": 25, **period_params},
-        )
-        if not refresh.get("ok"):
-            return None, "Nao foi possivel preparar os dados online agora. Tente novamente em alguns minutos."
-        latest_payload = _fetch_dash_ads_json(
-            "/internal/dash-ads/online-cache-latest",
-            {"client": client, "advertiser_id": advertiser_id, **period_params},
-        )
+    if not latest_payload.get("ok"):
+        return None, "Nao foi possivel ler o snapshot online agora. A coleta segue em segundo plano; tente novamente em alguns minutos."
 
     latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
     ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}

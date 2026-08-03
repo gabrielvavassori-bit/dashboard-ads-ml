@@ -92,7 +92,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIsInstance(snapshot["snapshotAgeSeconds"], int)
         self.assertEqual(data["onlineBeta"]["snapshot"], snapshot)
 
-    def test_online_builder_refreshes_cache_outside_selected_period(self):
+    def test_online_builder_does_not_refresh_cache_outside_selected_period(self):
         stale_payload = {
             "ok": True,
             "latest": {
@@ -118,17 +118,11 @@ class OnlinePeriodTests(unittest.TestCase):
             },
             "sales": {"items": {"MLB123": {"revenue_total": "120", "units_total": "2"}}},
         }
-        fresh_payload = {
-            **stale_payload,
-            "latest": {**stale_payload["latest"], "date_from": "2026-07-24", "date_to": "2026-07-30"},
-            "ads": {**stale_payload["ads"], "date_from": "2026-07-24", "date_to": "2026-07-30"},
-        }
         calls = []
-        responses = [stale_payload, {"ok": True}, fresh_payload]
 
         def fake_fetch(path, params):
             calls.append((path, params.copy()))
-            return responses.pop(0)
+            return stale_payload
 
         with patch.object(app, "_fetch_dash_ads_json", side_effect=fake_fetch):
             data, message = app._build_online_dashboard_data(
@@ -138,15 +132,9 @@ class OnlinePeriodTests(unittest.TestCase):
                 date_to="2026-07-30",
                 requested_period={"dateFrom": "2026-07-24", "dateTo": "2026-07-30"},
             )
-        self.assertIsNotNone(data)
-        self.assertEqual(message, "")
-        self.assertEqual([path for path, _ in calls], [
-            "/internal/dash-ads/online-cache-latest",
-            "/internal/dash-ads/online-cache-refresh",
-            "/internal/dash-ads/online-cache-latest",
-        ])
-        self.assertEqual(calls[1][1]["date_from"], "2026-07-24")
-        self.assertEqual(calls[1][1]["date_to"], "2026-07-30")
+        self.assertIsNone(data)
+        self.assertIn("fora do periodo", message)
+        self.assertEqual([path for path, _ in calls], ["/internal/dash-ads/online-cache-latest"])
 
     def test_online_builder_uses_requested_period_when_explicit_dates_are_empty(self):
         payload = {
