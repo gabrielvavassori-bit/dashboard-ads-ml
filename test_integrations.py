@@ -806,6 +806,34 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertGreater(user["expires_at"], int(app.time.time()) + (6 * 86400))
         raised.exception.close()
 
+    def test_beta_rejects_manual_access_creation(self):
+        admin_cookie = self._admin_cookie()
+        original = app.beta_config.BETA_MODE
+        app.beta_config.BETA_MODE = True
+        try:
+            payload = urlencode({
+                "email": "beta-manual@example.com",
+                "name": "Nao Criar",
+                "plan": "cortesia",
+                "days": "7",
+            }).encode("utf-8")
+            request = Request(
+                f"{self.base_url}/admin/users/manual_access",
+                data=payload,
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Cookie": admin_cookie,
+                },
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request, timeout=5)
+            self.assertEqual(raised.exception.code, 403)
+            self.assertIsNone(db.get_user_by_email("beta-manual@example.com"))
+            raised.exception.close()
+        finally:
+            app.beta_config.BETA_MODE = original
+
     def test_admin_can_bind_ml_link_manually_for_existing_user(self):
         user_id = db.upsert_manual_user(
             email="lonas@example.com",

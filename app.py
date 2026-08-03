@@ -1430,6 +1430,11 @@ class Handler(BaseHTTPRequestHandler):
         if not admin:
             _redirect(self, "/admin/login")
             return
+        if beta_config.BETA_MODE:
+            _send_html(self, templates.render_error_page(
+                "Criacao manual de usuarios e permitida somente no portal principal."
+            ), 403)
+            return
         form = _parse_form(self)
         email = (form.get("email", "") or "").strip().lower()
         name = (form.get("name", "") or "").strip()
