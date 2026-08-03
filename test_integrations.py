@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import pathlib
+import re
 import sqlite3
 import subprocess
 import sys
@@ -616,7 +617,7 @@ class HTTPRouteTests(unittest.TestCase):
         app._build_online_dashboard_data = lambda *_args, **_kwargs: ({
             "kpis": {"clientName": "LONAS_ONLINE", "products": 0, "units": 0, "revenue": 0, "adsRevenue": 0, "adsDirectRevenue": 0, "organicRevenue": 0, "tacosBaseRevenue": 0, "investment": 0, "investmentNoAdsSales": 0, "cvr": 0, "tacos": 0, "roas": 0, "adsNoSales": 0, "adsOnlyNoTotalSales": 0, "tacosHigh": 0, "salesNoAds": 0},
             "meta": {"onlineMode": {"notice": "Modo online beta: dados parciais."}},
-            "items": [], "decisionItems": [], "adsNoSales": [], "highTacos": [], "salesNoAds": [], "skuAds": [], "adsByProduct": [], "finishedNoSku": [], "onlineBeta": {"enabled": True},
+            "items": [], "decisionItems": [], "adsNoSales": [], "highTacos": [], "salesNoAds": [], "skuAds": [], "campaignAds": [], "adsByProduct": [], "finishedNoSku": [], "onlineBeta": {"enabled": True},
         }, "")
         try:
             request = Request(f"{self.base_url}/online?confirmed=1", headers={"Cookie": cookie}, method="GET")
@@ -625,7 +626,19 @@ class HTTPRouteTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertIn("Dashboard ADS Mercado Livre", body)
             self.assertIn("Modo online beta: dados parciais.", body)
+            self.assertIn('data-view-mode="campaign"', body)
+            self.assertIn("Ver leitura", body)
+            self.assertIn("Dependencia de Ads &gt; 50%", body)
             self.assertNotIn("agente-ml.onrender.com/relatorio", body)
+            scripts = "\n".join(re.findall(r"<script>(.*?)</script>", body, flags=re.S))
+            syntax = subprocess.run(
+                ["node", "--check", "-"],
+                input=scripts,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(syntax.returncode, 0, syntax.stderr)
         finally:
             app._build_online_dashboard_data = original
 
@@ -719,6 +732,28 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(message, "")
         self.assertEqual(data["kpis"]["revenue"], 200)
         self.assertEqual(data["kpis"]["units"], 4)
+        self.assertEqual(len(data["campaignAds"]), 2)
+        self.assertTrue(all(item["campaignRevenueAmbiguous"] for item in data["campaignAds"]))
+        self.assertTrue(all(item["confidence"] == "hipotese" for item in data["campaignAds"]))
+
+    def test_online_dashboard_marks_partial_sales_in_diagnostics(self):
+        payload = {
+            "ok": True,
+            "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": False}},
+            "ads": {"items": [{"item_id": "MLB123", "campaign_id": "A", "cost": 10, "total_amount": 100}]},
+            "sales": {"items": {"MLB123": {"revenue_total": 50, "units_total": 1}}},
+        }
+        original_fetch = app._fetch_dash_ads_json
+        app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
+        try:
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+        finally:
+            app._fetch_dash_ads_json = original_fetch
+
+        self.assertEqual(message, "")
+        self.assertFalse(data["items"][0]["salesCoverageComplete"])
+        self.assertIn("leitura parcial", data["items"][0]["diagnosticSummary"])
+        self.assertIn("faturamento e TACOS", " ".join(data["items"][0]["validationPoints"]))
 
     def test_online_requires_beta_confirmation_before_redirect(self):
         user_id, cookie = self._login_cookie("warn@example.com")

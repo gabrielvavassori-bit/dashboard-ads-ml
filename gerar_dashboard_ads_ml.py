@@ -12,6 +12,10 @@ BASE_DIR = pathlib.Path.cwd()
 SALES_FILE = BASE_DIR / "vendas.xlsx"
 ADS_FILE = BASE_DIR / "publicidade.xlsx"
 LOGO_FILE = pathlib.Path(__file__).resolve().parent / "assets" / "logo-un-clic.png"
+TACOS_TARGET = 0.03
+ADS_DEPENDENCY_ATTENTION = 0.35
+ADS_DEPENDENCY_HIGH = 0.50
+ADS_DEPENDENCY_CRITICAL = 0.70
 
 NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
@@ -318,6 +322,125 @@ def cvr_class(cvr_percent):
     return "Excelente"
 
 
+def ads_dependency_state(ratio):
+    ratio = ratio or 0
+    if ratio >= ADS_DEPENDENCY_CRITICAL:
+        return "critical"
+    if ratio >= ADS_DEPENDENCY_HIGH:
+        return "high"
+    if ratio >= ADS_DEPENDENCY_ATTENTION:
+        return "attention"
+    return "healthy"
+
+
+def ads_dependency_label(ratio):
+    return {
+        "critical": "Dependencia Ads critica",
+        "high": "Dependencia Ads alta",
+        "attention": "Dependencia Ads em atencao",
+        "healthy": "Dependencia Ads saudavel",
+    }[ads_dependency_state(ratio)]
+
+
+def confidence_label(item):
+    score = 0
+    reasons = []
+    validations = []
+    clicks = item.get("clicks", 0) or 0
+    impressions = item.get("impressions", 0) or 0
+    ads_sales = item.get("adsSales", 0) or 0
+    units = item.get("units", 0) or 0
+    if clicks >= 80:
+        score += 2
+        reasons.append("volume de cliques forte")
+    elif clicks >= 30:
+        score += 1
+        reasons.append("volume de cliques suficiente")
+    else:
+        validations.append("amostra de cliques ainda pequena")
+    if impressions >= 1000:
+        score += 1
+        reasons.append("boa exposicao")
+    elif impressions:
+        validations.append("impressoes ainda limitadas")
+    if ads_sales >= 3 or units >= 5:
+        score += 1
+        reasons.append("base de vendas minimamente consistente")
+    elif ads_sales or units:
+        validations.append("base de vendas ainda curta")
+    if item.get("possibleCatalog") or (item.get("adCount", 0) or 0) > 1:
+        score -= 2
+        validations.append("mais de um MLB no agrupamento; conferir anuncio por anuncio")
+    if item.get("salesCoverageComplete") is False:
+        score -= 2
+        validations.append("snapshot de vendas parcial; faturamento e TACOS ainda nao estao fechados")
+    if score >= 3:
+        return "forte", reasons or ["base consistente"], validations
+    if score >= 1:
+        return "provavel", reasons or ["ha sinais uteis"], validations
+    return "hipotese", reasons or ["sinais inconclusivos"], validations
+
+
+def diagnosis_hypotheses(item):
+    hypotheses = []
+    investment = item.get("investment", 0) or 0
+    ads_revenue = item.get("adsRevenue", 0) or 0
+    ctr_label = item.get("ctrClass", "")
+    cvr_label = item.get("cvrClass", "")
+    if investment > 0 and ads_revenue <= 0:
+        hypotheses.append("o gasto nao mostrou retorno atribuivel; revisar campanha, termos e anuncio")
+    if ctr_label == "Baixo" and (item.get("impressions", 0) or 0) >= 1000:
+        hypotheses.append("baixa atratividade no resultado de busca: imagem principal, titulo ou oferta")
+    if ctr_label in ("Bom", "Otimo") and cvr_label in ("Sem conversao", "Baixa"):
+        hypotheses.append("o problema mais provavel esta depois do clique: pagina, preco, prazo ou variacao")
+    if cvr_label in ("Muito boa", "Excelente") and (item.get("tacos", 0) or 0) > TACOS_TARGET:
+        hypotheses.append("o item vende, mas o custo da campanha esta pesado para a receita total")
+    if (item.get("adsDependencyRatio", 0) or 0) >= ADS_DEPENDENCY_HIGH:
+        hypotheses.append("o produto depende de ADS e merece reforco organico para reduzir risco")
+    if item.get("possibleCatalog"):
+        hypotheses.append("a leitura agregada pode esconder diferenca entre MLBs do mesmo SKU")
+    return list(dict.fromkeys(hypotheses))[:5] or ["sem hipotese dominante alem da leitura principal"]
+
+
+def suggested_test_order(item):
+    steps = []
+    ctr_label = item.get("ctrClass", "")
+    cvr_label = item.get("cvrClass", "")
+    if ctr_label == "Baixo" and (item.get("impressions", 0) or 0) >= 1000:
+        steps.extend(["testar primeiro a imagem principal", "depois testar o titulo", "em seguida validar preco e oferta"])
+        if (item.get("investment", 0) or 0) > 0:
+            steps.append("so depois revisar campanha, segmentacao e amplitude do trafego")
+    elif ctr_label in ("Bom", "Otimo") and cvr_label in ("Sem conversao", "Baixa"):
+        steps.extend(["validar primeiro preco, oferta e reputacao", "depois revisar pagina e variacoes"])
+    elif cvr_label in ("Muito boa", "Excelente") and (item.get("tacos", 0) or 0) > TACOS_TARGET:
+        steps.extend(["testar primeiro verba, CPC e segmentacao", "depois revisar oferta se o custo continuar pesado"])
+    if (item.get("adsDependencyRatio", 0) or 0) >= ADS_DEPENDENCY_HIGH:
+        steps.append("trabalhar ganho organico antes de escalar mais verba")
+    if not steps:
+        steps = [part.strip(" .") for part in str(item.get("recommendation") or item.get("reason") or "Monitorar").split("|") if part.strip()]
+    return list(dict.fromkeys(steps))[:5]
+
+
+def reading_summary(item):
+    if item.get("salesCoverageComplete") is False:
+        return "leitura parcial: Ads esta atualizado, mas o faturamento ainda nao terminou de ser coletado"
+    investment = item.get("investment", 0) or 0
+    ads_revenue = item.get("adsRevenue", 0) or 0
+    if investment > 0 and (item.get("totalRevenue", 0) or 0) <= 0:
+        return "gasto detectado sem venda total no cruzamento atual"
+    if investment > 0 and ads_revenue <= 0:
+        return "gasto sem venda ADS atribuida; desperdicio provavel ate validacao"
+    if item.get("ctrClass") == "Baixo" and item.get("cvrClass") in ("Boa", "Muito boa", "Excelente"):
+        return "atratividade fraca, mas pos-clique saudavel"
+    if item.get("ctrClass") in ("Bom", "Otimo") and item.get("cvrClass") in ("Sem conversao", "Baixa"):
+        return "anuncio chama clique, mas a oferta nao fecha bem"
+    if (item.get("tacos", 0) or 0) > TACOS_TARGET and item.get("cvrClass") in ("Muito boa", "Excelente"):
+        return "produto converte, mas o custo da verba esta pesado"
+    if item.get("possibleCatalog"):
+        return "leitura agregada pode esconder diferenca entre anuncios do mesmo SKU"
+    return "leitura intermediaria; cruzar oferta, campanha e anuncio antes de concluir"
+
+
 def apply_alerts(item):
     alerts = []
     recommendations = []
@@ -332,11 +455,14 @@ def apply_alerts(item):
     cvr = item.get("cvr", 0) or 0
     cpc = item.get("cpc", 0) or 0
     max_cpc = item.get("maxCpc", 0) or 0
+    ads_dependency = item.get("adsDependencyRatio", 0) or 0
 
     ctr_label = ctr_class(ctr * 100)
     cvr_label = cvr_class(cvr * 100)
     item["ctrClass"] = ctr_label
     item["cvrClass"] = cvr_label
+    item["adsDependencyState"] = ads_dependency_state(ads_dependency)
+    item["adsDependencyLabel"] = ads_dependency_label(ads_dependency)
 
     if investment > 0 and total_revenue <= 0:
         alerts.append("Investimento sem venda total")
@@ -381,6 +507,15 @@ def apply_alerts(item):
     if investment == 0 and units > 0:
         alerts.append("Venda sem ADS")
         recommendations.append("Avaliar campanha se houver margem e estoque.")
+    if total_revenue > 0 and ads_dependency >= ADS_DEPENDENCY_CRITICAL:
+        alerts.append("Dependencia critica de ADS")
+        recommendations.append("Validar pagina, SEO interno e oferta para reduzir risco comercial.")
+    elif total_revenue > 0 and ads_dependency >= ADS_DEPENDENCY_HIGH:
+        alerts.append("Dependencia alta de ADS")
+        recommendations.append("Trabalhar ganho organico antes de escalar verba.")
+    elif total_revenue > 0 and ads_dependency >= ADS_DEPENDENCY_ATTENTION:
+        alerts.append("Dependencia de ADS em atencao")
+        recommendations.append("Acompanhar se a pagina sustenta venda organica.")
     if item.get("priceAboveAverage"):
         alerts.append("Preco acima da media")
         recommendations.append("Ultimo preco ficou mais de 5% acima da media; verificar promocao/preco.")
@@ -402,6 +537,13 @@ def apply_alerts(item):
     item["alerts"] = alerts
     item["alertText"] = " | ".join(alerts)
     item["recommendation"] = " | ".join(dict.fromkeys(recommendations))
+    confidence, reasons, validations = confidence_label(item)
+    item["confidence"] = confidence
+    item["confidenceReasons"] = reasons
+    item["validationPoints"] = validations
+    item["diagnosticSummary"] = reading_summary(item)
+    item["diagnosisHypotheses"] = diagnosis_hypotheses(item)
+    item["testOrder"] = suggested_test_order(item)
 
 
 def mark_possible_catalog(items):
@@ -650,6 +792,10 @@ def aggregate_by_sku(items):
             "productRevenue": 0,
             "totalRevenue": 0,
             "adsRevenue": 0,
+            "adsDirectRevenue": 0,
+            "adsIndirectRevenue": 0,
+            "organicRevenue": 0,
+            "tacosBaseRevenue": 0,
             "investment": 0,
             "impressions": 0,
             "clicks": 0,
@@ -664,6 +810,7 @@ def aggregate_by_sku(items):
             "cvrClass": "Sem conversao",
             "action": "",
             "reason": "",
+            "salesCoverageComplete": True,
         })
         if item.get("code"):
             target["codes"].add(item["code"])
@@ -695,10 +842,15 @@ def aggregate_by_sku(items):
         target["productRevenue"] += item.get("productRevenue", 0) or 0
         target["totalRevenue"] += item.get("totalRevenue", 0) or 0
         target["adsRevenue"] += item.get("adsRevenue", 0) or 0
+        target["adsDirectRevenue"] += item.get("adsDirectRevenue", 0) or 0
+        target["adsIndirectRevenue"] += item.get("adsIndirectRevenue", 0) or 0
+        target["organicRevenue"] += item.get("organicRevenue", 0) or 0
+        target["tacosBaseRevenue"] += item.get("tacosBaseRevenue", item.get("totalRevenue", 0)) or 0
         target["investment"] += item.get("investment", 0) or 0
         target["impressions"] += item.get("impressions", 0) or 0
         target["clicks"] += item.get("clicks", 0) or 0
         target["adsSales"] += item.get("adsSales", 0) or 0
+        target["salesCoverageComplete"] = target["salesCoverageComplete"] and item.get("salesCoverageComplete") is not False
 
     result = []
     for item in grouped.values():
@@ -710,8 +862,10 @@ def aggregate_by_sku(items):
         item["code"] = ", ".join(codes[:4]) + ("..." if len(codes) > 4 else "")
         item["adCount"] = len(codes)
         item["campaign"] = ", ".join(campaigns[:3]) + ("..." if len(campaigns) > 3 else "")
-        item["tacos"] = item["investment"] / item["totalRevenue"] if item["totalRevenue"] else 0
+        item["tacos"] = item["investment"] / item["tacosBaseRevenue"] if item["tacosBaseRevenue"] else 0
         item["roas"] = item["adsRevenue"] / item["investment"] if item["investment"] else 0
+        item["adsDependencyRatio"] = item["adsDirectRevenue"] / item["totalRevenue"] if item["totalRevenue"] else 0
+        item["outsideAdsRatio"] = item["organicRevenue"] / item["totalRevenue"] if item["totalRevenue"] else 0
         item["ctr"] = item["clicks"] / item["impressions"] if item["impressions"] else 0
         item["cvr"] = item["adsSales"] / item["clicks"] if item["clicks"] else 0
         item["cpc"] = item["investment"] / item["clicks"] if item["clicks"] else 0
@@ -723,6 +877,101 @@ def aggregate_by_sku(items):
         action, reason = decision(item)
         item["action"] = action
         item["reason"] = reason
+        result.append(item)
+    return result
+
+
+def aggregate_by_campaign(items):
+    campaigns_by_code = {}
+    for item in items:
+        code = item.get("code") or ""
+        campaign = item.get("campaign") or item.get("adsCampaigns") or "(sem campanha)"
+        if code:
+            campaigns_by_code.setdefault(code, set()).add(campaign)
+
+    grouped = {}
+    for item in items:
+        campaign = item.get("campaign") or item.get("adsCampaigns") or "(sem campanha)"
+        target = grouped.setdefault(campaign, {
+            "campaignKey": campaign,
+            "campaign": campaign,
+            "campaignStatus": "Inativo",
+            "sku": "",
+            "code": "",
+            "skus": set(),
+            "codes": set(),
+            "children": [],
+            "units": 0,
+            "productRevenue": 0,
+            "totalRevenue": 0,
+            "adsRevenue": 0,
+            "adsDirectRevenue": 0,
+            "adsIndirectRevenue": 0,
+            "organicRevenue": 0,
+            "tacosBaseRevenue": 0,
+            "investment": 0,
+            "impressions": 0,
+            "clicks": 0,
+            "adsSales": 0,
+            "possibleCatalog": False,
+            "salesCoverageComplete": True,
+            "campaignRevenueAmbiguous": False,
+        })
+        target["children"].append(copy.deepcopy(item))
+        if item.get("sku"):
+            target["skus"].add(item["sku"])
+        if item.get("code"):
+            target["codes"].add(item["code"])
+            if len(campaigns_by_code.get(item["code"], set())) > 1:
+                target["campaignRevenueAmbiguous"] = True
+        if item.get("campaignStatus") == "Ativa":
+            target["campaignStatus"] = "Ativa"
+        target["possibleCatalog"] = target["possibleCatalog"] or bool(item.get("possibleCatalog"))
+        target["salesCoverageComplete"] = target["salesCoverageComplete"] and item.get("salesCoverageComplete") is not False
+        for field in (
+            "units", "productRevenue", "totalRevenue", "adsRevenue", "adsDirectRevenue",
+            "adsIndirectRevenue", "organicRevenue", "tacosBaseRevenue", "investment",
+            "impressions", "clicks", "adsSales",
+        ):
+            target[field] += item.get(field, 0) or 0
+
+    result = []
+    for item in grouped.values():
+        item["children"].sort(key=lambda row: (-(row.get("investment", 0) or 0), -(row.get("totalRevenue", 0) or 0)))
+        item["skus"] = sorted(item["skus"])
+        item["codes"] = sorted(item["codes"])
+        item["skuCount"] = len(item["skus"])
+        item["adCount"] = len(item["codes"])
+        item["sku"] = ", ".join(item["skus"][:3]) + ("..." if len(item["skus"]) > 3 else "") if item["skus"] else "(sem SKU)"
+        item["code"] = ", ".join(item["codes"][:4]) + ("..." if len(item["codes"]) > 4 else "")
+        item["allCodes"] = ", ".join(item["codes"])
+        item["allSkus"] = ", ".join(item["skus"])
+        item["title"] = f"{item['skuCount']} SKU(s), {item['adCount']} anuncio(s)"
+        item["tacos"] = item["investment"] / item["tacosBaseRevenue"] if item["tacosBaseRevenue"] else 0
+        item["roas"] = item["adsRevenue"] / item["investment"] if item["investment"] else 0
+        item["adsDependencyRatio"] = item["adsDirectRevenue"] / item["totalRevenue"] if item["totalRevenue"] else 0
+        item["outsideAdsRatio"] = item["organicRevenue"] / item["totalRevenue"] if item["totalRevenue"] else 0
+        item["ctr"] = item["clicks"] / item["impressions"] if item["impressions"] else 0
+        item["cvr"] = item["adsSales"] / item["clicks"] if item["clicks"] else 0
+        item["cpc"] = item["investment"] / item["clicks"] if item["clicks"] else 0
+        item["avgAdsOrder"] = item["adsRevenue"] / item["adsSales"] if item["adsSales"] else 0
+        item["maxCpc"] = item["avgAdsOrder"] * TACOS_TARGET * item["cvr"] if item["avgAdsOrder"] and item["cvr"] else 0
+        item["topInvestmentLabel"] = ""
+        top = max(item["children"], key=lambda row: row.get("investment", 0) or 0, default=None)
+        if top:
+            item["topInvestmentLabel"] = f"{top.get('sku') or '(sem SKU)'} - {top.get('code') or ''}".strip(" -")
+        item["adsNoSalesCount"] = len([
+            row for row in item["children"]
+            if (row.get("investment", 0) or 0) > 0 and (row.get("adsRevenue", 0) or 0) <= 0
+        ])
+        apply_alerts(item)
+        if item["campaignRevenueAmbiguous"]:
+            item["confidence"] = "hipotese"
+            item["validationPoints"] = list(dict.fromkeys([
+                "o mesmo MLB aparece em mais de uma campanha; o faturamento comercial nao pode ser atribuido a uma campanha com seguranca",
+                *item.get("validationPoints", []),
+            ]))
+        item["action"], item["reason"] = decision(item)
         result.append(item)
     return result
 
@@ -881,8 +1130,10 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
         item["action"] = action
         item["reason"] = reason
     sku_ads = aggregate_by_sku(all_decision_items)
+    campaign_ads = aggregate_by_campaign(all_decision_items)
     apply_abc(all_decision_items, "totalRevenue", "abcCode")
     apply_abc(sku_ads, "totalRevenue", "abcSku")
+    apply_abc(campaign_ads, "totalRevenue", "abcCampaign")
     sku_abc = {item["sku"]: item["abcSku"] for item in sku_ads}
     for item in all_decision_items:
         item["abcSku"] = sku_abc.get(item.get("sku") or "(sem SKU)", "C")
@@ -955,6 +1206,10 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
             sku_ads,
             key=lambda item: (-item["investment"], -item["totalRevenue"]),
         ),
+        "campaignAds": sorted(
+            campaign_ads,
+            key=lambda item: (-item["investment"], -item["totalRevenue"]),
+        ),
         "adsByProduct": sorted(
             decision_items,
             key=lambda item: ((item.get("sku") or "zzz"), -item.get("investment", 0), -item.get("totalRevenue", 0)),
@@ -988,7 +1243,7 @@ def anonymize_dashboard_data(data):
         return ", ".join(mapped(mapping, part.rstrip("."), prefix) for part in parts)
 
     demo.get("kpis", {})["clientName"] = "Cliente demonstracao"
-    for list_name in ("items", "decisionItems", "skuAds", "salesNoAds", "adsNoSales", "highTacos", "adsByProduct", "finishedNoSku"):
+    for list_name in ("items", "decisionItems", "skuAds", "campaignAds", "salesNoAds", "adsNoSales", "highTacos", "adsByProduct", "finishedNoSku"):
         for item in demo.get(list_name, []):
             if item.get("sku"):
                 item["sku"] = mapped(sku_map, item.get("sku"), "SKU DEMO")
@@ -1177,6 +1432,13 @@ def render_dashboard(data):
     .decision-text {{ color:var(--muted); line-height:1.45; }}
     .decision-text b {{ color:#52637a; }}
     .toolbar {{ display:flex; gap:10px; align-items:center; justify-content:space-between; margin:10px 0; }}
+    .toolbar-left {{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }}
+    .control-block {{ display:flex; flex-direction:column; gap:5px; }}
+    .control-block > label {{ color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }}
+    .segmented {{ display:flex; gap:0; }}
+    .segmented button {{ border-radius:0; min-width:84px; }}
+    .segmented button:first-child {{ border-radius:8px 0 0 8px; }}
+    .segmented button:last-child {{ border-radius:0 8px 8px 0; }}
     .context-control {{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }}
     .context-control label {{ color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }}
     select {{ border:1px solid var(--line); background:#fff; color:var(--ink); padding:9px 36px 9px 12px; border-radius:8px; font-weight:700; min-width:260px; }}
@@ -1192,6 +1454,18 @@ def render_dashboard(data):
     .status-warn {{ color:var(--orange); font-weight:800; }}
     .status-bad {{ color:var(--red); font-weight:800; }}
     .online-notice {{ margin:0 0 12px; padding:12px 14px; border:1px solid #fecdca; border-radius:10px; background:#fff7ed; color:#7a271a; font-weight:700; }}
+    .decision-wrap {{ grid-template-columns:minmax(0,1fr) auto; align-items:center; }}
+    .decision-summary-main, .decision-summary-side {{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }}
+    .decision-teaser {{ color:var(--muted); }}
+    .summary-chip {{ display:inline-block; padding:4px 8px; border-radius:999px; background:#f2f4f7; color:#344054; font-size:12px; font-weight:800; }}
+    .detail-row td {{ background:#fbfcfe; border:1px solid var(--line); border-top:0; }}
+    .detail-grid {{ display:grid; grid-template-columns:repeat(3,minmax(260px,1fr)); gap:12px; }}
+    .detail-block {{ border:1px solid var(--line); border-radius:8px; padding:12px; background:#fff; }}
+    .detail-block h3 {{ font-size:14px; margin:0 0 8px; }}
+    .detail-block ul {{ margin:0; padding-left:18px; }}
+    .detail-block li {{ margin:4px 0; }}
+    .child-table {{ margin-top:10px; border-spacing:0; }}
+    .child-table th, .child-table td {{ font-size:12px; }}
       .period-picker {{ position:relative; z-index:30; margin:0 0 12px; overflow:visible; }}
       .period-picker summary {{ list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; }}
       .period-picker summary::-webkit-details-marker {{ display:none; }}
@@ -1208,7 +1482,7 @@ def render_dashboard(data):
       .period-form .field-group[hidden] {{ display:none; }}
       .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
-    @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} }}
+    @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} }}
   </style>
 </head>
 <body>
@@ -1262,18 +1536,28 @@ def render_dashboard(data):
         </div>
       </section>
       <div class="toolbar">
-        <div class="context-control">
-          <label for="contextSelect">Contexto</label>
-          <select id="contextSelect">
-            <option value="items" selected>Todos os anuncios</option>
-            <option value="adsByProduct">Anuncios por produto</option>
-            <option value="finishedNoSku">Anuncios finalizados</option>
-            <option value="adsNoSales">Investimento sem venda ADS</option>
-            <option value="skuAds">Publicidade por SKU</option>
-            <option value="highTacos">TACOS acima da meta</option>
-            <option value="decisionItems">Todos com decisao</option>
-            <option value="salesNoAds">Venda sem ADS</option>
-          </select>
+        <div class="toolbar-left">
+          <div class="control-block">
+            <label for="contextSelect">Contexto / filtro de analise</label>
+            <select id="contextSelect">
+              <option value="all" selected>Todos os itens</option>
+              <option value="active">Publicidade ativa</option>
+              <option value="ended">Publicidade encerrada</option>
+              <option value="noReturn">Gasto sem retorno ADS</option>
+              <option value="highTacos">TACOS fora da meta</option>
+              <option value="adsDependency">Dependencia de Ads &gt; 50%</option>
+              <option value="attention">Requer atencao</option>
+              <option value="opportunity">Oportunidade para anunciar</option>
+            </select>
+          </div>
+          <div class="control-block">
+            <label>Visualizar por</label>
+            <div class="segmented" id="viewMode">
+              <button class="active" data-view-mode="mlb" type="button">MLB</button>
+              <button data-view-mode="sku" type="button">SKU</button>
+              <button data-view-mode="campaign" type="button">Campanha</button>
+            </div>
+          </div>
         </div>
         <input id="search" placeholder="Buscar SKU, MLB, titulo ou campanha">
       </div>
@@ -1330,7 +1614,9 @@ def render_dashboard(data):
     const pct = value => (value * 100).toLocaleString('pt-BR', {{ minimumFractionDigits:2, maximumFractionDigits:2 }}) + '%';
     const num = value => value.toLocaleString('pt-BR', {{ maximumFractionDigits:0 }});
     const safe = value => String(value || '').replace(/[&<>"]/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[ch]));
-    let current = 'items';
+    let currentContext = 'all';
+    let currentViewMode = 'mlb';
+    const detailExpanded = new Set();
     let sortState = {{ key:'investment', direction:1 }};
     let abcMode = 'sku';
     let abcMetric = 'totalRevenue';
@@ -1344,6 +1630,13 @@ def render_dashboard(data):
       skuAds:'Publicidade por SKU',
       adsByProduct:'Anuncios por produto',
       finishedNoSku:'Anuncios finalizados sem SKU'
+    }};
+    const viewLabels = {{ mlb:'MLB', sku:'SKU', campaign:'Campanha' }};
+    const contextLabels = {{
+      all:'Todos os itens', active:'Publicidade ativa', ended:'Publicidade encerrada',
+      noReturn:'Gasto sem retorno ADS', highTacos:'TACOS fora da meta',
+      adsDependency:'Dependencia de Ads > 50%', attention:'Requer atencao',
+      opportunity:'Oportunidade para anunciar'
     }};
     function actionClass(action) {{ return (action || '').split(' ')[0].replace('/', ''); }}
     function abcClass(value) {{ return `abc abc${{value || 'C'}}`; }}
@@ -1733,7 +2026,7 @@ def render_dashboard(data):
         </td>
       </tr>`;
     }}
-    function renderTable() {{
+    function legacyRenderTable() {{
       const q = document.getElementById('search').value.toLowerCase();
       let rows = DATA[current].filter(item => itemSearchText(item).includes(q));
       if (sortState.key && sortState.direction !== 0) {{
@@ -1797,6 +2090,123 @@ def render_dashboard(data):
           renderTable();
         }});
       }});
+    }}
+    function rowsByViewMode() {{
+      if (currentViewMode === 'sku') return DATA.skuAds || [];
+      if (currentViewMode === 'campaign') return DATA.campaignAds || [];
+      return DATA.items || [];
+    }}
+    function matchesContext(item, context = currentContext) {{
+      const status = String(item.campaignStatus || '').toLowerCase();
+      if (context === 'active') return status.startsWith('ativa');
+      if (context === 'ended') return !status.startsWith('ativa');
+      if (context === 'noReturn') return (item.investment || 0) > 0 && (item.adsRevenue || 0) <= 0;
+      if (context === 'highTacos') return (item.investment || 0) > 0 && (item.tacos || 0) > .03;
+      if (context === 'adsDependency') return (item.adsDependencyRatio || 0) > .50;
+      if (context === 'attention') return !String(item.action || '').startsWith('Manter') || (item.alerts || []).length > 1;
+      if (context === 'opportunity') return (item.units || 0) > 0 && (item.investment || 0) === 0;
+      return true;
+    }}
+    function renderAlerts() {{
+      const rows = rowsByViewMode();
+      const stats = [
+        ['Todos os itens', rows.length, 'Base completa da visao atual.'],
+        ['Publicidade ativa', rows.filter(item => matchesContext(item, 'active')).length, 'Itens com campanha ativa no periodo.'],
+        ['Publicidade encerrada', rows.filter(item => matchesContext(item, 'ended')).length, 'Itens sem campanha ativa no periodo.'],
+        ['Gasto sem retorno ADS', rows.filter(item => matchesContext(item, 'noReturn')).length, 'Houve gasto, mas nao houve receita ADS atribuida.'],
+        ['TACOS fora da meta', rows.filter(item => matchesContext(item, 'highTacos')).length, 'Itens com TACOS acima da meta de 3%.'],
+        ['Dependencia de Ads > 50%', rows.filter(item => matchesContext(item, 'adsDependency')).length, 'Mais de 50% da receita direta veio de ADS.'],
+        ['Requer atencao', rows.filter(item => matchesContext(item, 'attention')).length, 'Itens com alerta relevante ou acao de revisao.'],
+        ['Oportunidade para anunciar', rows.filter(item => matchesContext(item, 'opportunity')).length, 'Venda no periodo sem investimento ADS.']
+      ];
+      document.getElementById('alerts').innerHTML = `<table>
+        <tr><th>Filtro de analise</th><th class="num">Qtd.</th><th>Leitura</th></tr>
+        ${{stats.map(stat => `<tr><td>${{safe(stat[0])}}</td><td class="num">${{num(stat[1])}}</td><td>${{safe(stat[2])}}</td></tr>`).join('')}}
+      </table>`;
+    }}
+    function detailKey(item) {{
+      return [currentViewMode, item.campaignKey || item.campaign || '', item.sku || '', item.code || ''].join('|');
+    }}
+    function listBlock(title, rows) {{
+      const values = (rows || []).filter(Boolean);
+      return `<div class="detail-block"><h3>${{safe(title)}}</h3>${{values.length ? `<ul>${{values.map(value => `<li>${{safe(value)}}</li>`).join('')}}</ul>` : '<div class="muted">Sem informacao adicional.</div>'}}</div>`;
+    }}
+    function campaignChildren(item) {{
+      const children = item.children || [];
+      if (!children.length) return '';
+      return `<div class="detail-block" style="grid-column:1/-1"><h3>Itens da campanha</h3><table class="child-table">
+        <thead><tr><th>SKU</th><th>Anuncio</th><th>Titulo</th><th class="num">Receita</th><th class="num">Receita ADS</th><th class="num">Invest.</th><th class="num">CTR</th><th class="num">CVR</th><th class="num">TACOS</th><th>Alerta</th></tr></thead>
+        <tbody>${{children.map(child => `<tr><td>${{safe(child.sku || '(sem SKU)')}}</td><td>${{safe(child.code || '')}}</td><td>${{safe(child.title || '')}}</td><td class="num">${{brl(child.totalRevenue || 0)}}</td><td class="num">${{brl(child.adsRevenue || 0)}}</td><td class="num">${{brl(child.investment || 0)}}</td><td class="num">${{pct(child.ctr || 0)}}</td><td class="num">${{pct(child.cvr || 0)}}</td><td class="num">${{pct(child.tacos || 0)}}</td><td>${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
+      </table></div>`;
+    }}
+    function detailBlocks(item) {{
+      const evidence = [
+        `Confianca: ${{item.confidence || 'hipotese'}}`,
+        ...((item.confidenceReasons || []).map(value => `Evidencia: ${{value}}`)),
+        ...((item.validationPoints || []).map(value => `Validar: ${{value}}`))
+      ];
+      if (item.campaignRevenueAmbiguous) evidence.unshift('TACOS da campanha e orientativo: o mesmo MLB aparece em mais de uma campanha.');
+      return listBlock('Leitura e confianca', evidence)
+        + listBlock('Causas mais provaveis', item.diagnosisHypotheses)
+        + listBlock('O que fazer agora', item.testOrder)
+        + campaignChildren(item);
+    }}
+    function row(item) {{
+      const key = detailKey(item);
+      const expanded = detailExpanded.has(key);
+      const campaignMode = currentViewMode === 'campaign';
+      const abcValue = campaignMode ? item.abcCampaign : currentViewMode === 'sku' ? item.abcSku : item.abcCode;
+      const tacosNote = item.salesCoverageComplete === false ? 'vendas parciais' : item.campaignRevenueAmbiguous ? 'atribuicao ambigua' : '';
+      return `<tr class="main-row">
+        <td><div class="copyline"><span class="code">${{safe(item.sku || '(sem SKU)')}}</span>${{copyButton(item.sku, 'SKU')}}</div><div class="muted">${{item.adCount ? item.adCount + ' anuncios' : ''}}</div></td>
+        <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.allCodes || item.code || '')}}</span>${{copyButton(item.allCodes || item.code, 'MLB')}}</div><div class="title">${{safe(campaignMode ? (item.topInvestmentLabel || item.title || '') : (item.title || ''))}}</div></td>
+        <td><span class="${{abcClass(abcValue)}}">${{campaignMode ? 'CAMP' : currentViewMode.toUpperCase()}} ${{abcValue || 'C'}}</span></td>
+        <td class="text-cell">${{safe(item.campaign || item.adsCampaigns || 'Sem campanha')}}<div class="muted">${{safe(item.campaignStatus || '')}}</div></td>
+        <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}<div class="muted">${{item.avgSalePrice ? 'media: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? 'ultima venda: ' + safe(item.lastSaleDate) : ''}}</div></td>
+        <td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td>
+        <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{safe(item.ctrClass || '')}}</div></td><td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{safe(item.cvrClass || '')}}</div></td>
+        <td class="num">${{pct(item.tacos || 0)}}<div class="muted">${{safe(tacosNote)}}</div></td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
+      </tr>
+      <tr class="decision-row"><td colspan="14"><div class="decision-wrap">
+        <div class="decision-summary-main"><span class="pill ${{actionClass(item.action)}}">${{safe(item.action)}}</span><div class="decision-teaser"><b>Diagnostico:</b> ${{safe(item.diagnosticSummary || item.recommendation || item.reason || 'Sem leitura adicional.')}}</div></div>
+        <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">${{expanded ? 'Ocultar leitura' : 'Ver leitura'}}</button></div>
+      </div></td></tr>
+      <tr class="detail-row" style="display:${{expanded ? 'table-row' : 'none'}}"><td colspan="14"><div class="detail-grid">${{detailBlocks(item)}}</div></td></tr>`;
+    }}
+    function renderTable() {{
+      renderAlerts();
+      const q = document.getElementById('search').value.toLowerCase();
+      let rows = rowsByViewMode().filter(item => matchesContext(item) && itemSearchText(item).includes(q));
+      if (sortState.key && sortState.direction !== 0) {{
+        const getter = sortKeys[sortState.key];
+        rows = [...rows].sort((a,b) => {{
+          const av = getter(a); const bv = getter(b);
+          if (typeof av === 'number' || typeof bv === 'number') return sortState.direction === 1 ? (bv - av) : (av - bv);
+          return sortState.direction === 1 ? String(bv).localeCompare(String(av), 'pt-BR') : String(av).localeCompare(String(bv), 'pt-BR');
+        }});
+      }}
+      document.getElementById('tableTitle').textContent = `${{contextLabels[currentContext]}} - ${{viewLabels[currentViewMode]}} (${{rows.length}})`;
+      document.getElementById('table').innerHTML = `<table class="ops-table">
+        <colgroup><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:120px"><col style="width:64px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
+        <thead><tr><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha</th><th class="num">${{sortable('Ult. preco','price')}}</th><th class="num">${{sortable('Unid.','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
+        <tbody>${{rows.map(row).join('')}}</tbody></table>`;
+      document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {{
+        const value = button.dataset.copy;
+        try {{ await navigator.clipboard.writeText(value); }} catch (error) {{ const input = document.createElement('textarea'); input.value = value; document.body.appendChild(input); input.select(); document.execCommand('copy'); input.remove(); }}
+      }}));
+      document.querySelectorAll('[data-detail-toggle]').forEach(button => button.addEventListener('click', () => {{
+        const key = button.dataset.detailToggle;
+        if (detailExpanded.has(key)) detailExpanded.delete(key); else detailExpanded.add(key);
+        renderTable();
+      }}));
+      document.querySelectorAll('[data-sort]').forEach(button => button.addEventListener('click', () => {{
+        const key = button.dataset.sort;
+        if (sortState.key !== key) sortState = {{ key, direction:1 }};
+        else if (sortState.direction === 1) sortState = {{ key, direction:-1 }};
+        else sortState = {{ key:null, direction:0 }};
+        renderTable();
+      }}));
     }}
     function renderOnlineBeta() {{
       const beta = DATA.onlineBeta || {{}};
@@ -1883,9 +2293,19 @@ def render_dashboard(data):
       }});
     }});
     document.getElementById('contextSelect').addEventListener('change', event => {{
-      current = event.target.value;
+      currentContext = event.target.value;
       sortState = {{ key:'investment', direction:1 }};
       renderTable();
+    }});
+    document.querySelectorAll('#viewMode button[data-view-mode]').forEach(button => {{
+      button.addEventListener('click', () => {{
+        document.querySelectorAll('#viewMode button[data-view-mode]').forEach(item => item.classList.remove('active'));
+        button.classList.add('active');
+        currentViewMode = button.dataset.viewMode;
+        detailExpanded.clear();
+        sortState = {{ key:'investment', direction:1 }};
+        renderTable();
+      }});
     }});
     document.querySelectorAll('button[data-abc-mode]').forEach(button => {{
       button.addEventListener('click', () => {{
