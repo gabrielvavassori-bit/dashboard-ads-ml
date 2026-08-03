@@ -34,6 +34,7 @@ import beta_bridge
 import eduzz_api
 import webhook
 import app
+import gerar_dashboard_ads_ml as dashboard_generator
 
 
 def signed(payload):
@@ -629,6 +630,7 @@ class HTTPRouteTests(unittest.TestCase):
             self.assertIn('data-view-mode="campaign"', body)
             self.assertIn("Ver leitura", body)
             self.assertIn("Dependencia de Ads &gt; 50%", body)
+            self.assertIn("Pilares de prioridade", body)
             self.assertNotIn("agente-ml.onrender.com/relatorio", body)
             scripts = "\n".join(re.findall(r"<script>(.*?)</script>", body, flags=re.S))
             syntax = subprocess.run(
@@ -735,6 +737,8 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(message, "")
         self.assertEqual(data["kpis"]["revenue"], 200)
         self.assertEqual(data["kpis"]["units"], 4)
+        self.assertEqual(data["kpis"]["organicRevenue"], 50)
+        self.assertEqual(data["kpis"]["tacosBaseRevenue"], 200)
         self.assertEqual(len(data["campaignAds"]), 2)
         self.assertTrue(all(item["campaignRevenueAmbiguous"] for item in data["campaignAds"]))
         self.assertTrue(all(item["confidence"] == "hipotese" for item in data["campaignAds"]))
@@ -757,6 +761,28 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertFalse(data["items"][0]["salesCoverageComplete"])
         self.assertIn("leitura parcial", data["items"][0]["diagnosticSummary"])
         self.assertIn("faturamento e TACOS", " ".join(data["items"][0]["validationPoints"]))
+
+    def test_offline_reading_includes_prototype_priority_and_variation_signals(self):
+        period = dashboard_generator.detect_ads_period([(3, {1: "23-mai-2026", 2: "23-jun-2026"})])
+        self.assertEqual(period, {"dateFrom": "2026-05-23", "dateTo": "2026-06-23"})
+        item = {
+            "sku": "SKU-1", "code": "MLB1", "units": 8, "totalRevenue": 4000,
+            "adsRevenue": 1200, "investment": 90, "impressions": 5000,
+            "clicks": 120, "adsSales": 10, "tacos": 90 / 4000,
+            "ctr": 120 / 5000, "cvr": 10 / 120, "cpc": 90 / 120,
+            "maxCpc": 1, "adsDependencyRatio": 0.3, "possibleCatalog": False,
+        }
+        dashboard_generator.apply_alerts(item)
+        self.assertEqual(len(item["priorityPillars"]), 4)
+        self.assertIn(item["priorityLabel"], {"Urgente", "Prioritario", "Necessario", "Monitorar"})
+
+        signal = dashboard_generator.detect_variation_budget_drain([
+            {"sku": "SKU-A", "code": "MLB-A", "investment": 100, "clicks": 50, "adsSales": 8, "adsRevenue": 800, "cvr": 0.16},
+            {"sku": "SKU-B", "code": "MLB-B", "investment": 140, "clicks": 70, "adsSales": 1, "adsRevenue": 80, "cvr": 1 / 70},
+        ])
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["leaderCode"], "MLB-A")
+        self.assertEqual(signal["weakCode"], "MLB-B")
 
     def test_online_requires_beta_confirmation_before_redirect(self):
         user_id, cookie = self._login_cookie("warn@example.com")
