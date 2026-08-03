@@ -433,7 +433,11 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         campaign_label = campaign_name or (f"Campanha {campaign_id}" if campaign_id else "Sem campanha identificada")
         status = str(raw.get("status") or "").strip().lower()
         active = status.startswith("active") or status.startswith("ativo")
-        last_price = _number(raw.get("price"))
+        last_price = _number(
+            sale.get("last_price")
+            or sale.get("lastPrice")
+            or raw.get("price")
+        )
         item = {
             "sku": str(raw.get("sku") or "").strip() or sale_sku,
             "code": code,

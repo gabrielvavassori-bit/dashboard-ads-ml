@@ -665,6 +665,40 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(data["meta"]["adsDeduplication"]["removedRows"], 1)
         self.assertIn("linhas duplicadas exatas", data["meta"]["onlineMode"]["notice"])
 
+    def test_online_dashboard_uses_enriched_cache_metadata(self):
+        payload = {
+            "ok": True,
+            "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
+            "ads": {"items": [{
+                "item_id": "MLB123",
+                "campaign_id": "456",
+                "campaign_name": "Campanha Principal",
+                "sku": "SKU-123",
+                "title": "Produto Teste",
+                "price": 59.9,
+            }]},
+            "sales": {"items": {"MLB123": {
+                "revenue_total": 100,
+                "units_total": 2,
+                "last_sale_date": "2026-07-30T10:00:00-03:00",
+                "last_price": 49.9,
+            }}},
+        }
+        original_fetch = app._fetch_dash_ads_json
+        app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
+        try:
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+        finally:
+            app._fetch_dash_ads_json = original_fetch
+
+        self.assertEqual(message, "")
+        item = data["items"][0]
+        self.assertEqual(item["sku"], "SKU-123")
+        self.assertEqual(item["title"], "Produto Teste")
+        self.assertEqual(item["campaign"], "Campanha Principal")
+        self.assertEqual(item["lastSaleDate"], "2026-07-30T10:00:00-03:00")
+        self.assertEqual(item["lastPrice"], 49.9)
+
     def test_online_dashboard_counts_sales_once_for_same_item_in_different_campaigns(self):
         payload = {
             "ok": True,
