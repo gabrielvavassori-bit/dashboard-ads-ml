@@ -427,8 +427,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         ads_sales = _number(raw.get("units_quantity"))
         impressions = _number(raw.get("prints"))
         clicks = _number(raw.get("clicks"))
-        organic_revenue = max(0.0, total_revenue - ads_direct_revenue)
-        tacos_base = organic_revenue + ads_direct_revenue + ads_indirect_revenue
+        organic_revenue = max(0.0, total_revenue - ads_revenue)
+        tacos_base = total_revenue
         campaign_id = str(raw.get("campaign_id") or "").strip()
         campaign_name = str(
             raw.get("campaign_name") or raw.get("campaign_title") or raw.get("campaign") or ""

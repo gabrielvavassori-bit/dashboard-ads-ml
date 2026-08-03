@@ -1043,8 +1043,8 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
         item["indirectRevenue"] = item.get("indirectRevenue", 0)
         item["totalRevenue"] = item["productRevenue"]
         item["investment"] = ad.get("investment", item["investment"])
-        item["organicRevenue"] = max(0, (item["totalRevenue"] or 0) - (item["adsDirectRevenue"] or 0))
-        item["tacosBaseRevenue"] = (item["organicRevenue"] or 0) + (item["adsDirectRevenue"] or 0) + (item["adsIndirectRevenue"] or 0)
+        item["organicRevenue"] = max(0, (item["totalRevenue"] or 0) - (item["adsRevenue"] or 0))
+        item["tacosBaseRevenue"] = item["totalRevenue"] or 0
         item["tacos"] = item["investment"] / item["tacosBaseRevenue"] if item["tacosBaseRevenue"] else 0
         item["roas"] = item["adsRevenue"] / item["investment"] if item["investment"] else 0
         item["revenueOutsideAds"] = item["organicRevenue"]

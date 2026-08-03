@@ -675,6 +675,9 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(data["kpis"]["investment"], 10)
         self.assertEqual(data["kpis"]["adsRevenue"], 100)
         self.assertEqual(data["kpis"]["revenue"], 200)
+        self.assertEqual(data["kpis"]["organicRevenue"], 100)
+        self.assertEqual(data["kpis"]["tacosBaseRevenue"], 200)
+        self.assertAlmostEqual(data["kpis"]["tacos"], 0.05)
         self.assertEqual(data["meta"]["adsDeduplication"]["removedRows"], 1)
         self.assertIn("linhas duplicadas exatas", data["meta"]["onlineMode"]["notice"])
 
