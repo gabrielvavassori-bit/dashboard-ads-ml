@@ -665,6 +665,27 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(data["meta"]["adsDeduplication"]["removedRows"], 1)
         self.assertIn("linhas duplicadas exatas", data["meta"]["onlineMode"]["notice"])
 
+    def test_online_dashboard_counts_sales_once_for_same_item_in_different_campaigns(self):
+        payload = {
+            "ok": True,
+            "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
+            "ads": {"items": [
+                {"item_id": "MLB123", "campaign_id": "A", "cost": 10, "total_amount": 100},
+                {"item_id": "MLB123", "campaign_id": "B", "cost": 5, "total_amount": 50},
+            ]},
+            "sales": {"items": {"MLB123": {"revenue_total": 200, "units_total": 4}}},
+        }
+        original_fetch = app._fetch_dash_ads_json
+        app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
+        try:
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+        finally:
+            app._fetch_dash_ads_json = original_fetch
+
+        self.assertEqual(message, "")
+        self.assertEqual(data["kpis"]["revenue"], 200)
+        self.assertEqual(data["kpis"]["units"], 4)
+
     def test_online_requires_beta_confirmation_before_redirect(self):
         user_id, cookie = self._login_cookie("warn@example.com")
         db.upsert_user_ml_link(

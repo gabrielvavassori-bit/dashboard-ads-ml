@@ -392,6 +392,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
 
     items = []
+    sales_codes_seen = set()
     for raw in ads_rows:
         if not isinstance(raw, dict):
             continue
@@ -416,8 +417,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         ads_revenue = _number(raw.get("total_amount"))
         ads_direct_revenue = _number(raw.get("direct_amount"))
         ads_indirect_revenue = max(0.0, ads_revenue - ads_direct_revenue)
-        total_revenue = _number(sale.get("revenue_total"))
-        units = _number(sale.get("units_total"))
+        sale_already_counted = code in sales_codes_seen
+        sales_codes_seen.add(code)
+        total_revenue = 0.0 if sale_already_counted else _number(sale.get("revenue_total"))
+        units = 0.0 if sale_already_counted else _number(sale.get("units_total"))
         ads_sales = _number(raw.get("units_quantity"))
         impressions = _number(raw.get("prints"))
         clicks = _number(raw.get("clicks"))
