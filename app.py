@@ -66,6 +66,7 @@ import eduzz_api
 import templates
 import webhook as eduzz_webhook
 from gerar_dashboard_ads_ml import (
+    aggregate_by_campaign,
     aggregate_by_sku,
     apply_abc,
     apply_alerts,
@@ -390,6 +391,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     if not ads_rows:
         return None, "Ainda nao existem dados de publicidade em cache para esta conta. Aguarde a coleta online e tente novamente."
     ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
+    sales_state = latest.get("sales") if isinstance(latest.get("sales"), dict) else {}
+    complete = bool(sales_state.get("complete"))
 
     items = []
     sales_codes_seen = set()
@@ -476,6 +479,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "avgAdsOrder": (ads_revenue / ads_sales) if ads_sales else last_price,
             "maxCpc": 0.0,
             "possibleCatalog": False,
+            "salesCoverageComplete": complete,
         }
         item["maxCpc"] = item["avgAdsOrder"] * 0.03 * item["cvr"] if item["avgAdsOrder"] and item["cvr"] else 0.0
         item["cvrClass"] = cvr_class(item["cvr"] * 100)
@@ -490,14 +494,14 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         apply_alerts(item)
         item["action"], item["reason"] = decision(item)
     sku_ads = aggregate_by_sku(items)
+    campaign_ads = aggregate_by_campaign(items)
     apply_abc(items, "totalRevenue", "abcCode")
     apply_abc(sku_ads, "totalRevenue", "abcSku")
+    apply_abc(campaign_ads, "totalRevenue", "abcCampaign")
     sku_abc = {item["sku"]: item["abcSku"] for item in sku_ads}
     for item in items:
         item["abcSku"] = sku_abc.get(item.get("sku") or "(sem SKU)", "C")
 
-    sales_state = latest.get("sales") if isinstance(latest.get("sales"), dict) else {}
-    complete = bool(sales_state.get("complete"))
     total_revenue = sum(item["totalRevenue"] for item in items)
     total_investment = sum(item["investment"] for item in items)
     total_ads_revenue = sum(item["adsRevenue"] for item in items)
@@ -574,6 +578,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         "highTacos": [item for item in items if item["investment"] > 0 and item["tacos"] > 0.03],
         "salesNoAds": [item for item in items if item["units"] > 0 and item["investment"] == 0],
         "skuAds": sku_ads,
+        "campaignAds": campaign_ads,
         "adsByProduct": [item for item in items if item.get("sku")],
         "finishedNoSku": [item for item in items if not item.get("sku")],
         "onlineBeta": {"enabled": True, "client": client, "latest": latest_payload, "summary": {"totalItems": len(items)}, "requestedPeriod": requested_period or {}, "apiPeriod": {"dateFrom": latest_date_from, "dateTo": latest_date_to}, "periodMatch": period_match, "snapshot": snapshot_meta},
