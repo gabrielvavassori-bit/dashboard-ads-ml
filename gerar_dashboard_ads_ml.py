@@ -177,16 +177,19 @@ def deduplicate_ads_rows(ads_rows):
 def detect_ads_period(ads_rows):
     date_from = None
     date_to = None
+    months = {"jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "may": 5, "jun": 6, "jul": 7, "ago": 8, "aug": 8, "set": 9, "sep": 9, "out": 10, "oct": 10, "nov": 11, "dez": 12, "dec": 12}
     for row_number, row in ads_rows:
         if row_number < 3:
             continue
         raw_from = text(row.get(1))
         raw_to = text(row.get(2))
-        if re.match(r"\d{1,2}-[A-Za-z]{3}-\d{4}", raw_from):
-            parsed_from = datetime.strptime(raw_from, "%d-%b-%Y")
+        match_from = re.match(r"(\d{1,2})-([A-Za-z]{3})-(\d{4})", raw_from)
+        if match_from and match_from.group(2).lower() in months:
+            parsed_from = datetime(int(match_from.group(3)), months[match_from.group(2).lower()], int(match_from.group(1)))
             date_from = parsed_from if date_from is None or parsed_from < date_from else date_from
-        if re.match(r"\d{1,2}-[A-Za-z]{3}-\d{4}", raw_to):
-            parsed_to = datetime.strptime(raw_to, "%d-%b-%Y")
+        match_to = re.match(r"(\d{1,2})-([A-Za-z]{3})-(\d{4})", raw_to)
+        if match_to and match_to.group(2).lower() in months:
+            parsed_to = datetime(int(match_to.group(3)), months[match_to.group(2).lower()], int(match_to.group(1)))
             date_to = parsed_to if date_to is None or parsed_to > date_to else date_to
     return {
         "dateFrom": date_from.strftime("%Y-%m-%d") if date_from else "",

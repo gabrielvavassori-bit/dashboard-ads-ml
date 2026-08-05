@@ -34,6 +34,7 @@ import beta_bridge
 import eduzz_api
 import webhook
 import app
+from gerar_dashboard_ads_ml import detect_ads_period
 
 
 def signed(payload):
@@ -87,6 +88,15 @@ class IntegrationTests(unittest.TestCase):
         token_path = pathlib.Path(TEST_DIR.name) / "eduzz_oauth_token.json"
         if token_path.exists():
             token_path.unlink()
+
+    def test_ads_period_accepts_portuguese_month_abbreviations(self):
+        ads_rows = [
+            (3, {1: "05-jul-2026", 2: "04-ago-2026"}),
+        ]
+        self.assertEqual(
+            detect_ads_period(ads_rows),
+            {"dateFrom": "2026-07-05", "dateTo": "2026-08-04"},
+        )
 
     def test_paid_invoice_uses_items_product_id_and_is_idempotent(self):
         raw, signature = signed(payload(
