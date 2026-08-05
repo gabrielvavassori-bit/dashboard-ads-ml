@@ -391,6 +391,17 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     if not ads_rows:
         return None, "Ainda nao existem dados de publicidade em cache para esta conta. Aguarde a coleta online e tente novamente."
     ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
+    ads_codes = {
+        _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
+        for raw in ads_rows
+        if isinstance(raw, dict)
+    }
+    ads_codes.discard("")
+    for code in sales_by_item:
+        normalized_code = _normalize_mlb_code(code)
+        if normalized_code and normalized_code not in ads_codes:
+            ads_rows.append({"item_id": normalized_code})
+            ads_codes.add(normalized_code)
     sales_state = latest.get("sales") if isinstance(latest.get("sales"), dict) else {}
     complete = bool(sales_state.get("complete"))
 
