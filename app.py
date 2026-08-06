@@ -210,10 +210,10 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
     )
     try:
         with urlopen(req, timeout=45) as response:
-            raw = response.read(2_000_000)
+            raw = response.read(8_000_000)
             status = response.status
     except HTTPError as exc:
-        raw = exc.read(2_000_000)
+        raw = exc.read(8_000_000)
         status = exc.code
     except (URLError, TimeoutError) as exc:
         return {
@@ -1287,10 +1287,10 @@ class Handler(BaseHTTPRequestHandler):
         )
         try:
             with urlopen(req, timeout=45) as response:
-                raw = response.read(2_000_000)
+                raw = response.read(8_000_000)
                 status = response.status
         except HTTPError as exc:
-            raw = exc.read(2_000_000)
+            raw = exc.read(8_000_000)
             status = exc.code
         except (URLError, TimeoutError) as exc:
             _send_json(self, {
