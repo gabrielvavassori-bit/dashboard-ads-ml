@@ -744,7 +744,10 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(data["kpis"]["investment"], 10)
         self.assertEqual(data["kpis"]["adsRevenue"], 100)
         self.assertEqual(data["kpis"]["revenue"], 200)
-        self.assertEqual(data["kpis"]["organicRevenue"], 100)
+        self.assertEqual(data["items"][0]["organicRevenue"], 130)
+        self.assertEqual(data["items"][0]["tacosBaseRevenue"], 230)
+        self.assertAlmostEqual(data["items"][0]["tacos"], 10 / 230)
+        self.assertEqual(data["kpis"]["organicRevenue"], 130)
         self.assertEqual(data["kpis"]["tacosBaseRevenue"], 200)
         self.assertAlmostEqual(data["kpis"]["tacos"], 0.05)
         self.assertEqual(data["meta"]["adsDeduplication"]["removedRows"], 1)
@@ -804,11 +807,53 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(message, "")
         self.assertEqual(data["kpis"]["revenue"], 200)
         self.assertEqual(data["kpis"]["units"], 4)
-        self.assertEqual(data["kpis"]["organicRevenue"], 50)
+        self.assertEqual(data["kpis"]["organicRevenue"], 200)
         self.assertEqual(data["kpis"]["tacosBaseRevenue"], 200)
         self.assertEqual(len(data["campaignAds"]), 2)
         self.assertTrue(all(item["campaignRevenueAmbiguous"] for item in data["campaignAds"]))
         self.assertTrue(all(item["confidence"] == "hipotese" for item in data["campaignAds"]))
+
+    def test_online_dashboard_includes_sales_without_ads_rows(self):
+        payload = {
+            "ok": True,
+            "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
+            "ads": {"items": [{"item_id": "MLB123", "cost": 10, "total_amount": 100}]},
+            "sales": {"items": {
+                "MLB123": {"revenue_total": 200, "units_total": 4},
+                "MLB456": {"revenue_total": 300, "units_total": 2, "sku": "SKU-456"},
+            }},
+        }
+        original_fetch = app._fetch_dash_ads_json
+        app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
+        try:
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+        finally:
+            app._fetch_dash_ads_json = original_fetch
+
+        self.assertEqual(message, "")
+        self.assertEqual(data["kpis"]["products"], 2)
+        self.assertEqual(data["kpis"]["revenue"], 500)
+        self.assertEqual(data["kpis"]["units"], 6)
+        self.assertEqual(data["items"][1]["code"], "MLB456")
+
+    def test_online_product_tacos_uses_indirect_revenue_without_product_sale(self):
+        payload = {
+            "ok": True,
+            "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
+            "ads": {"items": [{"item_id": "MLB123", "cost": 2000, "total_amount": 50000, "direct_amount": 0}]},
+            "sales": {"items": {"MLB123": {"revenue_total": 0, "units_total": 0}}},
+        }
+        original_fetch = app._fetch_dash_ads_json
+        app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
+        try:
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+        finally:
+            app._fetch_dash_ads_json = original_fetch
+
+        self.assertEqual(message, "")
+        self.assertEqual(data["items"][0]["tacosBaseRevenue"], 50000)
+        self.assertAlmostEqual(data["items"][0]["tacos"], 0.04)
+        self.assertEqual(data["kpis"]["tacosBaseRevenue"], 0)
 
     def test_online_dashboard_marks_partial_sales_in_diagnostics(self):
         payload = {

@@ -391,6 +391,17 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     if not ads_rows:
         return None, "Ainda nao existem dados de publicidade em cache para esta conta. Aguarde a coleta online e tente novamente."
     ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
+    ads_codes = {
+        _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
+        for raw in ads_rows
+        if isinstance(raw, dict)
+    }
+    ads_codes.discard("")
+    for code in sales_by_item:
+        normalized_code = _normalize_mlb_code(code)
+        if normalized_code and normalized_code not in ads_codes:
+            ads_rows.append({"item_id": normalized_code})
+            ads_codes.add(normalized_code)
     sales_state = latest.get("sales") if isinstance(latest.get("sales"), dict) else {}
     complete = bool(sales_state.get("complete"))
 
@@ -427,8 +438,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         ads_sales = _number(raw.get("units_quantity"))
         impressions = _number(raw.get("prints"))
         clicks = _number(raw.get("clicks"))
-        organic_revenue = max(0.0, total_revenue - ads_revenue)
-        tacos_base = total_revenue
+        organic_revenue = max(0.0, total_revenue - ads_direct_revenue)
+        tacos_base = organic_revenue + ads_direct_revenue + ads_indirect_revenue
         campaign_id = str(raw.get("campaign_id") or "").strip()
         campaign_name = str(
             raw.get("campaign_name") or raw.get("campaign_title") or raw.get("campaign") or ""
@@ -506,7 +517,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     total_investment = sum(item["investment"] for item in items)
     total_ads_revenue = sum(item["adsRevenue"] for item in items)
     total_ads_direct = sum(item["adsDirectRevenue"] for item in items)
-    total_organic = max(0.0, total_revenue - total_ads_revenue)
+    total_organic = max(0.0, total_revenue - total_ads_direct)
     total_tacos_base = total_revenue
     total_clicks = sum(item["clicks"] for item in items)
     total_ads_sales = sum(item["adsSales"] for item in items)
@@ -538,7 +549,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     }
     cache_status = "completo" if complete else "parcial"
     notice = (
-        f"Modo online beta: leitura autenticada do cache da conta. A cobertura de vendas esta {cache_status}; "
+        f"Modo online beta: leitura autenticada do faturamento bruto do cache da conta. A cobertura de vendas esta {cache_status}; "
         "confira pelo XLSX detalhado antes de qualquer decisao financeira definitiva."
     )
     if ads_deduplication["hasDuplicates"]:
@@ -549,7 +560,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     return {
         "kpis": {
             "clientName": client,
-            "salesSource": "online-beta",
+            "salesSource": "online-cache-gross",
             "products": len(items),
             "units": sum(item["units"] for item in items),
             "revenue": total_revenue,
@@ -569,6 +580,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         },
         "meta": {
             "period": {"dateFrom": latest_date_from, "dateTo": latest_date_to},
+            "revenueSource": "agente-ml / online-cache-latest / pedidos brutos",
             "onlineMode": {"enabled": True, "notice": notice, "complete": complete, "updatedAt": snapshot_at, "onlinePeriod": requested_period or {}, "periodMatch": period_match, "snapshot": snapshot_meta},
             "adsDeduplication": ads_deduplication,
         },
