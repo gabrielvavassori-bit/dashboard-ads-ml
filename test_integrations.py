@@ -473,6 +473,41 @@ class HTTPRouteTests(unittest.TestCase):
             app.beta_config.BETA_SHARED_AUTH_SECRET = original_secret
             app.beta_config.BETA_PUBLIC_URL = original_public_url
 
+    def test_beta_login_uses_shared_auth_bridge(self):
+        original = (
+            app.beta_config.BETA_MODE,
+            app.beta_config.BETA_SHARED_AUTH_SECRET,
+            app.beta_config.BETA_PUBLIC_URL,
+        )
+        app.beta_config.BETA_MODE = True
+        app.beta_config.BETA_SHARED_AUTH_SECRET = "sync-secret"
+        app.beta_config.BETA_PUBLIC_URL = "https://beta.example.test"
+        try:
+            opener = self._no_redirect_opener()
+            with self.assertRaises(HTTPError) as raised:
+                opener.open(f"{self.base_url}/login", timeout=5)
+            self.assertEqual(raised.exception.code, 302)
+            self.assertEqual(raised.exception.headers["Location"], "/teste")
+            raised.exception.close()
+
+            request = Request(
+                f"{self.base_url}/login",
+                data=urlencode({"email": "beta@example.com", "password": "123456"}).encode("utf-8"),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as raised:
+                opener.open(request, timeout=5)
+            self.assertEqual(raised.exception.code, 302)
+            self.assertEqual(raised.exception.headers["Location"], "/teste")
+            raised.exception.close()
+        finally:
+            (
+                app.beta_config.BETA_MODE,
+                app.beta_config.BETA_SHARED_AUTH_SECRET,
+                app.beta_config.BETA_PUBLIC_URL,
+            ) = original
+
     def test_health_and_custom_delivery(self):
         with urlopen(f"{self.base_url}/healthz", timeout=5) as response:
             self.assertEqual(response.status, 200)

@@ -777,6 +777,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._eduzz_custom_delivery()
                 return
             if path == "/login":
+                if beta_config.BETA_MODE and beta_config.bridge_enabled():
+                    _redirect(self, "/teste")
+                    return
                 user, _ = _current_user(self)
                 if user:
                     _redirect(self, "/")
@@ -1032,6 +1035,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _post_login(self):
         form = _parse_form(self)
+        if beta_config.BETA_MODE and beta_config.bridge_enabled():
+            _redirect(self, "/teste")
+            return
         email = (form.get("email", "") or "").strip().lower()
         password = form.get("password", "") or ""
         return_to = (form.get("return_to", "") or "").strip()
