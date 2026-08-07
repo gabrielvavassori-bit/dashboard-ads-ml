@@ -418,7 +418,8 @@ class HTTPRouteTests(unittest.TestCase):
         return build_opener(NoRedirect)
 
     def test_beta_assertion_is_identity_only_and_single_use(self):
-        user_id, _ = self._login_cookie("beta@example.com")
+        user_id, _ = self._login_cookie("beta-assertion@example.com")
+        db.set_user_beta_access(user_id, True)
         user = db.get_user_by_id(user_id)
         link = {
             "client_id": "client-1",
@@ -435,7 +436,8 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertNotIn("access_token", token)
         self.assertNotIn("refresh_token", token)
         payload_value = beta_bridge.verify_assertion(token, "secret", "https://beta.example/beta/callback", now=base_now + 1)
-        self.assertEqual(payload_value["user"]["email"], "beta@example.com")
+        self.assertEqual(payload_value["user"]["email"], "beta-assertion@example.com")
+        self.assertIs(payload_value["user"]["beta_enabled"], True)
         self.assertEqual(payload_value["ml"]["client_id"], "client-1")
         self.assertTrue(db.claim_beta_handoff(payload_value["nonce"], payload_value["exp"]))
         self.assertFalse(db.claim_beta_handoff(payload_value["nonce"], payload_value["exp"]))
@@ -450,6 +452,46 @@ class HTTPRouteTests(unittest.TestCase):
             beta_bridge.verify_assertion(tampered, "secret", "https://beta.example/beta/callback", now=101)
         with self.assertRaises(ValueError):
             beta_bridge.verify_assertion(token, "secret", "https://beta.example/beta/callback", now=221)
+
+    def test_sync_beta_access_posts_signed_assertion(self):
+        user_id, _ = self._login_cookie("beta-sync@example.com")
+        db.set_user_beta_access(user_id, True)
+        user = db.get_user_by_id(user_id)
+        received = {}
+
+        class FakeBeta(BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                return
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                form = parse_qs(self.rfile.read(length).decode("utf-8"))
+                token = form.get("assertion", [""])[0]
+                audience = f"http://127.0.0.1:{self.server.server_port}/internal/beta/access-sync"
+                received.update(beta_bridge.verify_assertion(token, "sync-secret", audience))
+                body = b'{"ok":true}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        fake = ThreadingHTTPServer(("127.0.0.1", 0), FakeBeta)
+        thread = threading.Thread(target=fake.serve_forever, daemon=True)
+        thread.start()
+        original_secret = app.beta_config.BETA_SHARED_AUTH_SECRET
+        original_public_url = app.beta_config.BETA_PUBLIC_URL
+        app.beta_config.BETA_SHARED_AUTH_SECRET = "sync-secret"
+        app.beta_config.BETA_PUBLIC_URL = f"http://127.0.0.1:{fake.server_port}"
+        try:
+            self.assertTrue(app._sync_beta_access(user))
+            self.assertIs(received["user"]["beta_enabled"], True)
+        finally:
+            app.beta_config.BETA_SHARED_AUTH_SECRET = original_secret
+            app.beta_config.BETA_PUBLIC_URL = original_public_url
+            fake.shutdown()
+            fake.server_close()
+            thread.join(timeout=3)
 
     def test_health_and_custom_delivery(self):
         with urlopen(f"{self.base_url}/healthz", timeout=5) as response:
@@ -873,6 +915,52 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(user["plan"], "cortesia")
         self.assertGreater(user["expires_at"], int(app.time.time()) + (6 * 86400))
         raised.exception.close()
+
+    def test_admin_can_allow_and_block_beta_without_changing_real_access(self):
+        user_id = db.upsert_manual_user(
+            email="beta-toggle@example.com",
+            name="Cliente Beta",
+            plan="cortesia",
+            status="active",
+            expires_at=None,
+        )
+        admin_cookie = self._admin_cookie()
+        opener = self._no_redirect_opener()
+        original_sync = app._sync_beta_access
+        app._sync_beta_access = lambda user: True
+        try:
+            for enabled, expected in (("1", 1), ("0", 0)):
+                request = Request(
+                    f"{self.base_url}/admin/users/{user_id}/set_beta_access",
+                    data=urlencode({"enabled": enabled}).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Cookie": admin_cookie,
+                    },
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    opener.open(request, timeout=5)
+                self.assertEqual(raised.exception.code, 302)
+                raised.exception.close()
+                user = db.get_user_by_id(user_id)
+                self.assertEqual(user["beta_enabled"], expected)
+                self.assertEqual(user["status"], "active")
+                self.assertEqual(user["access_origin"], "manual")
+                self.assertIsNone(user["expires_at"])
+        finally:
+            app._sync_beta_access = original_sync
+
+        request = Request(
+            f"{self.base_url}/admin?q=beta-toggle%40example.com",
+            headers={"Cookie": admin_cookie},
+            method="GET",
+        )
+        with urlopen(request, timeout=5) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        self.assertIn("Beta bloqueado", body)
+        self.assertIn("Liberar beta", body)
+        self.assertIn(f"/admin/users/{user_id}/set_beta_access", body)
 
     def test_admin_can_bind_ml_link_manually_for_existing_user(self):
         user_id = db.upsert_manual_user(

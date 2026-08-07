@@ -757,6 +757,39 @@ def _current_admin(handler):
     return auth.get_admin_session(token), token
 
 
+def _beta_access_allowed(user) -> bool:
+    if not user:
+        return False
+    beta_enabled = user["beta_enabled"] if "beta_enabled" in user.keys() else None
+    if beta_enabled is not None:
+        return bool(beta_enabled)
+    return beta_config.email_allowed(user["email"])
+
+
+def _sync_beta_access(user) -> bool:
+    if not beta_config.bridge_enabled():
+        return False
+    audience = f"{beta_config.BETA_PUBLIC_URL}/internal/beta/access-sync"
+    assertion = beta_bridge.create_assertion(
+        beta_config.BETA_SHARED_AUTH_SECRET,
+        user,
+        None,
+        audience,
+    )
+    request = Request(
+        audience,
+        data=urlencode({"assertion": assertion}).encode("utf-8"),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read(100_000).decode("utf-8", errors="replace"))
+        return response.status == 200 and payload.get("ok") is True
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        return False
+
+
 # ------------------ Handler ------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -1014,6 +1047,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path.startswith("/admin/users/") and path.endswith("/set_status"):
                 self._post_admin_set_status(path)
+                return
+            if path.startswith("/admin/users/") and path.endswith("/set_beta_access"):
+                self._post_admin_set_beta_access(path)
                 return
 
             _send_html(self, templates.render_error_page("Rota nao encontrada."), 404)
@@ -1352,7 +1388,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 _redirect(self, "/login?return_to=/teste")
             return
-        if not beta_config.email_allowed(user["email"]):
+        if not _beta_access_allowed(user):
             _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
             return
         link = db.get_active_ml_link_for_user(user["id"])
@@ -1381,7 +1417,7 @@ class Handler(BaseHTTPRequestHandler):
             login_return = "/beta/authorize?" + urlencode({"return_to": expected})
             _redirect(self, "/login?" + urlencode({"return_to": login_return}))
             return
-        if not beta_config.email_allowed(user["email"]):
+        if not _beta_access_allowed(user):
             _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
             return
         assertion = beta_bridge.create_assertion(
@@ -1555,6 +1591,36 @@ class Handler(BaseHTTPRequestHandler):
             db.set_user_status(user_id, new_status)
         db.log_audit(user_id, f"admin.set_status:{new_status}", admin["email"], _client_ip(self))
         _redirect(self, f"/admin?info=Status%20alterado%20para%20{new_status}")
+
+    def _post_admin_set_beta_access(self, path: str):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        try:
+            user_id = int(path.split("/")[3])
+        except (ValueError, IndexError):
+            _send_html(self, templates.render_error_page("ID invalido."), 400)
+            return
+        form = _parse_form(self)
+        enabled_raw = (form.get("enabled", "") or "").strip()
+        if enabled_raw not in ("0", "1"):
+            _send_html(self, templates.render_error_page("Acesso beta invalido."), 400)
+            return
+        enabled = enabled_raw == "1"
+        db.set_user_beta_access(user_id, enabled)
+        user = db.get_user_by_id(user_id)
+        if not user:
+            _send_html(self, templates.render_error_page("Usuario nao encontrado."), 404)
+            return
+        synced = _sync_beta_access(user)
+        action = "liberado" if enabled else "bloqueado"
+        db.log_audit(user_id, f"admin.beta_access:{action}", admin["email"], _client_ip(self))
+        if synced:
+            info = f"Acesso beta {action} com sucesso"
+        else:
+            info = f"Acesso beta {action}; sincronizacao com o beta pendente"
+        _redirect(self, "/admin?" + urlencode({"info": info}))
 
 
 # ------------------ Bootstrap ------------------

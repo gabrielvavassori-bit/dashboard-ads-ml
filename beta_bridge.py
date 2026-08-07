@@ -43,6 +43,11 @@ def create_assertion(secret: str, user, ml_link, audience: str, now: int | None 
             "name": user["name"] or "",
             "plan": user["plan"] or "",
             "status": user["status"] or "",
+            "beta_enabled": (
+                None
+                if "beta_enabled" not in user.keys() or user["beta_enabled"] is None
+                else bool(user["beta_enabled"])
+            ),
             "expires_at": user["expires_at"],
         },
     }

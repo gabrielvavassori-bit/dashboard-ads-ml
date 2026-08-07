@@ -284,6 +284,22 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
         else:
             origin_label = '<span class="pill active">Eduzz</span>'
             origin_note = '<div style="font-size:12px;color:#667085">Controle atual pela Eduzz</div>'
+        beta_enabled = u.get("beta_enabled")
+        if beta_enabled is None:
+            beta_label = '<span class="pill pending">Beta: regra padrao</span>'
+            beta_value = "1"
+            beta_button = "Liberar beta"
+            beta_class = ""
+        elif beta_enabled:
+            beta_label = '<span class="pill active">Beta liberado</span>'
+            beta_value = "0"
+            beta_button = "Bloquear beta"
+            beta_class = "danger"
+        else:
+            beta_label = '<span class="pill suspended">Beta bloqueado</span>'
+            beta_value = "1"
+            beta_button = "Liberar beta"
+            beta_class = ""
         ml_link_html = ""
         if u.get("ml_link_label"):
             ml_link_html = (
@@ -300,7 +316,7 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
         rows.append(f"""
         <tr>
           <td>{_html.escape(u['email'] or '')}<div style="font-size:12px;color:#667085">{_html.escape(u['name'] or '')}</div>{ml_link_html}</td>
-          <td>{origin_label}{origin_note}</td>
+          <td>{origin_label}{origin_note}<div style="margin-top:6px">{beta_label}</div></td>
           <td><span class="pill {status}">{status}</span></td>
           <td>{_html.escape(plan)}</td>
           <td>{fmt_ts(u['expires_at'])}</td>
@@ -321,6 +337,10 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
             <form method="post" action="/admin/users/{u['id']}/set_status">
               <input type="hidden" name="status" value="suspended">
               <button type="submit" class="danger">Suspender</button>
+            </form>
+            <form method="post" action="/admin/users/{u['id']}/set_beta_access">
+              <input type="hidden" name="enabled" value="{beta_value}">
+              <button type="submit" class="{beta_class}">{beta_button}</button>
             </form>
           </td>
         </tr>""")

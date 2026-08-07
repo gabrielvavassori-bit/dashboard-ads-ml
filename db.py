@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS users (
     access_origin     TEXT NOT NULL DEFAULT 'eduzz',
     plan              TEXT,
     status            TEXT NOT NULL DEFAULT 'pending',  -- pending | active | suspended | refunded | expired
+    beta_enabled      INTEGER DEFAULT NULL,             -- NULL = allowlist, 1 = liberado, 0 = bloqueado
     expires_at        INTEGER,                          -- timestamp unix; NULL = sem expiração
     password_hash     TEXT,                             -- NULL ate o primeiro acesso
     created_at        INTEGER NOT NULL,
@@ -182,6 +183,8 @@ def init_db():
                          ELSE 'manual'
                        END"""
                 )
+            if "beta_enabled" not in user_columns:
+                conn.execute("ALTER TABLE users ADD COLUMN beta_enabled INTEGER DEFAULT NULL")
             ml_link_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(user_ml_links)")
             }
@@ -547,6 +550,17 @@ def set_user_status(user_id: int, status: str, expires_at=None):
                 "UPDATE users SET status=?, expires_at=?, updated_at=? WHERE id=?",
                 (status, expires_at, now(), user_id),
             )
+    finally:
+        conn.close()
+
+
+def set_user_beta_access(user_id: int, enabled: bool) -> None:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE users SET beta_enabled=?, updated_at=? WHERE id=?",
+            (1 if enabled else 0, now(), user_id),
+        )
     finally:
         conn.close()
 
