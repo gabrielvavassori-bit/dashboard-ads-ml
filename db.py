@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS users (
     access_origin     TEXT NOT NULL DEFAULT 'eduzz',
     plan              TEXT,
     status            TEXT NOT NULL DEFAULT 'pending',  -- pending | active | suspended | refunded | expired
+    beta_enabled      INTEGER DEFAULT NULL,             -- NULL = allowlist, 1 = liberado, 0 = bloqueado
     expires_at        INTEGER,                          -- timestamp unix; NULL = sem expiração
     password_hash     TEXT,                             -- NULL ate o primeiro acesso
     created_at        INTEGER NOT NULL,
@@ -182,6 +183,8 @@ def init_db():
                          ELSE 'manual'
                        END"""
                 )
+            if "beta_enabled" not in user_columns:
+                conn.execute("ALTER TABLE users ADD COLUMN beta_enabled INTEGER DEFAULT NULL")
             ml_link_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(user_ml_links)")
             }
@@ -401,21 +404,22 @@ def upsert_beta_identity(identity: dict) -> int:
             identity.get("name") or "",
             identity.get("plan") or "beta",
             identity.get("status") or "active",
+            identity.get("beta_enabled"),
             identity.get("expires_at"),
             ts,
         )
         if existing:
             conn.execute(
-                """UPDATE users SET name=?, plan=?, status=?, expires_at=?,
+                """UPDATE users SET name=?, plan=?, status=?, beta_enabled=?, expires_at=?,
                    access_origin='beta_bridge', updated_at=? WHERE id=?""",
                 (*values, existing["id"]),
             )
             return int(existing["id"])
         cur = conn.execute(
             """INSERT INTO users
-               (email, name, access_origin, plan, status, expires_at, created_at, updated_at)
-               VALUES (?,?, 'beta_bridge', ?,?,?,?,?)""",
-            (email, values[0], values[1], values[2], values[3], ts, ts),
+               (email, name, access_origin, plan, status, beta_enabled, expires_at, created_at, updated_at)
+               VALUES (?,?, 'beta_bridge', ?,?,?,?,?,?)""",
+            (email, values[0], values[1], values[2], values[3], values[4], ts, ts),
         )
         return int(cur.lastrowid)
     finally:
@@ -547,6 +551,14 @@ def set_user_status(user_id: int, status: str, expires_at=None):
                 "UPDATE users SET status=?, expires_at=?, updated_at=? WHERE id=?",
                 (status, expires_at, now(), user_id),
             )
+    finally:
+        conn.close()
+
+
+def delete_user_sessions(user_id: int) -> None:
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
     finally:
         conn.close()
 

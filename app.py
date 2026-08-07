@@ -746,6 +746,15 @@ def _current_admin(handler):
     return auth.get_admin_session(token), token
 
 
+def _beta_access_allowed(user) -> bool:
+    if not user:
+        return False
+    beta_enabled = user["beta_enabled"] if "beta_enabled" in user.keys() else None
+    if beta_enabled is not None:
+        return bool(beta_enabled)
+    return beta_config.email_allowed(user["email"])
+
+
 # ------------------ Handler ------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -854,6 +863,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not user:
                     _redirect(self, "/login")
                     return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
+                    return
                 link = db.get_active_ml_link_for_user(user["id"])
                 linked_name = ""
                 if link:
@@ -864,6 +876,9 @@ class Handler(BaseHTTPRequestHandler):
                 user, _ = _current_user(self)
                 if not user:
                     _redirect(self, "/login")
+                    return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
                     return
                 qs = parse_qs(url.query or "")
                 confirmed = (qs.get("confirmed", [""])[0] or "").strip() == "1"
@@ -982,6 +997,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/internal/ml-link/attach":
                 self._post_internal_ml_link_attach()
+                return
+            if path == "/internal/beta/access-sync":
+                self._post_internal_beta_access_sync()
                 return
             if path in ("/eduzz/custom-delivery", "/eduzz-delivery"):
                 self._eduzz_custom_delivery()
@@ -1341,7 +1359,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 _redirect(self, "/login?return_to=/teste")
             return
-        if not beta_config.email_allowed(user["email"]):
+        if not _beta_access_allowed(user):
             _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
             return
         link = db.get_active_ml_link_for_user(user["id"])
@@ -1370,7 +1388,7 @@ class Handler(BaseHTTPRequestHandler):
             login_return = "/beta/authorize?" + urlencode({"return_to": expected})
             _redirect(self, "/login?" + urlencode({"return_to": login_return}))
             return
-        if not beta_config.email_allowed(user["email"]):
+        if not _beta_access_allowed(user):
             _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
             return
         assertion = beta_bridge.create_assertion(
@@ -1390,7 +1408,10 @@ class Handler(BaseHTTPRequestHandler):
         expected = f"{beta_config.BETA_PUBLIC_URL}/beta/callback"
         try:
             payload = beta_bridge.verify_assertion(token, beta_config.BETA_SHARED_AUTH_SECRET, expected)
-            if not beta_config.email_allowed(payload["user"]["email"]):
+            beta_enabled = payload["user"].get("beta_enabled")
+            if beta_enabled is False or (
+                beta_enabled is None and not beta_config.email_allowed(payload["user"]["email"])
+            ):
                 raise ValueError("usuario fora da lista beta")
             if not db.claim_beta_handoff(payload["nonce"], payload["exp"]):
                 raise ValueError("assertion beta ja utilizada ou expirada")
@@ -1415,6 +1436,33 @@ class Handler(BaseHTTPRequestHandler):
             return
         token = auth.create_admin_session(email)
         _redirect(self, "/admin", set_cookie=auth.make_admin_set_cookie(token))
+
+    def _post_internal_beta_access_sync(self):
+        if not beta_config.BETA_MODE or not beta_config.bridge_enabled():
+            _send_json(self, {"ok": False, "message": "Sincronizacao beta indisponivel"}, 404)
+            return
+        form = _parse_form(self)
+        token = (form.get("assertion", "") or "").strip()
+        audience = f"{beta_config.BETA_PUBLIC_URL}/internal/beta/access-sync"
+        try:
+            payload = beta_bridge.verify_assertion(
+                token,
+                beta_config.BETA_SHARED_AUTH_SECRET,
+                audience,
+            )
+            beta_enabled = payload["user"].get("beta_enabled")
+            if beta_enabled is None:
+                raise ValueError("permissao beta ausente")
+            if not db.claim_beta_handoff(payload["nonce"], payload["exp"]):
+                raise ValueError("sincronizacao beta repetida ou expirada")
+            user_id = db.upsert_beta_identity(payload["user"])
+            if not beta_enabled:
+                db.delete_user_sessions(user_id)
+            action = "liberado" if beta_enabled else "bloqueado"
+            db.log_audit(user_id, f"beta.access_sync:{action}", "signed-bridge", _client_ip(self))
+            _send_json(self, {"ok": True, "beta_enabled": bool(beta_enabled)})
+        except (ValueError, KeyError, TypeError) as exc:
+            _send_json(self, {"ok": False, "message": str(exc)}, 400)
 
     def _post_admin_reset_password(self, path: str):
         admin, _ = _current_admin(self)

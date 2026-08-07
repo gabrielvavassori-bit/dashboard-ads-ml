@@ -427,6 +427,7 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertNotIn("refresh_token", token)
         payload_value = beta_bridge.verify_assertion(token, "secret", "https://beta.example/beta/callback", now=base_now + 1)
         self.assertEqual(payload_value["user"]["email"], "beta@example.com")
+        self.assertIsNone(payload_value["user"]["beta_enabled"])
         self.assertEqual(payload_value["ml"]["client_id"], "client-1")
         self.assertTrue(db.claim_beta_handoff(payload_value["nonce"], payload_value["exp"]))
         self.assertFalse(db.claim_beta_handoff(payload_value["nonce"], payload_value["exp"]))
@@ -441,6 +442,36 @@ class HTTPRouteTests(unittest.TestCase):
             beta_bridge.verify_assertion(tampered, "secret", "https://beta.example/beta/callback", now=101)
         with self.assertRaises(ValueError):
             beta_bridge.verify_assertion(token, "secret", "https://beta.example/beta/callback", now=221)
+
+    def test_beta_access_sync_blocks_user_and_ends_beta_session(self):
+        user_id, cookie = self._login_cookie("beta-sync-block@example.com")
+        user = dict(db.get_user_by_id(user_id))
+        user["beta_enabled"] = False
+        original_mode = app.beta_config.BETA_MODE
+        original_secret = app.beta_config.BETA_SHARED_AUTH_SECRET
+        original_public_url = app.beta_config.BETA_PUBLIC_URL
+        app.beta_config.BETA_MODE = True
+        app.beta_config.BETA_SHARED_AUTH_SECRET = "sync-secret"
+        app.beta_config.BETA_PUBLIC_URL = self.base_url
+        try:
+            audience = f"{self.base_url}/internal/beta/access-sync"
+            token = beta_bridge.create_assertion("sync-secret", user, None, audience)
+            request = Request(
+                audience,
+                data=urlencode({"assertion": token}).encode("utf-8"),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            with urlopen(request, timeout=5) as response:
+                result = json.loads(response.read())
+            self.assertTrue(result["ok"])
+            session_token = cookie.split("=", 1)[1]
+            self.assertIsNone(db.get_session(session_token))
+            self.assertEqual(db.get_user_by_id(user_id)["beta_enabled"], 0)
+        finally:
+            app.beta_config.BETA_MODE = original_mode
+            app.beta_config.BETA_SHARED_AUTH_SECRET = original_secret
+            app.beta_config.BETA_PUBLIC_URL = original_public_url
 
     def test_health_and_custom_delivery(self):
         with urlopen(f"{self.base_url}/healthz", timeout=5) as response:
