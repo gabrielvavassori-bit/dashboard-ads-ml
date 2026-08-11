@@ -134,7 +134,14 @@ class OnlinePeriodTests(unittest.TestCase):
             )
         self.assertIsNone(data)
         self.assertIn("fora do periodo", message)
-        self.assertEqual([path for path, _ in calls], ["/internal/dash-ads/online-cache-latest"])
+        self.assertEqual(
+            [path for path, _ in calls],
+            [
+                "/internal/dash-ads/online-cache-latest",
+                "/internal/dash-ads/online-cache-refresh",
+                "/internal/dash-ads/online-cache-latest",
+            ],
+        )
 
     def test_online_builder_uses_requested_period_when_explicit_dates_are_empty(self):
         payload = {

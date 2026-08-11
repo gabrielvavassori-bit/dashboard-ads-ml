@@ -346,7 +346,9 @@ def _number(value) -> float:
 def _deduplicate_online_ads_rows(ads_rows: list) -> tuple[list, dict]:
     deduped_rows = []
     seen = set()
+    semantic_seen = {}
     removed_rows = 0
+    removed_semantic_rows = 0
     removed_investment = 0.0
     removed_ads_revenue = 0.0
 
@@ -361,11 +363,45 @@ def _deduplicate_online_ads_rows(ads_rows: list) -> tuple[list, dict]:
             removed_ads_revenue += _number(raw.get("total_amount"))
             continue
         seen.add(key)
+
+        code = _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
+        campaign_id = str(raw.get("campaign_id") or "").strip()
+        semantic_key = None
+        if code and campaign_id:
+            semantic_key = (
+                code,
+                campaign_id,
+                str(raw.get("ad_group_id") or "").strip(),
+                *(
+                    _number(raw.get(field))
+                    for field in (
+                        "cost", "total_amount", "direct_amount", "units_quantity",
+                        "direct_units_quantity", "indirect_units_quantity", "prints", "clicks",
+                    )
+                ),
+            )
+        if semantic_key in semantic_seen:
+            existing_index = semantic_seen[semantic_key]
+            existing = deduped_rows[existing_index]
+            existing_status = str(existing.get("status") or "").strip().lower()
+            current_status = str(raw.get("status") or "").strip().lower()
+            existing_active = existing_status.startswith(("active", "ativo"))
+            current_active = current_status.startswith(("active", "ativo"))
+            if current_active and not existing_active:
+                deduped_rows[existing_index] = raw
+            removed_rows += 1
+            removed_semantic_rows += 1
+            removed_investment += _number(raw.get("cost"))
+            removed_ads_revenue += _number(raw.get("total_amount"))
+            continue
+        if semantic_key is not None:
+            semantic_seen[semantic_key] = len(deduped_rows)
         deduped_rows.append(raw)
 
     return deduped_rows, {
         "hasDuplicates": removed_rows > 0,
         "removedRows": removed_rows,
+        "removedSemanticRows": removed_semantic_rows,
         "removedInvestment": removed_investment,
         "removedAdsRevenue": removed_ads_revenue,
     }
@@ -466,6 +502,11 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         campaign_label = campaign_name or (f"Campanha {campaign_id}" if campaign_id else "Sem campanha identificada")
         status = str(raw.get("status") or "").strip().lower()
         active = status.startswith("active") or status.startswith("ativo")
+        campaign_status = (
+            "Ativa"
+            if active
+            else ("Anuncio inativo na campanha" if status else "Status do anuncio nao informado")
+        )
         last_price = _number(
             sale.get("last_price")
             or sale.get("lastPrice")
@@ -497,7 +538,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "campaignId": campaign_id,
             "campaignName": campaign_name,
             "adsCampaigns": f"Campanha {campaign_id}" if campaign_id else "",
-            "campaignStatus": "Ativa" if active else "Sem campanha ativa",
+            "campaignStatus": campaign_status,
             "impressions": impressions,
             "clicks": clicks,
             "adsSales": ads_sales,
@@ -573,7 +614,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     )
     if ads_deduplication["hasDuplicates"]:
         notice += (
-            f" Foram removidas {ads_deduplication['removedRows']} linhas duplicadas exatas do cache de Ads "
+            f" Foram removidas {ads_deduplication['removedRows']} linhas duplicadas do cache de Ads "
             "antes dos calculos."
         )
     return {
