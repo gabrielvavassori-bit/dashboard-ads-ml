@@ -1,4 +1,5 @@
 import unittest
+import json
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +13,57 @@ NOW = datetime(2026, 7, 31, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
 class OnlinePeriodTests(unittest.TestCase):
+    def test_governance_summary_reads_authenticated_central_bundle(self):
+        bundle = {
+            "version": "2026-08-10",
+            "sha256": "abc123",
+            "published_at": "2026-08-10T12:00:00Z",
+            "required_files": ["global_rules.json", "shared_rules.json"],
+            "files": {
+                "global_rules.json": {"rules": [{"id": "RULE-1", "description": "Regra global"}]},
+                "shared_rules.json": {"rules": [{"id": "RULE-2", "description": "Regra compartilhada"}]},
+                "shared_human_decisions.json": {"decisions": [{
+                    "id": "UNC-1", "description": "Decisao", "status": "E",
+                    "classification": "GLOBAL", "source_project": "Un Clic",
+                }]},
+                "marketplace_knowledge.json": {"entries": [{
+                    "id": "MK-AGML-ADS-RULE-CATALOG-INTAKE", "description": "Conhecimento",
+                }]},
+            },
+        }
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit):
+                return json.dumps(bundle).encode("utf-8")
+
+        with patch.dict(app.os.environ, {"GOVERNANCE_READ_API_KEY": "secret"}), \
+             patch.object(app, "urlopen", return_value=FakeResponse()) as mocked_urlopen:
+            payload, status = app._fetch_governance_summary()
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["central_rules_count"], 2)
+        self.assertEqual(payload["shared_human_decisions_count"], 1)
+        self.assertEqual(payload["project_decisions"][0]["id"], "UNC-1")
+        request = mocked_urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://marketplace-governance-hub.onrender.com/v1/bundle")
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+
+    def test_governance_summary_fails_closed_without_read_key(self):
+        with patch.dict(app.os.environ, {}, clear=False):
+            app.os.environ.pop("GOVERNANCE_READ_API_KEY", None)
+            payload, status = app._fetch_governance_summary()
+        self.assertEqual(status, 503)
+        self.assertFalse(payload["ok"])
+
     def test_closed_presets_end_yesterday(self):
         expected = {
             "7": ("2026-07-24", "2026-07-30"),

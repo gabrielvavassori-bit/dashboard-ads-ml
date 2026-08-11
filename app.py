@@ -36,6 +36,8 @@ Variaveis de ambiente:
   DEFAULT_ACCESS_DAYS     Dias de acesso quando o payload nao traz nextChargeDate
   ADMIN_EMAIL             Email do admin
   ADMIN_PASSWORD          Senha do admin (so usada no boot para criar/atualizar)
+  GOVERNANCE_HUB_URL      URL do MARKETPLACE GOVERNANCE central
+  GOVERNANCE_READ_API_KEY Chave de leitura do Governance central
   MAX_UPLOAD_MB           Limite por arquivo (padrao 20)
 """
 import html as _html
@@ -86,6 +88,10 @@ MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 # Limita 2 arquivos + overhead de multipart
 MAX_BODY_BYTES = MAX_UPLOAD_BYTES * 2 + 1 * 1024 * 1024
 AGENTE_ML_BASE_URL = os.environ.get("AGENTE_ML_BASE_URL", "https://agente-ml.onrender.com").rstrip("/")
+GOVERNANCE_HUB_URL = os.environ.get(
+    "GOVERNANCE_HUB_URL",
+    "https://marketplace-governance-hub.onrender.com",
+).rstrip("/")
 ML_LINK_ATTACH_SECRET = (os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")).strip()
 ONLINE_TZ = ZoneInfo("America/Sao_Paulo")
 ONLINE_CACHE_PENDING_PREFIX = "__ONLINE_CACHE_PENDING__:"
@@ -235,6 +241,91 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
         payload.setdefault("http_status", status)
         payload.setdefault("token_exposed", False)
     return payload if isinstance(payload, dict) else {"ok": False, "payload": payload, "http_status": status}
+
+
+def _fetch_governance_summary() -> tuple[dict, int]:
+    api_key = (os.environ.get("GOVERNANCE_READ_API_KEY") or "").strip()
+    if not api_key:
+        return {"ok": False, "error": "governance_read_api_key_not_configured"}, 503
+    req = Request(
+        f"{GOVERNANCE_HUB_URL}/v1/bundle",
+        headers={"Accept": "application/json", "Authorization": f"Bearer {api_key}"},
+        method="GET",
+    )
+    try:
+        with urlopen(req, timeout=20) as response:
+            raw = response.read(8_000_000)
+            status = response.status
+    except HTTPError as exc:
+        raw = exc.read(8_000_000)
+        status = exc.code
+    except (URLError, TimeoutError) as exc:
+        return {"ok": False, "error": exc.__class__.__name__}, 502
+    try:
+        bundle = json.loads(raw.decode("utf-8", errors="replace"))
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "governance_non_json_response"}, 502
+    if status != 200 or not isinstance(bundle, dict):
+        return (bundle if isinstance(bundle, dict) else {"ok": False, "error": "invalid_bundle"}), status
+
+    files = bundle.get("files") if isinstance(bundle.get("files"), dict) else {}
+    active_rules = []
+    for filename in ("global_rules.json", "shared_rules.json"):
+        registry = files.get(filename) if isinstance(files.get(filename), dict) else {}
+        for rule in registry.get("rules") or []:
+            if not isinstance(rule, dict) or rule.get("active", True) is False:
+                continue
+            if str(rule.get("status") or "active").lower() in {"inactive", "disabled"}:
+                continue
+            active_rules.append(rule)
+    decisions_registry = files.get("shared_human_decisions.json")
+    decisions = (decisions_registry.get("decisions") or []) if isinstance(decisions_registry, dict) else []
+    knowledge_registry = files.get("marketplace_knowledge.json")
+    knowledge = (knowledge_registry.get("entries") or []) if isinstance(knowledge_registry, dict) else []
+    selected_knowledge_ids = {
+        "MK-AGML-ADS-RULE-CATALOG-INTAKE",
+        "MK-AGML-SKU-CATALOG-OFFER-FALLBACK",
+        "MK-ML-CATALOG-DEMAND-REQUIRES-INDIVIDUAL-AND-AGGREGATE-VIEW",
+        "MK-ML-CONVERSION-PROXY-IS-LOWER-BOUND",
+        "MK-ML-CATALOG-HEAT-USES-AGGREGATED-VISITS",
+    }
+    project_decisions = []
+    for decision in decisions:
+        if not isinstance(decision, dict):
+            continue
+        origin = " ".join(str(decision.get(key) or "") for key in ("source_project", "agent_of_origin")).lower()
+        if "un clic" not in origin and "un-clic" not in origin and "unclic" not in origin:
+            continue
+        project_decisions.append({
+            key: decision.get(key)
+            for key in ("id", "description", "status", "classification")
+        })
+    return {
+        "ok": True,
+        "version": bundle.get("version"),
+        "sha256": bundle.get("sha256"),
+        "loaded_at": bundle.get("published_at"),
+        "required_files": list(bundle.get("required_files") or []),
+        "consulted_files": sorted(files.keys()),
+        "central_rules_count": len(active_rules),
+        "shared_human_decisions_count": len(decisions),
+        "local_rules_checked": [],
+        "conflicts": [],
+        "affected_rules": [],
+        "consulted_human_decisions": [],
+        "blocked_count": 0,
+        "altered_behavior_count": 0,
+        "rule_catalog": [
+            {"id": str(rule.get("id") or ""), "description": str(rule.get("description") or "")}
+            for rule in active_rules if str(rule.get("id") or "").strip()
+        ],
+        "knowledge_catalog": [
+            {"id": str(entry.get("id") or ""), "description": str(entry.get("description") or "")}
+            for entry in knowledge
+            if isinstance(entry, dict) and str(entry.get("id") or "").strip() in selected_knowledge_ids
+        ],
+        "project_decisions": project_decisions,
+    }, 200
 
 
 def _parse_iso_date(value: str) -> date | None:
@@ -1231,6 +1322,14 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/healthz":
                 _send_json(self, {"ok": True})
+                return
+            if path == "/api/governance/summary":
+                user, _ = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                payload, status = _fetch_governance_summary()
+                _send_json(self, payload, status)
                 return
             if path.startswith("/internal/dash-ads/"):
                 self._internal_dash_ads_diagnostico(path, url)
