@@ -448,6 +448,26 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             latest = refreshed_payload.get("latest") if isinstance(refreshed_payload.get("latest"), dict) else {}
             ads = refreshed_payload.get("ads") if isinstance(refreshed_payload.get("ads"), dict) else {}
             sales = refreshed_payload.get("sales") if isinstance(refreshed_payload.get("sales"), dict) else {}
+    latest_date_from = latest.get("date_from") or ads.get("date_from") or ""
+    latest_date_to = latest.get("date_to") or ads.get("date_to") or ""
+    period_match = not (requested_from or requested_to) or (
+        period_cache_hit
+        and latest_date_from == requested_from
+        and latest_date_to == requested_to
+    )
+    if not period_match:
+        refresh_running = refresh_payload.get("ok") and refresh_payload.get("status") == "running"
+        cached_status = latest_payload.get("status") if isinstance(latest_payload.get("status"), dict) else {}
+        if refresh_running or cached_status.get("status") == "running":
+            return None, (
+                f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {requested_from} a {requested_to}. "
+                "A pagina sera atualizada automaticamente quando a coleta terminar."
+            )
+        return None, (
+            f"Cache online fora do periodo selecionado ({latest_date_from or 'sem data'} a "
+            f"{latest_date_to or 'sem data'}). Solicitado {requested_from or 'sem data'} a "
+            f"{requested_to or 'sem data'}. Atualize a coleta online e tente novamente."
+        )
     ads_rows = ads.get("items") if isinstance(ads.get("items"), list) else []
     sales_by_item = sales.get("items") if isinstance(sales.get("items"), dict) else {}
     if not ads_rows:
@@ -588,24 +608,6 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     total_tacos_base = total_revenue
     total_clicks = sum(item["clicks"] for item in items)
     total_ads_sales = sum(item["adsSales"] for item in items)
-    latest_date_from = latest.get("date_from") or ads.get("date_from") or ""
-    latest_date_to = latest.get("date_to") or ads.get("date_to") or ""
-    period_match = not (requested_from or requested_to) or (
-        period_cache_hit
-        and latest_date_from == requested_from
-        and latest_date_to == requested_to
-    )
-    if not period_match:
-        if refresh_payload.get("ok") and refresh_payload.get("status") == "running":
-            return None, (
-                f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {requested_from} a {requested_to}. "
-                "A pagina sera atualizada automaticamente quando a coleta terminar."
-            )
-        return None, (
-            f"Cache online fora do periodo selecionado ({latest_date_from or 'sem data'} a "
-            f"{latest_date_to or 'sem data'}). Solicitado {requested_from or 'sem data'} a "
-            f"{requested_to or 'sem data'}. Atualize a coleta online e tente novamente."
-        )
     snapshot_at = str(latest.get("updated_at") or ads.get("updated_at") or "").strip()
     snapshot_age_seconds = None
     try:
