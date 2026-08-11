@@ -989,6 +989,73 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertIn("Liberar beta", body)
         self.assertIn(f"/admin/users/{user_id}/set_beta_access", body)
 
+    def test_admin_can_allow_and_block_sales_intelligence_access(self):
+        user_id = db.upsert_manual_user(
+            email="sales-toggle@example.com",
+            name="Cliente Vendas",
+            plan="cortesia",
+            status="active",
+            expires_at=None,
+        )
+        admin_cookie = self._admin_cookie()
+        opener = self._no_redirect_opener()
+
+        for enabled, expected, expected_label in (("0", 0, "Vendas bloqueada"), ("1", 1, "Vendas liberada")):
+            request = Request(
+                f"{self.base_url}/admin/users/{user_id}/set_sales_access",
+                data=urlencode({"enabled": enabled}).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Cookie": admin_cookie,
+                },
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as raised:
+                opener.open(request, timeout=5)
+            self.assertEqual(raised.exception.code, 302)
+            raised.exception.close()
+            user = db.get_user_by_id(user_id)
+            self.assertEqual(user["sales_enabled"], expected)
+
+            request = Request(
+                f"{self.base_url}/admin?q=sales-toggle%40example.com",
+                headers={"Cookie": admin_cookie},
+                method="GET",
+            )
+            with urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8", errors="replace")
+            self.assertIn(expected_label, body)
+            self.assertIn(f"/admin/users/{user_id}/set_sales_access", body)
+
+    def test_beta_access_sync_blocks_user_and_ends_beta_session(self):
+        user_id, cookie = self._login_cookie("beta-block@example.com")
+        db.set_user_beta_access(user_id, False)
+        user = db.get_user_by_id(user_id)
+        original_mode = app.beta_config.BETA_MODE
+        original_secret = app.beta_config.BETA_SHARED_AUTH_SECRET
+        original_public_url = app.beta_config.BETA_PUBLIC_URL
+        app.beta_config.BETA_MODE = True
+        app.beta_config.BETA_SHARED_AUTH_SECRET = "sync-secret"
+        app.beta_config.BETA_PUBLIC_URL = self.base_url
+        try:
+            audience = f"{self.base_url}/internal/beta/access-sync"
+            token = beta_bridge.create_assertion("sync-secret", user, None, audience)
+            request = Request(
+                audience,
+                data=urlencode({"assertion": token}).encode("utf-8"),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            with urlopen(request, timeout=5) as response:
+                result = json.loads(response.read())
+            self.assertTrue(result["ok"])
+            session_token = cookie.split("=", 1)[1]
+            self.assertIsNone(db.get_session(session_token))
+            self.assertEqual(db.get_user_by_id(user_id)["beta_enabled"], 0)
+        finally:
+            app.beta_config.BETA_MODE = original_mode
+            app.beta_config.BETA_SHARED_AUTH_SECRET = original_secret
+            app.beta_config.BETA_PUBLIC_URL = original_public_url
     def test_admin_can_bind_ml_link_manually_for_existing_user(self):
         user_id = db.upsert_manual_user(
             email="lonas@example.com",
@@ -1025,6 +1092,31 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(link["client_id"], "conta-ativa")
         self.assertEqual(link["ml_user_id"], "14252670")
         self.assertEqual(link["advertiser_id"], "164424")
+        raised.exception.close()
+
+    def test_sales_intelligence_route_requires_permission(self):
+        user_id, cookie = self._login_cookie("sales-route@example.com")
+
+        request = Request(
+            f"{self.base_url}/inteligencia-vendas",
+            headers={"Cookie": cookie},
+            method="GET",
+        )
+        with urlopen(request, timeout=5) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        self.assertIn("Inteligencia de Vendas Marketplace", body)
+
+        db.set_user_sales_access(user_id, False)
+        blocked_request = Request(
+            f"{self.base_url}/inteligencia-vendas",
+            headers={"Cookie": cookie},
+            method="GET",
+        )
+        with self.assertRaises(HTTPError) as raised:
+            urlopen(blocked_request, timeout=5)
+        self.assertEqual(raised.exception.code, 403)
+        blocked_body = raised.exception.read().decode("utf-8", errors="replace")
+        self.assertIn("Inteligencia de Vendas esta bloqueada", blocked_body)
         raised.exception.close()
 
     def test_admin_can_extend_existing_user_for_x_days(self):

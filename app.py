@@ -88,6 +88,7 @@ MAX_BODY_BYTES = MAX_UPLOAD_BYTES * 2 + 1 * 1024 * 1024
 AGENTE_ML_BASE_URL = os.environ.get("AGENTE_ML_BASE_URL", "https://agente-ml.onrender.com").rstrip("/")
 ML_LINK_ATTACH_SECRET = (os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")).strip()
 ONLINE_TZ = ZoneInfo("America/Sao_Paulo")
+SALES_INTELLIGENCE_HTML = pathlib.Path(__file__).resolve().parents[1] / "prototipos" / "inteligencia-vendas-marketplace.html"
 
 # Serializa geracoes pesadas para nao estourar memoria em planos pequenos.
 # 2 dashboards em paralelo eh saudavel ate em 512MB-1GB RAM.
@@ -386,6 +387,24 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
     ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
     sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
+    latest_date_from = latest.get("date_from") or ads.get("date_from") or ""
+    latest_date_to = latest.get("date_to") or ads.get("date_to") or ""
+    period_match = not (requested_from or requested_to) or (
+        latest_date_from == requested_from and latest_date_to == requested_to
+    )
+    if not period_match and requested_from and requested_to:
+        _fetch_dash_ads_json(
+            "/internal/dash-ads/online-cache-refresh",
+            {"client": client, "advertiser_id": advertiser_id, **period_params},
+        )
+        refreshed_payload = _fetch_dash_ads_json(
+            "/internal/dash-ads/online-cache-latest",
+            {"client": client, "advertiser_id": advertiser_id, **period_params},
+        )
+        if refreshed_payload.get("ok"):
+            latest = refreshed_payload.get("latest") if isinstance(refreshed_payload.get("latest"), dict) else {}
+            ads = refreshed_payload.get("ads") if isinstance(refreshed_payload.get("ads"), dict) else {}
+            sales = refreshed_payload.get("sales") if isinstance(refreshed_payload.get("sales"), dict) else {}
     ads_rows = ads.get("items") if isinstance(ads.get("items"), list) else []
     sales_by_item = sales.get("items") if isinstance(sales.get("items"), dict) else {}
     if not ads_rows:
@@ -767,7 +786,26 @@ def _beta_access_allowed(user) -> bool:
     return beta_config.email_allowed(user["email"])
 
 
+def _sales_access_allowed(user) -> bool:
+    if not user:
+        return False
+    if "sales_enabled" not in user.keys():
+        return True
+    value = user["sales_enabled"]
+    if value is None:
+        return True
+    return bool(value)
+
+
+def _render_sales_intelligence() -> str:
+    if not SALES_INTELLIGENCE_HTML.exists():
+        raise FileNotFoundError(f"Arquivo nao encontrado: {SALES_INTELLIGENCE_HTML}")
+    return SALES_INTELLIGENCE_HTML.read_text(encoding="utf-8", errors="replace")
+
+
 def _sync_beta_access(user) -> bool:
+    if beta_config.BETA_MODE:
+        return True
     if not beta_config.bridge_enabled():
         return False
     audience = f"{beta_config.BETA_PUBLIC_URL}/internal/beta/access-sync"
@@ -899,16 +937,40 @@ class Handler(BaseHTTPRequestHandler):
                 if not user:
                     _redirect(self, "/login")
                     return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
+                    return
                 link = db.get_active_ml_link_for_user(user["id"])
                 linked_name = ""
                 if link:
                     linked_name = link["official_store"] or link["nickname"] or link["client_id"] or ""
-                _send_html(self, templates.render_app_shell(user["name"] or user["email"], APP_VERSION, linked_client_name=linked_name))
+                _send_html(
+                    self,
+                    templates.render_app_shell(
+                        user["name"] or user["email"],
+                        APP_VERSION,
+                        linked_client_name=linked_name,
+                        sales_enabled=_sales_access_allowed(user),
+                    ),
+                )
+                return
+            if path in ("/inteligencia-vendas", "/inteligencia-vendas/"):
+                user, _ = _current_user(self)
+                if not user:
+                    _redirect(self, "/login?return_to=/inteligencia-vendas")
+                    return
+                if not _sales_access_allowed(user):
+                    _send_html(self, templates.render_error_page("A Inteligencia de Vendas esta bloqueada para este cliente no painel admin."), 403)
+                    return
+                _send_html(self, _render_sales_intelligence())
                 return
             if path == "/online":
                 user, _ = _current_user(self)
                 if not user:
                     _redirect(self, "/login")
+                    return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
                     return
                 qs = parse_qs(url.query or "")
                 confirmed = (qs.get("confirmed", [""])[0] or "").strip() == "1"
@@ -1028,6 +1090,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/internal/ml-link/attach":
                 self._post_internal_ml_link_attach()
                 return
+            if path == "/internal/beta/access-sync":
+                self._post_internal_beta_access_sync()
+                return
+            if path.endswith("/set_sales_access"):
+                self._post_admin_set_sales_access(path)
+                return
             if path in ("/eduzz/custom-delivery", "/eduzz-delivery"):
                 self._eduzz_custom_delivery()
                 return
@@ -1139,7 +1207,17 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as exc:
             link = db.get_active_ml_link_for_user(user["id"])
             linked_name = link["official_store"] or link["nickname"] or link["client_id"] if link else ""
-            _send_html(self, templates.render_app_shell(user["name"] or user["email"], APP_VERSION, str(exc), linked_client_name=linked_name), 400)
+            _send_html(
+                self,
+                templates.render_app_shell(
+                    user["name"] or user["email"],
+                    APP_VERSION,
+                    str(exc),
+                    linked_client_name=linked_name,
+                    sales_enabled=_sales_access_allowed(user),
+                ),
+                400,
+            )
             return
         if "sales" not in files or "ads" not in files:
             link = db.get_active_ml_link_for_user(user["id"])
@@ -1151,6 +1229,7 @@ class Handler(BaseHTTPRequestHandler):
                     APP_VERSION,
                     "Envie os dois arquivos: planilha de vendas e relatorio de publicidade.",
                     linked_client_name=linked_name,
+                    sales_enabled=_sales_access_allowed(user),
                 ),
                 400,
             )
@@ -1438,7 +1517,10 @@ class Handler(BaseHTTPRequestHandler):
         expected = f"{beta_config.BETA_PUBLIC_URL}/beta/callback"
         try:
             payload = beta_bridge.verify_assertion(token, beta_config.BETA_SHARED_AUTH_SECRET, expected)
-            if not beta_config.email_allowed(payload["user"]["email"]):
+            beta_enabled = payload["user"].get("beta_enabled")
+            if beta_enabled is False or (
+                beta_enabled is None and not beta_config.email_allowed(payload["user"]["email"])
+            ):
                 raise ValueError("usuario fora da lista beta")
             if not db.claim_beta_handoff(payload["nonce"], payload["exp"]):
                 raise ValueError("assertion beta ja utilizada ou expirada")
@@ -1614,6 +1696,8 @@ class Handler(BaseHTTPRequestHandler):
         if not user:
             _send_html(self, templates.render_error_page("Usuario nao encontrado."), 404)
             return
+        if beta_config.BETA_MODE and not enabled:
+            db.delete_user_sessions(user_id)
         synced = _sync_beta_access(user)
         action = "liberado" if enabled else "bloqueado"
         db.log_audit(user_id, f"admin.beta_access:{action}", admin["email"], _client_ip(self))
@@ -1623,6 +1707,53 @@ class Handler(BaseHTTPRequestHandler):
             info = f"Acesso beta {action}; sincronizacao com o beta pendente"
         _redirect(self, "/admin?" + urlencode({"info": info}))
 
+    def _post_admin_set_sales_access(self, path: str):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        try:
+            user_id = int(path.split("/")[3])
+        except (ValueError, IndexError):
+            _send_html(self, templates.render_error_page("ID invalido."), 400)
+            return
+        form = _parse_form(self)
+        enabled_raw = (form.get("enabled", "") or "").strip()
+        if enabled_raw not in ("0", "1"):
+            _send_html(self, templates.render_error_page("Acesso da Inteligencia de Vendas invalido."), 400)
+            return
+        enabled = enabled_raw == "1"
+        db.set_user_sales_access(user_id, enabled)
+        action = "liberada" if enabled else "bloqueada"
+        db.log_audit(user_id, f"admin.sales_access:{action}", admin["email"], _client_ip(self))
+        _redirect(self, "/admin?" + urlencode({"info": f"Inteligencia de Vendas {action} com sucesso"}))
+
+    def _post_internal_beta_access_sync(self):
+        if not beta_config.BETA_MODE or not beta_config.bridge_enabled():
+            _send_json(self, {"ok": False, "message": "Sincronizacao beta indisponivel"}, 404)
+            return
+        form = _parse_form(self)
+        token = (form.get("assertion", "") or "").strip()
+        audience = f"{beta_config.BETA_PUBLIC_URL}/internal/beta/access-sync"
+        try:
+            payload = beta_bridge.verify_assertion(
+                token,
+                beta_config.BETA_SHARED_AUTH_SECRET,
+                audience,
+            )
+            beta_enabled = payload["user"].get("beta_enabled")
+            if beta_enabled is None:
+                raise ValueError("permissao beta ausente")
+            if not db.claim_beta_handoff(payload["nonce"], payload["exp"]):
+                raise ValueError("sincronizacao beta repetida ou expirada")
+            user_id = db.upsert_beta_identity(payload["user"])
+            if not beta_enabled:
+                db.delete_user_sessions(user_id)
+            action = "liberado" if beta_enabled else "bloqueado"
+            db.log_audit(user_id, f"beta.access_sync:{action}", "signed-bridge", _client_ip(self))
+            _send_json(self, {"ok": True, "beta_enabled": bool(beta_enabled)})
+        except (ValueError, KeyError, TypeError) as exc:
+            _send_json(self, {"ok": False, "message": str(exc)}, 400)
 
 # ------------------ Bootstrap ------------------
 
