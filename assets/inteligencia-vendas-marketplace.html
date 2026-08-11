@@ -1,0 +1,3271 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inteligencia de Vendas Marketplace</title>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --ink: #18212f;
+      --muted: #66758a;
+      --line: #d9e1ea;
+      --blue: #1f66d1;
+      --teal: #0f8b8d;
+      --green: #16803c;
+      --amber: #b7791f;
+      --red: #c0392b;
+      --shadow: 0 10px 26px rgba(15, 23, 42, .08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+
+    .app {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      background: #16202e;
+      color: #fff;
+      padding: 22px 16px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+
+    .brand { font-size: 18px; font-weight: 800; line-height: 1.15; }
+    .brand small { display: block; color: #aab6c5; font-weight: 500; font-size: 12px; margin-top: 6px; }
+    .nav { display: grid; gap: 6px; margin-top: 24px; }
+    .nav button {
+      border: 0;
+      border-radius: 7px;
+      padding: 11px 12px;
+      background: transparent;
+      color: #d8e1ec;
+      text-align: left;
+      font-weight: 650;
+    }
+    .nav button.active, .nav button:hover { background: #243348; color: #fff; }
+    .side-note {
+      margin-top: 28px;
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 7px;
+      color: #c7d2df;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    main { padding: 24px 36px 40px; min-width: 0; }
+    header {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    h1 { margin: 0; font-size: 24px; line-height: 1.15; }
+    .subtitle { margin: 7px 0 0; color: var(--muted); font-size: 13px; }
+    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .report-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      margin: 0 0 14px 0;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(180deg, #fff, #f8fbff);
+      box-shadow: var(--shadow);
+    }
+    .report-bar-left, .report-bar-right {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .control, .btn {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 9px 10px;
+      min-height: 38px;
+    }
+    .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 700; }
+    .btn.danger { color: var(--red); border-color: #f0b8b0; }
+    .btn.ghost { background: transparent; }
+
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .section-head {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 15px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .section-title { margin: 0; font-size: 16px; }
+    .section-body { padding: 16px; }
+
+    .dropzone {
+      border: 2px dashed #aebbd0;
+      border-radius: 8px;
+      min-height: 162px;
+      display: grid;
+      place-items: center;
+      background: #f9fbfd;
+      text-align: center;
+      padding: 24px;
+      transition: .15s ease;
+    }
+    .dropzone.drag { border-color: var(--blue); background: #eef5ff; }
+    .dropzone strong { display: block; font-size: 18px; margin-bottom: 8px; }
+    .dropzone span { color: var(--muted); font-size: 13px; }
+    .file-input { display: none; }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .kpi {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+      min-height: 104px;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+    }
+    .kpi-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 900;
+      background: var(--teal);
+      font-size: 20px;
+    }
+    .kpi:nth-child(2) .kpi-icon { background: #0f8b8d; }
+    .kpi:nth-child(3) .kpi-icon { background: #2563eb; }
+    .kpi:nth-child(4) .kpi-icon { background: #f59e0b; }
+    .kpi:nth-child(5) .kpi-icon { background: #ef4444; }
+    .kpi:nth-child(6) .kpi-icon { background: #0891b2; }
+    .kpi label { display: block; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+    .kpi strong { display: block; margin-top: 8px; font-size: 21px; line-height: 1.05; overflow-wrap: anywhere; }
+    .kpi small { display: block; margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.25; }
+    .kpi small .muted { color: var(--muted); }
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 13px;
+      min-height: 82px;
+    }
+    .stat label { display: block; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+    .stat strong { display: block; margin-top: 8px; font-size: 20px; line-height: 1.05; }
+    .stat span { display: block; margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.25; }
+
+    .grid-2 { display: grid; grid-template-columns: 1.25fr .75fr; gap: 16px; }
+    .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(360px, .8fr); gap: 16px; align-items: start; }
+    .dash-left { min-width: 0; }
+    .dash-right { min-width: 0; display: grid; gap: 16px; }
+    .chart {
+      height: 260px;
+      border: 1px solid var(--line);
+      background: linear-gradient(#fff, #f9fbfd);
+      border-radius: 8px;
+      padding: 12px;
+      overflow: hidden;
+    }
+    svg { max-width: 100%; height: 100%; display: block; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: var(--panel-2); color: #415066; font-size: 11px; text-transform: uppercase; letter-spacing: 0; position: sticky; top: 0; z-index: 1; box-shadow: inset 0 -1px 0 #cfd9e6, 0 8px 14px rgba(15, 23, 42, .06); }
+    tbody tr:hover { background: #f8fbff; }
+    .table-wrap-shell table th:first-child,
+    .table-wrap-shell table td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: #fff;
+      box-shadow: 1px 0 0 var(--line), 8px 0 12px rgba(15, 23, 42, .04);
+    }
+    .table-wrap-shell table th:first-child {
+      z-index: 4;
+      background: var(--panel-2);
+    }
+    .table-wrap-shell table tbody tr:hover td:first-child { background: #f8fbff; }
+    .table-wrap-shell table tbody tr.row-clickable.active td:first-child { background: #eef4ff; }
+    .table-wrap-shell { border: 1px solid var(--line); border-radius: 8px; background: #fff; overflow: hidden; }
+    .table-scroll-top {
+      overflow-x: auto;
+      overflow-y: hidden;
+      height: 16px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fbff;
+    }
+    .table-scroll-top.is-hidden { display: none; }
+    .table-scroll-spacer { height: 1px; }
+    .table-wrap { max-height: 560px; overflow: auto; }
+    .row-clickable { cursor: pointer; }
+    .row-clickable.active { background: #eef4ff; }
+    .monthly-chart-box { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px 0; background: #f8fbff; }
+    .monthly-chart-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+    .monthly-chart-scroll { overflow-x: auto; overflow-y: hidden; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+    .monthly-chart-scroll svg { display: block; height: 420px; min-height: 420px; }
+    .monthly-pie-box { border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 10px; }
+    .monthly-pie-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .monthly-pie-legend { margin-top: 10px; max-height: 170px; overflow: auto; border-top: 1px solid var(--line); padding-top: 8px; }
+    .monthly-pie-item { display: grid; grid-template-columns: 14px 1fr auto; gap: 8px; align-items: center; font-size: 12px; padding: 3px 0; }
+    .monthly-pie-dot { width: 12px; height: 12px; border-radius: 999px; }
+    .monthly-pie-legend.cols-2 { display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; align-content: start; }
+    #monthlyFiltersBar { margin: 6px 0 10px 0; }
+    #monthlyAlerts { margin: 0 0 10px 0; }
+    #monthlyTable .table-wrap { overflow: auto; max-height: 560px; }
+    #monthlyTable table { min-width: 1160px; }
+    #monthlyTable th, #monthlyTable td { font-size: 15px; padding: 11px 9px; }
+    #monthlyTable th:first-child, #monthlyTable td:first-child { min-width: 248px; width: 248px; }
+    #monthlyTable th:nth-child(2), #monthlyTable td:nth-child(2) { min-width: 96px; width: 96px; }
+    #monthlyTable th:nth-child(n+3), #monthlyTable td:nth-child(n+3) { min-width: 96px; width: 96px; }
+    .muted { color: var(--muted); }
+    .subline { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; line-height: 1.25; }
+    .right { text-align: right; }
+    .nowrap { white-space: nowrap; }
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 800;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .badge.ok { color: var(--green); border-color: #b7e1c3; background: #f0fbf3; }
+    .badge.warn { color: var(--amber); border-color: #f2d7a2; background: #fff8e8; }
+    .badge.bad { color: var(--red); border-color: #efbeb7; background: #fff2f0; }
+    .badge.info { color: var(--blue); border-color: #b8cff4; background: #eef5ff; }
+    .pos { color: var(--green); font-weight: 800; }
+    .neg { color: var(--red); font-weight: 800; }
+    .critical { background: #fff2f0; color: var(--red); font-weight: 900; }
+    .up-strong { background: #eefaf1; color: var(--green); font-weight: 900; }
+
+    .filters {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .seg {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .seg button {
+      border: 0;
+      border-right: 1px solid var(--line);
+      background: #fff;
+      padding: 9px 12px;
+      font-weight: 750;
+      color: var(--muted);
+    }
+    .seg button:last-child { border-right: 0; }
+    .seg button.active { background: #eaf2ff; color: var(--blue); }
+
+    .floating-search {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      box-shadow: var(--shadow);
+    }
+    .floating-search input { min-width: 260px; }
+
+    .view { display: none; }
+    .view.active { display: block; }
+    .notice {
+      padding: 11px 12px;
+      border: 1px solid #c6d8f7;
+      color: #234b87;
+      background: #f0f6ff;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .alert-list { display: grid; gap: 0; }
+    .alert-item {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: start;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .alert-item:last-child { border-bottom: 0; }
+    .alert-ico {
+      width: 22px; height: 22px; border-radius: 999px;
+      display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 900;
+      background: var(--amber);
+    }
+    .alert-ico.bad { background: var(--red); }
+    .alert-code { font-weight: 850; }
+    .alert-meta { margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.3; }
+    .alert-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .summary-list { display: grid; }
+    .summary-item {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 12px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .summary-item:last-child { border-bottom: 0; }
+    .summary-ico {
+      width: 34px; height: 34px; border-radius: 8px; background: #eaf7f7; color: var(--teal);
+      display: grid; place-items: center; font-weight: 900;
+    }
+    .summary-item strong { display: block; font-size: 18px; }
+    .prio-dot { display:inline-grid; place-items:center; width:18px; height:18px; border-radius:999px; font-size:11px; font-weight:900; margin-right:6px; }
+    .prio-high { background:#fff2f0; color:var(--red); border:1px solid #efbeb7; }
+    .prio-mid { background:#fff8e8; color:var(--amber); border:1px solid #f2d7a2; }
+    .prio-low { background:#f0fbf3; color:var(--green); border:1px solid #b7e1c3; }
+    .empty {
+      padding: 28px;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    @media (max-width: 1100px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { position: relative; height: auto; }
+      main { padding: 16px 18px 28px; }
+      .nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-2 { grid-template-columns: 1fr; }
+      .monthly-chart-layout { grid-template-columns: 1fr; }
+      .monthly-chart-scroll svg { height: 380px; min-height: 380px; }
+      .monthly-pie-legend.cols-2 { grid-template-columns: 1fr; }
+    }
+
+    @media print {
+      body { background: #fff; }
+      .app { display: block; }
+      .sidebar, .toolbar, .nav, .dropzone, .floating-search, .seg button:not(.active), .btn { display: none !important; }
+      main { padding: 0; }
+      header { margin-bottom: 12px; border-bottom: 1px solid #ccc; }
+      .view { display: block !important; page-break-after: always; }
+      .section { box-shadow: none; break-inside: avoid; }
+      .table-wrap-shell { border: 0; overflow: visible; }
+      .table-scroll-top { display: none !important; }
+      .table-wrap { max-height: none; overflow: visible; border: 0; }
+      th { position: static; }
+      .table-wrap-shell table th:first-child,
+      .table-wrap-shell table td:first-child {
+        position: static;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">Inteligencia de Vendas<small>Marketplace limpo, sem dados embutidos</small></div>
+      <nav class="nav" id="nav">
+        <button class="active" data-view="import">Importacoes</button>
+        <button data-view="dashboard">Dashboard</button>
+        <button data-view="analysis">SKU / MLB</button>
+        <button data-view="profit">Lucro e prejuizo</button>
+        <button data-view="monthly">Evolucao mensal</button>
+        <button data-view="nosales">Sem vendas</button>
+        <button data-view="issues">Devolucoes</button>
+        <button data-view="promo">Promocoes</button>
+        <button data-view="events">Eventos</button>
+      </nav>
+      <div class="side-note" id="coverageBox">Base vazia. Importe relatorios para iniciar.</div>
+    </aside>
+
+    <main>
+      <header>
+        <div>
+          <h1 id="pageTitle">Importacoes</h1>
+          <p class="subtitle" id="pageSubtitle">Arraste relatorios Mercado Livre em XLSX. O sistema deduplica venda a venda e salva tudo localmente neste navegador.</p>
+        </div>
+        <div class="toolbar">
+          <input class="control" id="clientName" placeholder="Cliente" value="Cliente teste" title="Cliente">
+          <select class="control" id="channelName"><option>Mercado Livre</option></select>
+          <button class="btn" id="demoBtn">Carregar demo</button>
+          <button class="btn" id="exportCsvBtn">Exportar CSV</button>
+          <button class="btn" id="exportHtmlBtn">Exportar HTML</button>
+          <button class="btn" id="backupBtn">Backup</button>
+          <button class="btn" id="restoreBtn">Restaurar</button>
+          <button class="btn" id="pdfBtn">PDF</button>
+          <button class="btn danger" id="clearBtn">Limpar base</button>
+          <input class="file-input" id="restoreInput" type="file" accept=".json">
+        </div>
+      </header>
+      <div class="report-bar">
+        <div class="report-bar-left">
+          <strong>Periodo global do relatorio</strong>
+          <div class="seg" id="reportWindowSeg">
+            <button data-win="7d">7 dias</button>
+            <button data-win="15d">15 dias</button>
+            <button class="active" data-win="30d">30 dias</button>
+            <button data-win="60d">60 dias</button>
+            <button data-win="monthtd">Mes atual</button>
+            <button data-win="quarter">Trimestre</button>
+            <button data-win="total">Total</button>
+            <button data-win="custom">Personalizado</button>
+          </div>
+          <input class="control" id="reportDateStart" type="date" title="Data inicial" style="width:150px;display:none">
+          <input class="control" id="reportDateEnd" type="date" title="Data final" style="width:150px;display:none">
+        </div>
+        <div class="report-bar-right">
+          <select class="control" id="globalSearchScope">
+            <option value="code">Codigo/SKU/MLB</option>
+            <option value="title">Titulo</option>
+          </select>
+          <input class="control" id="globalSearchInput" placeholder="Pesquisa global do relatorio..." style="min-width:280px">
+        </div>
+      </div>
+      <div class="notice" id="reportScopeNotice" style="margin-bottom:14px"></div>
+
+      <section class="view active" id="view-import">
+        <div class="notice">O programa esta limpo: nenhum dado real fica embutido no arquivo. Os dados importados ficam somente no armazenamento local do seu navegador.</div>
+        <div class="section">
+          <div class="section-head">
+            <h2 class="section-title">Importar relatorios</h2>
+            <div class="filters">
+              <button class="btn" id="chooseBtn">Selecionar arquivos</button>
+              <button class="btn primary" id="confirmImportBtn">Confirmar importacao</button>
+            </div>
+          </div>
+          <div class="section-body">
+            <input class="file-input" id="fileInput" type="file" multiple accept=".xlsx">
+            <div class="dropzone" id="dropzone">
+              <div>
+                <strong>Arraste os relatorios aqui ou clique para selecionar arquivos</strong>
+                <span>Aceita varios XLSX por vez. Relatorios repetidos ou linhas ja importadas serao ignorados.</span>
+              </div>
+            </div>
+            <div style="margin-top:14px" id="importPreview"></div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-head"><h2 class="section-title">Historico de importacoes</h2></div>
+          <div class="section-body"><div id="importHistory"></div></div>
+        </div>
+        <div class="section">
+          <div class="section-head"><h2 class="section-title">Conferencia da base local</h2></div>
+          <div class="section-body"><div id="baseAudit"></div></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-dashboard">
+        <div id="dashboardCoverage"></div>
+        <div class="kpis" id="kpis"></div>
+        <div class="dashboard-grid">
+          <div class="dash-left">
+            <div class="section">
+              <div class="section-head"><h2 class="section-title">Vendas por mes</h2><div class="seg" id="dashboardMetricSeg"><button class="active" data-metric="revenue">Receita</button><button data-metric="units">Unidades</button></div></div>
+              <div class="section-body"><div class="chart" id="salesChart"></div></div>
+            </div>
+            <div class="section">
+            <div class="section-head"><h2 class="section-title">Analise por SKU</h2></div>
+              <div class="section-body"><div id="dashboardSkuTable"></div></div>
+            </div>
+            <div class="section">
+              <div class="section-head"><h2 class="section-title">Plano para vender mais</h2><div class="filters"><button class="btn" id="exportPlanLogBtn">Exportar acompanhamento</button></div></div>
+              <div class="section-body"><div id="sellMorePlan"></div></div>
+            </div>
+          </div>
+          <div class="dash-right">
+            <div class="section">
+              <div class="section-head"><h2 class="section-title">Governance central</h2></div>
+              <div class="section-body" id="governancePanel"></div>
+            </div>
+            <div class="section">
+              <div class="section-head"><h2 class="section-title">Alertas automaticos</h2></div>
+              <div class="section-body" id="alertsPanel"></div>
+            </div>
+            <div class="section">
+              <div class="section-head"><h2 class="section-title">Resumo da importacao</h2></div>
+              <div class="section-body" id="dashboardImportSummary"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-analysis">
+        <div class="section">
+          <div class="section-head">
+            <div class="filters">
+              <h2 class="section-title">Analise por produto</h2>
+              <div class="seg" id="groupSeg">
+                <button class="active" data-group="sku">SKU</button>
+                <button data-group="mlb">Codigo MLB</button>
+              </div>
+            </div>
+          </div>
+          <div class="section-body"><div id="analysisTable"></div></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-monthly">
+        <div class="section">
+          <div class="section-head">
+            <h2 class="section-title">Evolucao mensal</h2>
+          </div>
+          <div class="section-body">
+            <div id="monthlySkuChart"></div>
+            <div class="filters" id="monthlyFiltersBar">
+              <div class="seg" id="metricSeg">
+                <button class="active" data-metric="units">Unidades</button>
+                <button data-metric="revenue">Faturamento</button>
+              </div>
+              <div class="seg" id="monthlyGroupSeg">
+                <button class="active" data-group="sku">SKU</button>
+                <button data-group="mlb">MLB</button>
+              </div>
+              <select class="control" id="avgMode">
+                <option value="monthly">Media mensal</option>
+                <option value="quarter">Media trimestral</option>
+                <option value="semester">Media semestral</option>
+                <option value="annual">Media anual</option>
+                <option value="total">Media total</option>
+              </select>
+            </div>
+            <div id="monthlyAlerts"></div>
+            <div id="monthlyTable"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-profit">
+        <div class="section">
+          <div class="section-head">
+            <div class="filters">
+              <h2 class="section-title">Lucro e prejuizo</h2>
+              <div class="seg" id="profitGroupSeg">
+                <button class="active" data-group="sku">SKU</button>
+                <button data-group="mlb">MLB</button>
+              </div>
+            </div>
+            <div class="filters">
+              <label class="muted">Aliquota (%)</label>
+              <input class="control" id="profitTaxInput" type="number" min="0" step="0.01" value="0" style="width:110px">
+            </div>
+          </div>
+          <div class="section-body">
+            <div id="profitSummary" style="margin-bottom:10px"></div>
+            <div id="profitTable"></div>
+            <div id="profitDetail" style="margin-top:10px"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-nosales">
+        <div class="section">
+          <div class="section-head">
+            <div class="filters">
+              <h2 class="section-title">Sem vendas</h2>
+              <div class="seg" id="noSalesGroupSeg">
+                <button class="active" data-group="sku">SKU</button>
+                <button data-group="mlb">MLB</button>
+              </div>
+              <div class="seg" id="noSalesModeSeg">
+                <button class="active" data-mode="active">Operacional</button>
+                <button data-mode="rejected">Rejeitados</button>
+              </div>
+            </div>
+          </div>
+          <div class="section-body"><div id="noSalesSummary" style="margin-bottom:10px"></div><div id="noSalesTable"></div></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-issues">
+        <div class="section">
+          <div class="section-head"><h2 class="section-title">Devolucoes, reclamacoes e cancelamentos</h2></div>
+          <div class="section-body"><div id="issuesTable"></div></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-promo">
+        <div class="section">
+          <div class="section-head"><h2 class="section-title">Promocoes e preco</h2></div>
+          <div class="section-body"><div id="promoTable"></div></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-events">
+        <div class="section">
+          <div class="section-head"><h2 class="section-title">Eventos manuais</h2></div>
+          <div class="section-body">
+            <div class="filters" style="margin-bottom:12px">
+              <select class="control" id="eventScope"><option value="sku">SKU</option><option value="mlb">MLB</option></select>
+              <input class="control" id="eventCode" placeholder="Codigo">
+              <input class="control" id="eventDate" type="date">
+              <select class="control" id="eventType">
+                <option>estoque acabou</option><option>voltou estoque</option><option>anuncio pausado</option><option>mudou foto</option><option>mudou titulo</option><option>entrou promocao</option><option>saiu promocao</option><option>observacao</option>
+              </select>
+              <input class="control" id="eventDescription" placeholder="Descricao">
+              <button class="btn primary" id="addEventBtn">Adicionar</button>
+            </div>
+            <div id="eventsTable"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const DB_NAME = 'un_clic_marketplace_intelligence_v1';
+    const DB_VERSION = 1;
+    const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
+    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardWindow: '30d', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
+    let db;
+
+    const $ = (id) => document.getElementById(id);
+    const fmtNum = (n) => Number(n || 0).toLocaleString('pt-BR');
+    const fmtMoney = (n) => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const fmtPct = (n) => Number(n || 0).toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const fmtCompact = (n) => Number(n || 0).toLocaleString('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
+    const norm = (v) => String(v ?? '').trim();
+    const normKey = (v) => norm(v).toUpperCase();
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+
+    function looseText(value) {
+      return norm(value)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[ºª]/g, '')
+        .replace(/[^a-z0-9# ]+/g, '')
+        .replace(/\bn a de venda\b/g, 'n de venda')
+        .replace(/\bn o de venda\b/g, 'n de venda')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function field(obj, ...names) {
+      for (const name of names) {
+        if (obj[name] !== undefined && obj[name] !== null && obj[name] !== '') return obj[name];
+      }
+      const wanted = names.map(looseText);
+      const key = Object.keys(obj).find((k) => {
+        const current = looseText(k);
+        return wanted.includes(current) || wanted.some((w) => {
+          if (w === 'n de venda' && isSaleNumberHeader(k)) return true;
+          if (w.includes('anuncio') && current.includes('anuncio') && (w.startsWith('#') || w.startsWith('n'))) return true;
+          return false;
+        });
+      });
+      return key ? obj[key] : '';
+    }
+
+    function isSaleNumberHeader(value) {
+      const text = looseText(value);
+      return (
+        (text.startsWith('n') && text.includes('de venda')) ||
+        text.includes('numero de venda') ||
+        text.includes('n de venda')
+      );
+    }
+
+    function openDb() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = () => {
+          const d = req.result;
+          d.createObjectStore('sales', { keyPath: 'dedupeKey' });
+          d.createObjectStore('imports', { keyPath: 'id' });
+          d.createObjectStore('events', { keyPath: 'id' });
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function txStore(name, mode = 'readonly') { return db.transaction(name, mode).objectStore(name); }
+    function getAll(name) {
+      return new Promise((resolve, reject) => {
+        const req = txStore(name).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    function putMany(name, rows) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(name, 'readwrite');
+        const store = tx.objectStore(name);
+        rows.forEach((row) => store.put(row));
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+    function clearStore(name) {
+      return new Promise((resolve, reject) => {
+        const req = txStore(name, 'readwrite').clear();
+        req.onsuccess = resolve;
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function boot() {
+      db = await openDb();
+      state.sales = await getAll('sales');
+      state.imports = await getAll('imports');
+      state.events = await getAll('events');
+      await loadGovernanceSummary();
+      bindUi();
+      renderAll();
+    }
+
+    async function loadGovernanceSummary() {
+      try {
+        const resp = await fetch('/api/governance/summary', { cache: 'no-store' });
+        if (!resp.ok) throw new Error(`http_${resp.status}`);
+        const data = await resp.json();
+        state.governance = data && typeof data === 'object'
+          ? { ...state.governance, ...data }
+          : { ...state.governance, ok: false };
+      } catch (err) {
+        state.governance = {
+          ...state.governance,
+          ok: false,
+          error: String(err && err.message ? err.message : err || 'governance_unavailable')
+        };
+      }
+    }
+
+    async function registerHumanDecision(decision) {
+      if (!decision || typeof decision !== 'object') return { ok: false, skipped: true };
+      try {
+        const resp = await fetch('/api/governance/register-human-decisions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decisions: [decision] })
+        });
+        const data = await resp.json();
+        if (data && data.ok) {
+          state.governanceRegistrations.push({
+            id: decision.id,
+            at: new Date().toISOString(),
+            added: Array.isArray(data.added_ids) ? data.added_ids.slice() : [],
+            skipped: Array.isArray(data.skipped_existing) ? data.skipped_existing.slice() : []
+          });
+          await loadGovernanceSummary();
+          renderDashboard();
+        }
+        return data;
+      } catch (err) {
+        return { ok: false, error: String(err && err.message ? err.message : err || 'registration_failed') };
+      }
+    }
+
+    function governanceDecisionId(prefix) {
+      const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+      return `UI-${prefix}-${stamp}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
+    }
+
+    function makeHumanDecisionPayload(kind, payload = {}) {
+      const code = normKey(payload.code || payload.sku || payload.mlb || '');
+      const title = norm(payload.title || '');
+      const reason = norm(payload.reason || payload.description || '');
+      const decisionId = governanceDecisionId(kind);
+      return {
+        id: decisionId,
+        date: new Date().toISOString().slice(0, 10),
+        origin: 'ui_manual_action',
+        responsible: norm($('clientName').value) || 'Operador Un Clic',
+        source_project: 'un-clic-ia',
+        agent_of_origin: 'agent-un-clic-intelligence',
+        affected_agent: 'agent-un-clic-intelligence',
+        description: reason || `Decisao manual registrada no dashboard (${kind}).`,
+        context: `Registro automatico via dashboard HTML - tipo ${kind}.`,
+        evidence: ['prototipos/inteligencia-vendas-marketplace.html'],
+        classification: 'COMPARTILHADA',
+        knowledge_type: 'PREFERENCIA_OPERACIONAL',
+        scope: 'decisoes humanas registradas pelo operador no dashboard de inteligencia',
+        strength: 'MEDIA',
+        reviewable: true,
+        revision_policy: 'Pode ser revista pelo operador em nova importacao ou revisao manual.',
+        conflict_policy: 'Se houver regra central conflitante, manter ambas e exigir conciliacao humana.',
+        status: 'C',
+        implementation_status: 'IMPLEMENTADO_LOCALMENTE',
+        files_changed: ['prototipos/inteligencia-vendas-marketplace.html'],
+        consulted_by: ['registerHumanDecision'],
+        consulted_when: ['quando o operador executa uma acao manual no dashboard'],
+        changes_behavior: true,
+        validated_in_execution: false,
+        validation_id: null,
+        related_knowledge: [],
+        supersedes: [],
+        change_history: [],
+        sku: code,
+        item_id: code,
+        notes: JSON.stringify({ kind, code, title, extra: payload.extra || null })
+      };
+    }
+
+    function bindUi() {
+      $('chooseBtn').onclick = () => $('fileInput').click();
+      $('dropzone').onclick = () => $('fileInput').click();
+      $('fileInput').onchange = (e) => handleFiles([...e.target.files]);
+      $('confirmImportBtn').onclick = confirmPendingImports;
+      $('dropzone').ondragover = (e) => { e.preventDefault(); $('dropzone').classList.add('drag'); };
+      $('dropzone').ondragleave = () => $('dropzone').classList.remove('drag');
+      $('dropzone').ondrop = (e) => { e.preventDefault(); $('dropzone').classList.remove('drag'); handleFiles([...e.dataTransfer.files]); };
+
+      $('nav').onclick = (e) => {
+        const btn = e.target.closest('button[data-view]');
+        if (!btn) return;
+        document.querySelectorAll('#nav button').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
+        $('view-' + btn.dataset.view).classList.add('active');
+        updatePageTitle(btn.textContent);
+      };
+      $('clientName').oninput = () => updatePageTitle(document.querySelector('#nav button.active')?.textContent || 'Dashboard');
+
+      document.querySelectorAll('#groupSeg button').forEach((b) => b.onclick = () => setSeg('groupSeg', b, () => { state.group = b.dataset.group; renderAnalysis(); }));
+      document.querySelectorAll('#profitGroupSeg button').forEach((b) => b.onclick = () => setSeg('profitGroupSeg', b, () => { state.profitGroup = b.dataset.group; state.selectedProfitKey = ''; renderProfit(); }));
+      document.querySelectorAll('#metricSeg button').forEach((b) => b.onclick = () => setSeg('metricSeg', b, () => { state.monthlyMetric = b.dataset.metric; renderMonthly(); }));
+      document.querySelectorAll('#dashboardMetricSeg button').forEach((b) => b.onclick = () => setSeg('dashboardMetricSeg', b, () => { state.dashboardMetric = b.dataset.metric; renderDashboard(); }));
+      document.querySelectorAll('#monthlyGroupSeg button').forEach((b) => b.onclick = () => setSeg('monthlyGroupSeg', b, () => { state.monthlyGroup = b.dataset.group; state.selectedMonthlySku = ''; renderMonthly(); }));
+      document.querySelectorAll('#noSalesGroupSeg button').forEach((b) => b.onclick = () => setSeg('noSalesGroupSeg', b, () => { state.noSalesGroup = b.dataset.group; renderNoSales(); }));
+      document.querySelectorAll('#noSalesModeSeg button').forEach((b) => b.onclick = () => setSeg('noSalesModeSeg', b, () => { state.noSalesMode = b.dataset.mode === 'rejected' ? 'rejected' : 'active'; renderNoSales(); }));
+      document.querySelectorAll('#reportWindowSeg button').forEach((b) => b.onclick = () => setGlobalReportWindow(b.dataset.win || '30d'));
+      $('reportDateStart').onchange = (e) => { state.reportDateStart = e.target.value || ''; syncDerivedWindowsFromReport(); syncWindowControls(); renderAll(); };
+      $('reportDateEnd').onchange = (e) => { state.reportDateEnd = e.target.value || ''; syncDerivedWindowsFromReport(); syncWindowControls(); renderAll(); };
+      $('globalSearchScope').onchange = (e) => { state.globalSearchScope = e.target.value || 'code'; renderAll(); };
+      $('globalSearchInput').oninput = (e) => { state.globalSearch = e.target.value || ''; renderAll(); };
+      $('profitTaxInput').oninput = (e) => { state.profitTaxRate = Math.max(0, Number(e.target.value || 0)); renderProfit(); };
+      $('avgMode').onchange = (e) => { state.avgMode = e.target.value; renderMonthly(); };
+      $('clearBtn').onclick = clearBase;
+      $('exportCsvBtn').onclick = exportCurrentCsv;
+      $('exportHtmlBtn').onclick = exportSnapshotHtml;
+      $('exportPlanLogBtn').onclick = exportPlanJournalCsv;
+      $('backupBtn').onclick = exportBackup;
+      $('restoreBtn').onclick = () => $('restoreInput').click();
+      $('restoreInput').onchange = (e) => restoreBackup(e.target.files[0]);
+      $('demoBtn').onclick = loadDemoData;
+      $('pdfBtn').onclick = () => window.print();
+      $('addEventBtn').onclick = addEvent;
+      syncWindowControls();
+      toggleProfitCustomDates();
+    }
+
+    function updatePageTitle(sectionName) {
+      const client = norm($('clientName').value) || 'Cliente teste';
+      $('pageTitle').textContent = sectionName === 'Dashboard' ? `Inteligencia de Vendas - ${client}` : sectionName;
+      $('pageSubtitle').textContent = 'Importe relatorios, acompanhe SKU/MLB e investigue alertas de venda, preco, devolucao e reclamacao.';
+    }
+
+    function setSeg(id, btn, fn) {
+      document.querySelectorAll('#' + id + ' button').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      fn();
+    }
+
+    function setGlobalReportWindow(win) {
+      state.reportWindow = ['7d','15d','30d','60d','monthtd','quarter','total','custom'].includes(win) ? win : '30d';
+      syncDerivedWindowsFromReport();
+      syncWindowControls();
+      renderAll();
+    }
+
+    function syncDerivedWindowsFromReport() {
+      state.dashboardWindow = state.reportWindow === '60d' ? 'quarter' : state.reportWindow;
+      state.profitWindow = state.reportWindow;
+      if (state.reportWindow === 'total') {
+        state.noSalesDays = 0;
+        return;
+      }
+      if (state.reportWindow === 'monthtd') {
+        const cutoff = effectiveOperationalCutoff();
+        state.noSalesDays = Math.max(1, Math.round((dateOnly(cutoff) - monthStart(cutoff)) / 86400000) + 1);
+        return;
+      }
+      if (state.reportWindow === 'quarter') {
+        state.noSalesDays = 90;
+        return;
+      }
+      if (state.reportWindow === 'custom') {
+        const start = state.reportDateStart ? new Date(state.reportDateStart + 'T00:00:00') : null;
+        const end = state.reportDateEnd ? new Date(state.reportDateEnd + 'T23:59:59') : null;
+        if (start && end && start <= end) {
+          state.noSalesDays = Math.max(1, Math.round((dateOnly(end) - dateOnly(start)) / 86400000) + 1);
+        }
+        return;
+      }
+      const dayMap = { '7d': 7, '15d': 15, '30d': 30, '60d': 60 };
+      if (dayMap[state.reportWindow] !== undefined) state.noSalesDays = dayMap[state.reportWindow];
+    }
+
+    function syncWindowControls() {
+      document.querySelectorAll('#reportWindowSeg button').forEach((b) => b.classList.toggle('active', b.dataset.win === state.reportWindow));
+      document.querySelectorAll('#profitWindowSeg button').forEach((b) => b.classList.toggle('active', b.dataset.win === state.reportWindow));
+      document.querySelectorAll('#dashboardSkuWindowSeg button').forEach((b) => b.classList.toggle('active', b.dataset.win === (state.reportWindow === '60d' ? 'quarter' : state.reportWindow)));
+      document.querySelectorAll('#sellPlanWindowSeg button').forEach((b) => b.classList.toggle('active', b.dataset.win === (state.reportWindow === '60d' ? 'quarter' : state.reportWindow)));
+      document.querySelectorAll('#noSalesDaysSeg button').forEach((b) => {
+        const expected = b.dataset.days === '0' ? 'total' : `${b.dataset.days}d`;
+        b.classList.toggle('active', expected === state.reportWindow || (b.dataset.days === '60' && state.reportWindow === '60d'));
+      });
+      if ($('reportDateStart')) $('reportDateStart').style.display = state.reportWindow === 'custom' ? '' : 'none';
+      if ($('reportDateEnd')) $('reportDateEnd').style.display = state.reportWindow === 'custom' ? '' : 'none';
+      if ($('reportDateStart')) $('reportDateStart').value = state.reportDateStart || '';
+      if ($('reportDateEnd')) $('reportDateEnd').value = state.reportDateEnd || '';
+      if ($('globalSearchScope')) $('globalSearchScope').value = state.globalSearchScope || 'code';
+      if ($('globalSearchInput')) $('globalSearchInput').value = state.globalSearch || '';
+      updateReportScopeNotice();
+    }
+
+    function reportWindowDays() {
+      if (state.reportWindow === '7d') return 7;
+      if (state.reportWindow === '15d') return 15;
+      if (state.reportWindow === '30d') return 30;
+      if (state.reportWindow === '60d') return 60;
+      if (state.reportWindow === 'quarter') return 90;
+      return 0;
+    }
+
+    function monthStart(d) {
+      const dt = dateOnly(d);
+      return new Date(dt.getFullYear(), dt.getMonth(), 1);
+    }
+
+    function monthEnd(d) {
+      const dt = dateOnly(d);
+      return new Date(dt.getFullYear(), dt.getMonth() + 1, 0);
+    }
+
+    function effectiveOperationalCutoff() {
+      const yesterday = addDays(dateOnly(new Date()), -1);
+      const imported = maxDate();
+      if (!imported) return yesterday;
+      const importedDay = dateOnly(imported);
+      return importedDay < yesterday ? importedDay : yesterday;
+    }
+
+    function monthToDateWindow() {
+      const cutoff = effectiveOperationalCutoff();
+      const currentStart = monthStart(cutoff);
+      const previousMonthEnd = addDays(currentStart, -1);
+      const previousStart = monthStart(previousMonthEnd);
+      const dayLimit = cutoff.getDate();
+      const previousEnd = new Date(previousMonthEnd.getFullYear(), previousMonthEnd.getMonth(), Math.min(dayLimit, monthEnd(previousMonthEnd).getDate()));
+      const inRange = (d, a, b) => d && dateOnly(d) >= a && dateOnly(d) <= b;
+      return {
+        cutoff,
+        currentStart,
+        currentEnd: cutoff,
+        previousStart,
+        previousEnd,
+        currentSales: state.sales.filter((s) => inRange(s.date, currentStart, cutoff)),
+        previousSales: state.sales.filter((s) => inRange(s.date, previousStart, previousEnd)),
+        label: `${currentStart.toLocaleDateString('pt-BR')} a ${cutoff.toLocaleDateString('pt-BR')}`,
+        previousLabel: `${previousStart.toLocaleDateString('pt-BR')} a ${previousEnd.toLocaleDateString('pt-BR')}`,
+        currentMonthKey: `${currentStart.getFullYear()}-${String(currentStart.getMonth() + 1).padStart(2, '0')}`,
+        previousMonthKey: `${previousStart.getFullYear()}-${String(previousStart.getMonth() + 1).padStart(2, '0')}`,
+        partial: cutoff.getDate() < monthEnd(cutoff).getDate()
+      };
+    }
+
+    function reportWindowData() {
+      if (state.reportWindow === 'monthtd') {
+        const wnd = monthToDateWindow();
+        return {
+          currentSales: wnd.currentSales,
+          previousSales: wnd.previousSales,
+          valid: true,
+          label: wnd.label,
+          previousLabel: wnd.previousLabel
+        };
+      }
+      if (state.reportWindow === 'custom') {
+        const start = state.reportDateStart ? new Date(state.reportDateStart + 'T00:00:00') : null;
+        const end = state.reportDateEnd ? new Date(state.reportDateEnd + 'T23:59:59') : null;
+        if (!start || !end || start > end) return { currentSales: [], previousSales: [], valid: false, label: 'Periodo personalizado invalido', previousLabel: '' };
+        const days = Math.max(1, Math.round((dateOnly(end) - dateOnly(start)) / 86400000) + 1);
+        const prevEnd = addDays(dateOnly(start), -1);
+        const prevStart = addDays(prevEnd, -(days - 1));
+        const currentSales = state.sales.filter((s) => s.date && s.date >= start && s.date <= end);
+        const previousSales = state.sales.filter((s) => s.date && dateOnly(s.date) >= prevStart && dateOnly(s.date) <= prevEnd);
+        return {
+          currentSales,
+          previousSales,
+          valid: true,
+          label: `${start.toLocaleDateString('pt-BR')} a ${end.toLocaleDateString('pt-BR')}`,
+          previousLabel: `${prevStart.toLocaleDateString('pt-BR')} a ${prevEnd.toLocaleDateString('pt-BR')}`
+        };
+      }
+      const days = reportWindowDays();
+      if (!days) return { currentSales: state.sales.slice(), previousSales: [], valid: true, label: 'historico total', previousLabel: '' };
+      const base = maxDate() || new Date();
+      const endCur = dateOnly(base);
+      const startCur = addDays(endCur, -(days - 1));
+      const endPrev = addDays(startCur, -1);
+      const startPrev = addDays(endPrev, -(days - 1));
+      const inRange = (d, a, b) => d && dateOnly(d) >= a && dateOnly(d) <= b;
+      return {
+        currentSales: state.sales.filter((s) => inRange(s.date, startCur, endCur)),
+        previousSales: state.sales.filter((s) => inRange(s.date, startPrev, endPrev)),
+        valid: true,
+        label: `${startCur.toLocaleDateString('pt-BR')} a ${endCur.toLocaleDateString('pt-BR')}`,
+        previousLabel: `${startPrev.toLocaleDateString('pt-BR')} a ${endPrev.toLocaleDateString('pt-BR')}`
+      };
+    }
+
+    function updateReportScopeNotice() {
+      const target = $('reportScopeNotice');
+      if (!target) return;
+      const wnd = reportWindowData();
+      const base = maxDate();
+      const baseNote = base ? ` | Base importada ate <strong>${base.toLocaleDateString('pt-BR')}</strong>` : '';
+      const searchText = (state.globalSearch || '').trim();
+      const searchNote = searchText ? ` | Busca global: <strong>${esc(searchText)}</strong>` : '';
+      if (!wnd.valid) {
+        target.innerHTML = `Periodo global: <strong>personalizado invalido</strong>${baseNote}${searchNote}. Ajuste as datas para atualizar o relatorio inteiro.`;
+        return;
+      }
+      const prevNote = wnd.previousLabel ? ` | Comparativo: <strong>${wnd.previousLabel}</strong>` : '';
+      const modeNote = state.reportWindow === 'monthtd' ? ' | Regra: mes atual fechado ate ontem e comparado com o mesmo trecho do mes anterior.' : '';
+      target.innerHTML = `Periodo global ativo: <strong>${wnd.label}</strong>${prevNote}${baseNote}${searchNote}${modeNote}. Todas as abas usam esta janela ate voce alterar.`;
+    }
+
+    function setDashboardWindow(win) {
+      state.dashboardWindow = ['7d','15d','30d','quarter'].includes(win) ? win : '30d';
+      ['dashboardSkuWindowSeg', 'sellPlanWindowSeg'].forEach((id) => {
+        document.querySelectorAll('#' + id + ' button').forEach((b) => b.classList.toggle('active', b.dataset.win === state.dashboardWindow));
+      });
+      renderDashboard();
+    }
+
+    function dashboardWindowDays() {
+      if (state.dashboardWindow === '7d') return 7;
+      if (state.dashboardWindow === '15d') return 15;
+      if (state.dashboardWindow === 'quarter') return 90;
+      return 30;
+    }
+
+    function windowedSales(days) {
+      const base = maxDate() || new Date();
+      const endCur = dateOnly(base);
+      const startCur = addDays(endCur, -(days - 1));
+      const endPrev = addDays(startCur, -1);
+      const startPrev = addDays(endPrev, -(days - 1));
+      const inRange = (d, a, b) => d && dateOnly(d) >= a && dateOnly(d) <= b;
+      const currentSales = state.sales.filter((s) => inRange(s.date, startCur, endCur));
+      const previousSales = state.sales.filter((s) => inRange(s.date, startPrev, endPrev));
+      return { currentSales, previousSales, startCur, endCur, startPrev, endPrev, days };
+    }
+
+    function windowedSalesForDashboard() {
+      return windowedSales(dashboardWindowDays());
+    }
+    function profitWindowDays() {
+      return reportWindowDays();
+    }
+    function toggleProfitCustomDates() {
+      const start = $('profitDateStart');
+      const end = $('profitDateEnd');
+      const show = state.reportWindow === 'custom';
+      if (start) start.style.display = show ? '' : 'none';
+      if (end) end.style.display = show ? '' : 'none';
+    }
+    function profitWindowedSales() {
+      return reportWindowData().currentSales;
+    }
+
+    async function clearBase() {
+      if (!confirm('Isso remove todos os dados importados deste navegador/computador. O programa continuara limpo, mas a base ficara vazia.')) return;
+      await clearStore('sales');
+      await clearStore('imports');
+      await clearStore('events');
+      state.sales = [];
+      state.imports = [];
+      state.events = [];
+      state.pendingImports = [];
+      renderAll();
+    }
+
+    async function loadDemoData() {
+      if (state.sales.length && !confirm('Carregar a demo anonima vai limpar a base local atual deste navegador. Continuar?')) return;
+      const demo = createDemoSales();
+      const demoImport = {
+        id: 'demo-' + crypto.randomUUID(),
+        fileName: 'demo_anonima_mercado_livre.xlsx',
+        fileHash: 'demo-' + Date.now(),
+        importedAt: new Date().toISOString(),
+        periodStart: demo[0].date.toISOString(),
+        periodEnd: demo.at(-1).date.toISOString(),
+        rows: demo.length,
+        newRows: demo.length,
+        duplicateRows: 0,
+        eventRows: 0,
+        status: 'Demo anonima'
+      };
+      await clearStore('sales');
+      await clearStore('imports');
+      await clearStore('events');
+      await putMany('sales', demo);
+      await putMany('imports', [demoImport]);
+      state.sales = await getAll('sales');
+      state.imports = await getAll('imports');
+      state.events = [];
+      renderAll();
+    }
+
+    function createDemoSales() {
+      const skus = [
+        { sku: 'SKU-ALFA-2X2', mlb: 'MLB100000001', title: 'Produto Alfa 2x2 demonstracao', base: 92, price: 59.9 },
+        { sku: 'SKU-BETA-3X2', mlb: 'MLB100000002', title: 'Produto Beta 3x2 demonstracao', base: 65, price: 79.9 },
+        { sku: 'SKU-GAMA-4X3', mlb: 'MLB100000003', title: 'Produto Gama 4x3 demonstracao', base: 44, price: 109.9 },
+        { sku: 'SKU-DELTA-5X4', mlb: 'MLB100000004', title: 'Produto Delta 5x4 demonstracao', base: 28, price: 139.9 },
+        { sku: 'SKU-EPSILON-6X4', mlb: 'MLB100000005', title: 'Produto Epsilon 6x4 demonstracao', base: 10, price: 169.9 }
+      ];
+      const rows = [];
+      const start = new Date(2025, 4, 21, 10, 0);
+      for (let month = 0; month < 13; month++) {
+        for (const product of skus) {
+          let qty = product.base + Math.round(Math.sin(month / 2) * 8);
+          if (product.sku.includes('BETA') && month >= 7) qty = Math.round(qty * 0.55);
+          if (product.sku.includes('GAMA') && month < 5) qty = 0;
+          if (product.sku.includes('EPSILON') && month >= 8) qty = Math.round(product.base * 3.8);
+          for (let i = 0; i < qty; i++) {
+            const date = new Date(start.getFullYear(), start.getMonth() + month, 1 + (i % 26), 8 + (i % 10), i % 60);
+            const promo = i % 11 === 0;
+            const price = promo ? product.price * .92 : product.price * (product.sku.includes('BETA') && month >= 7 ? 1.18 : 1);
+            const saleNumber = 'DEMO' + date.getFullYear() + String(date.getMonth()+1).padStart(2,'0') + product.sku.slice(4,8) + String(i).padStart(4,'0');
+            const eventClass = i % 97 === 0 ? 'devolucao reembolso' : i % 149 === 0 ? 'mediacao' : 'venda';
+            rows.push(makeDemoSale({ product, date, price, saleNumber, eventClass, promo }));
+          }
+        }
+      }
+      return rows.sort((a,b) => a.date - b.date);
+    }
+
+    function makeDemoSale({ product, date, price, saleNumber, eventClass, promo }) {
+      const status = eventClass === 'venda' ? 'Entregue' : eventClass.includes('devolucao') ? 'Devolucao finalizada com reembolso para o comprador' : 'Mediacao finalizada com reembolso para o comprador';
+      const sale = {
+        importId: 'demo',
+        fileName: 'demo_anonima_mercado_livre.xlsx',
+        rowNumber: 0,
+        client: 'Cliente demo',
+        channel: 'Mercado Livre',
+        saleNumber,
+        date,
+        month: monthKey(date),
+        status,
+        statusDescription: 'Dado ficticio para teste de interface',
+        packageMulti: 'Nao',
+        isKit: 'Nao',
+        units: 1,
+        productRevenue: Number(price.toFixed(2)),
+        unitPrice: Number(price.toFixed(2)),
+        total: Number((price * .82).toFixed(2)),
+        sellingFee: Number((-price * .12).toFixed(2)),
+        shippingRevenue: 0,
+        shippingFee: 0,
+        discounts: promo ? Number((-price * .08).toFixed(2)) : 0,
+        refunds: eventClass.includes('devolucao') ? Number((-price).toFixed(2)) : 0,
+        billingMonth: '',
+        adsSale: '',
+        sku: product.sku,
+        mlb: product.mlb,
+        title: product.title,
+        listingType: 'Classico',
+        deliveryMethod: 'Mercado Envios Full',
+        result: '',
+        destination: '',
+        resultReason: '',
+        complaintOpened: eventClass === 'mediacao' ? 'Sim' : '',
+        complaintClosed: '',
+        mediation: eventClass === 'mediacao' ? 'Sim' : '',
+        lineType: 'item_sale',
+        eventClass,
+        promoClass: promo ? 'com indicio' : 'indefinido'
+      };
+      sale.dedupeKey = ['demo', sale.saleNumber, sale.date.toISOString(), sale.sku, sale.mlb, sale.unitPrice, sale.eventClass].join('|');
+      return sale;
+    }
+
+    async function handleFiles(files) {
+      const xlsxFiles = files.filter((f) => /\.xlsx$/i.test(f.name));
+      if (!xlsxFiles.length) return alert('Selecione arquivos .xlsx do Mercado Livre.');
+      const existing = new Set(state.sales.map((s) => s.dedupeKey));
+      const existingHashes = new Set(state.imports.filter((i) => !/^Erro:/i.test(i.status || '')).map((i) => i.fileHash));
+      const pendingKeys = new Set();
+      const pending = [];
+
+      for (const file of xlsxFiles) {
+        const buffer = await file.arrayBuffer();
+        const fileHash = await sha256(buffer);
+        const importId = crypto.randomUUID();
+        const summary = { id: importId, fileName: file.name, fileHash, importedAt: new Date().toISOString(), rows: 0, newRows: 0, duplicateRows: 0, eventRows: 0, itemRows: 0, units: 0, revenue: 0, status: 'Pronto', sales: [] };
+        if (existingHashes.has(fileHash)) {
+          summary.status = 'Arquivo repetido';
+          pending.push(summary);
+          continue;
+        }
+        try {
+          const workbook = await readXlsx(buffer);
+          const sheetName = workbook['Vendas BR'] ? 'Vendas BR' : Object.keys(workbook)[0];
+          const rows = workbook[sheetName] || [];
+          const headerIndex = rows.findIndex((r) => r.some(isSaleNumberHeader));
+          if (headerIndex < 0) throw new Error('Cabecalho N. de venda nao encontrado.');
+          const headers = uniqueHeaders(rows[headerIndex].map(norm));
+          const dataRows = rows.slice(headerIndex + 1).filter((r) => r.some((c) => norm(c) !== ''));
+          summary.rows = dataRows.length;
+          let minDate = null, maxDate = null;
+          dataRows.forEach((raw, idx) => {
+            const obj = {};
+            headers.forEach((h, i) => obj[h] = raw[i] ?? '');
+            const sale = normalizeSale(obj, importId, file.name, idx + headerIndex + 2);
+            if (!sale.saleNumber && !sale.sku) return;
+            if (!sale.saleNumber) sale.saleNumber = sale.dedupeKey;
+            if (sale.date) {
+              if (!minDate || sale.date < minDate) minDate = sale.date;
+              if (!maxDate || sale.date > maxDate) maxDate = sale.date;
+            }
+            if (!sale.sku) summary.eventRows++;
+            if (sale.sku && sale.lineType === 'item_sale') {
+              summary.itemRows++;
+              summary.units += sale.units || 0;
+              summary.revenue += sale.productRevenue || 0;
+            }
+            if (existing.has(sale.dedupeKey) || pendingKeys.has(sale.dedupeKey)) summary.duplicateRows++;
+            else {
+              pendingKeys.add(sale.dedupeKey);
+              summary.sales.push(sale);
+              summary.newRows++;
+            }
+          });
+          summary.periodStart = minDate ? minDate.toISOString() : '';
+          summary.periodEnd = maxDate ? maxDate.toISOString() : '';
+          if (summary.newRows === 0) summary.status = 'Sem linhas novas';
+        } catch (err) {
+          summary.status = 'Erro: ' + err.message;
+        }
+        pending.push(summary);
+      }
+
+      state.pendingImports = pending;
+      renderImportPreview();
+    }
+
+    async function confirmPendingImports() {
+      if (!state.pendingImports.length) return alert('Nenhum arquivo analisado para confirmar.');
+      const newSales = state.pendingImports.flatMap((p) => p.sales || []);
+      const importRows = state.pendingImports
+        .map(({ sales, ...summary }) => summary)
+        .filter((summary) => !/^Erro:/i.test(summary.status || ''));
+      if (!newSales.length && !importRows.length) return alert('Nao ha linhas novas para gravar.');
+      if (!confirm(`Confirmar importacao de ${fmtNum(newSales.length)} linhas novas?`)) return;
+      if (newSales.length) await putMany('sales', newSales);
+      if (importRows.length) await putMany('imports', importRows);
+      state.pendingImports = [];
+      state.sales = await getAll('sales');
+      state.imports = await getAll('imports');
+      renderAll();
+      alert(`Importacao confirmada. Linhas novas: ${newSales.length}.`);
+    }
+
+    function renderImportPreview() {
+      const target = $('importPreview');
+      if (!target) return;
+      if (!state.pendingImports.length) {
+        target.innerHTML = '<div class="empty">Nenhum arquivo em pre-validacao.</div>';
+        return;
+      }
+      const rows = state.pendingImports.map((p) => [
+        esc(p.fileName),
+        p.periodStart ? `${new Date(p.periodStart).toLocaleDateString('pt-BR')} - ${new Date(p.periodEnd).toLocaleDateString('pt-BR')}` : '-',
+        right(fmtNum(p.rows)),
+        right(fmtNum(p.itemRows)),
+        right(fmtNum(p.units)),
+        right(fmtMoney(p.revenue)),
+        right(fmtNum(p.newRows)),
+        right(fmtNum(p.duplicateRows)),
+        badge(p.status)
+      ]);
+      target.innerHTML = tableWrap(['Arquivo','Periodo','Linhas','Itens','Unidades','Receita','Novas','Duplicadas','Status'], rows, 'import_preview');
+    }
+
+    function normalizeSale(obj, importId, fileName, rowNumber) {
+      const saleNumber = norm(field(obj, 'N.º de venda', 'Nº de venda', 'N. de venda'));
+      const sku = normKey(field(obj, 'SKU'));
+      const mlb = normKey(field(obj, '# de anúncio', '# de anuncio', 'N.º de anúncio', 'N.º de anuncio'));
+      const date = parseMlDate(field(obj, 'Data da venda'));
+      const units = toNum(field(obj, 'Unidades'));
+      const productRevenue = toNum(field(obj, 'Receita por produtos (BRL)'));
+      const unitPrice = toNum(field(obj, 'Preço unitário de venda do anúncio (BRL)', 'Preco unitario de venda do anuncio (BRL)'));
+      const total = toNum(field(obj, 'Total (BRL)'));
+      const status = norm(field(obj, 'Estado'));
+      const lineType = classifyLine(obj, sku, status);
+      const dedupeParts = [saleNumber, date ? date.toISOString() : '', sku, mlb, units, unitPrice, productRevenue, total].map((x) => norm(x));
+      return {
+        dedupeKey: dedupeParts.join('|'),
+        importId, fileName, rowNumber,
+        client: norm($('clientName').value) || 'Cliente teste',
+        channel: 'Mercado Livre',
+        saleNumber, date, month: date ? monthKey(date) : '',
+        status, statusDescription: norm(field(obj, 'Descrição do status', 'Descricao do status')),
+        packageMulti: norm(field(obj, 'Pacote de diversos produtos')),
+        isKit: norm(field(obj, 'Pertence a um kit')),
+        units, productRevenue, unitPrice, total,
+        sellingFee: toNum(field(obj, 'Tarifa de venda e impostos (BRL)')),
+        shippingRevenue: toNum(field(obj, 'Receita por envio (BRL)')),
+        shippingFee: toNum(field(obj, 'Tarifas de envio (BRL)')),
+        discounts: toNum(field(obj, 'Descontos e bônus', 'Descontos e bonus')),
+        refunds: toNum(field(obj, 'Cancelamentos e reembolsos (BRL)')),
+        billingMonth: norm(field(obj, 'Mês de faturamento das suas tarifas', 'Mes de faturamento das suas tarifas')),
+        adsSale: norm(field(obj, 'Venda por publicidade')),
+        sku, mlb,
+        title: norm(field(obj, 'Título do anúncio', 'Titulo do anuncio')),
+        listingType: norm(field(obj, 'Tipo de anúncio', 'Tipo de anuncio')),
+        deliveryMethod: norm(field(obj, 'Forma de entrega')),
+        result: norm(field(obj, 'Resultado')),
+        destination: norm(field(obj, 'Destino')),
+        resultReason: norm(field(obj, 'Motivo do resultado')),
+        complaintOpened: norm(field(obj, 'Reclamação aberta', 'Reclamacao aberta')),
+        complaintClosed: norm(field(obj, 'Reclamação encerrada', 'Reclamacao encerrada')),
+        mediation: norm(field(obj, 'Em mediação', 'Em mediacao')),
+        lineType,
+        eventClass: classifyEvent(status, obj),
+        promoClass: classifyPromo(obj, unitPrice)
+      };
+    }
+
+    function uniqueHeaders(headers) {
+      const seen = {};
+      return headers.map((header, index) => {
+        const base = header || `Coluna ${index + 1}`;
+        const count = seen[base] || 0;
+        seen[base] = count + 1;
+        return count === 0 ? base : `${base}.${count}`;
+      });
+    }
+
+    function classifyLine(obj, sku, status) {
+      const s = status.toLowerCase();
+      if (s.includes('devolu')) return sku ? 'return_event' : 'financial_event';
+      if (s.includes('troca')) return sku ? 'exchange_event' : 'financial_event';
+      if (s.includes('cancel')) return 'cancellation_event';
+      if (s.includes('media')) return 'complaint_event';
+      return sku ? 'item_sale' : 'financial_event';
+    }
+    function classifyEvent(status, obj) {
+      const text = [
+        status,
+        field(obj, 'Descrição do status', 'Descricao do status'),
+        field(obj, 'Resultado'),
+        field(obj, 'Destino'),
+        field(obj, 'Motivo do resultado')
+      ].map(norm).join(' ').toLowerCase();
+      if (text.includes('cancel')) return 'cancelamento';
+      if (text.includes('troca')) return 'troca';
+      if (text.includes('media')) return text.includes('demos o dinheiro') ? 'mediacao ganha' : 'mediacao';
+      if (text.includes('descart')) return 'devolucao perda';
+      if (text.includes('reembolso')) return 'devolucao reembolso';
+      if (text.includes('devolu') && text.includes('venda novamente')) return 'devolucao retorno';
+      if (text.includes('devolu')) return 'devolucao';
+      return 'venda';
+    }
+    function classifyPromo(obj, unitPrice) {
+      const discounts = toNum(field(obj, 'Descontos e bônus', 'Descontos e bonus'));
+      if (discounts && discounts !== 0) return 'com indicio';
+      return 'indefinido';
+    }
+
+    function parseMlDate(text) {
+      const s = norm(text).toLowerCase();
+      const m = s.match(/(\d{1,2}) de ([a-zçã]+) de (\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+      if (!m) return null;
+      const month = MONTHS[m[2]] ?? MONTHS[looseText(m[2])];
+      if (month === undefined) return null;
+      return new Date(Number(m[3]), month, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0));
+    }
+    function monthKey(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
+    function toNum(v) {
+      let s = norm(v)
+        .replace(/\s/g, '')
+        .replace(/^R\$/i, '');
+      if (s.includes(',') && s.includes('.')) {
+        s = s.replace(/\./g, '').replace(',', '.');
+      } else if (s.includes(',')) {
+        s = s.replace(',', '.');
+      }
+      if (!s) return 0;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    async function sha256(buffer) {
+      const hash = await crypto.subtle.digest('SHA-256', buffer);
+      return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function readXlsx(buffer) {
+      const entries = parseZip(buffer);
+      const textFiles = {};
+      for (const name of Object.keys(entries)) {
+        if (name.endsWith('.xml') || name.endsWith('.rels')) textFiles[name] = await unzipText(entries[name]);
+      }
+      const workbookXml = xml(textFiles['xl/workbook.xml']);
+      const relsXml = xml(textFiles['xl/_rels/workbook.xml.rels']);
+      const rels = {};
+      [...relsXml.querySelectorAll('Relationship')].forEach((r) => rels[r.getAttribute('Id')] = r.getAttribute('Target'));
+      const shared = parseSharedStrings(textFiles['xl/sharedStrings.xml']);
+      const out = {};
+      [...workbookXml.querySelectorAll('sheet')].forEach((sheet) => {
+        const name = sheet.getAttribute('name');
+        const rid = sheet.getAttribute('r:id') || sheet.getAttribute('id');
+        let target = rels[rid] || '';
+        if (!target.startsWith('xl/')) target = 'xl/' + target.replace(/^\/?/, '');
+        const sheetText = textFiles[target];
+        if (sheetText) out[name] = parseSheet(sheetText, shared);
+      });
+      return out;
+    }
+
+    function parseSharedStrings(text) {
+      if (!text) return [];
+      const doc = xml(text);
+      return [...doc.querySelectorAll('si')].map((si) => [...si.querySelectorAll('t')].map((t) => t.textContent).join(''));
+    }
+    function parseSheet(text, shared) {
+      const doc = xml(text);
+      const rows = [];
+      [...doc.querySelectorAll('sheetData row')].forEach((row) => {
+        const values = [];
+        [...row.querySelectorAll('c')].forEach((cell) => {
+          const ref = cell.getAttribute('r') || '';
+          const col = colToIndex(ref.replace(/\d+/g, ''));
+          const type = cell.getAttribute('t');
+          const v = cell.querySelector('v');
+          const is = cell.querySelector('is t');
+          let val = '';
+          if (type === 's') val = shared[Number(v?.textContent || 0)] || '';
+          else if (type === 'inlineStr') val = is?.textContent || '';
+          else val = v?.textContent || '';
+          values[col] = val;
+        });
+        rows.push(values);
+      });
+      return rows;
+    }
+    function colToIndex(col) { return [...col].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1; }
+    function xml(text) { return new DOMParser().parseFromString(text, 'application/xml'); }
+
+    function parseZip(buffer) {
+      const bytes = new Uint8Array(buffer);
+      const view = new DataView(buffer);
+      let eocd = -1;
+      for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 66000); i--) {
+        if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+      }
+      if (eocd < 0) throw new Error('Arquivo XLSX/ZIP invalido.');
+      const total = view.getUint16(eocd + 10, true);
+      let ptr = view.getUint32(eocd + 16, true);
+      const entries = {};
+      for (let i = 0; i < total; i++) {
+        if (view.getUint32(ptr, true) !== 0x02014b50) break;
+        const method = view.getUint16(ptr + 10, true);
+        const compSize = view.getUint32(ptr + 20, true);
+        const nameLen = view.getUint16(ptr + 28, true);
+        const extraLen = view.getUint16(ptr + 30, true);
+        const commentLen = view.getUint16(ptr + 32, true);
+        const localOffset = view.getUint32(ptr + 42, true);
+        const name = new TextDecoder().decode(bytes.slice(ptr + 46, ptr + 46 + nameLen));
+        const localNameLen = view.getUint16(localOffset + 26, true);
+        const localExtraLen = view.getUint16(localOffset + 28, true);
+        const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+        entries[name] = { method, data: bytes.slice(dataStart, dataStart + compSize) };
+        ptr += 46 + nameLen + extraLen + commentLen;
+      }
+      return entries;
+    }
+    async function unzipText(entry) {
+      if (entry.method === 0) return new TextDecoder().decode(entry.data);
+      if (entry.method !== 8) throw new Error('Metodo ZIP nao suportado.');
+      const stream = new Blob([entry.data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      const buf = await new Response(stream).arrayBuffer();
+      return new TextDecoder().decode(buf);
+    }
+
+    function renderAll() {
+      updateReportScopeNotice();
+      renderCoverage();
+      renderImports();
+      renderImportPreview();
+      renderBaseAudit();
+      renderDashboard();
+      renderAnalysis();
+      renderProfit();
+      renderMonthly();
+      renderNoSales();
+      renderIssues();
+      renderPromo();
+      renderEvents();
+      requestAnimationFrame(enhanceTableScrollbars);
+    }
+
+    function itemSales() { return reportWindowData().currentSales.filter((s) => s.sku && s.lineType === 'item_sale'); }
+    function aggregate(group = 'sku') {
+      const wnd = reportWindowData();
+      return aggregateFromSales(wnd.currentSales, group, wnd.previousSales);
+    }
+
+    function monthlyRows() {
+      if (state.reportWindow === 'monthtd') {
+        const wnd = monthToDateWindow();
+        return aggregateFromSales([...wnd.previousSales, ...wnd.currentSales], state.monthlyGroup, wnd.previousSales);
+      }
+      return aggregate(state.monthlyGroup);
+    }
+
+    function monthlyMonthKeys() {
+      if (state.reportWindow === 'monthtd') {
+        const wnd = monthToDateWindow();
+        return [wnd.previousMonthKey, wnd.currentMonthKey].filter(Boolean);
+      }
+      return [...new Set(itemSales().map((s) => s.month).filter(Boolean))].sort();
+    }
+
+    function aggregateFromSales(salesList, group = 'sku', previousSalesList = []) {
+      const map = new Map();
+      const previousMap = new Map();
+      (previousSalesList || []).filter((s) => s.sku && s.lineType === 'item_sale').forEach((s) => {
+        const key = group === 'sku' ? s.sku : s.mlb || '(sem MLB)';
+        if (!key || key === '(sem MLB)' && group === 'sku') return;
+        const row = previousMap.get(key) || { units: 0, revenue: 0, sales: new Set() };
+        row.units += s.units || 0;
+        row.revenue += s.productRevenue || 0;
+        row.sales.add(s.saleNumber || s.dedupeKey);
+        previousMap.set(key, row);
+      });
+      (salesList || []).filter((s) => s.sku).forEach((s) => {
+        const key = group === 'sku' ? s.sku : s.mlb || '(sem MLB)';
+        if (!key || key === '(sem MLB)' && group === 'sku') return;
+        const row = map.get(key) || { key, sku: group === 'sku' ? key : s.sku, mlb: group === 'mlb' ? key : '', title: s.title, titleDate: null, units: 0, revenue: 0, sales: new Set(), returnSales: new Set(), complaintSales: new Set(), cancellationSales: new Set(), mlbs: new Set(), currentPrice: 0, currentDate: null, returns: 0, complaints: 0, cancellations: 0, promo: 0, months: {} };
+        if (s.mlb) row.mlbs.add(s.mlb);
+        if (s.title) {
+          if (group === 'sku') {
+            if (!row.title || s.title.length < row.title.length) row.title = s.title;
+          } else {
+            if (s.date && (!row.titleDate || s.date > row.titleDate)) {
+              row.title = s.title;
+              row.titleDate = s.date;
+            } else if (!row.title) {
+              row.title = s.title;
+            }
+          }
+        }
+        if (s.lineType === 'item_sale') {
+          row.units += s.units || 0;
+          row.revenue += s.productRevenue || 0;
+          row.sales.add(s.saleNumber);
+          if (s.date && (!row.currentDate || s.date > row.currentDate)) { row.currentDate = s.date; row.currentPrice = s.unitPrice || 0; }
+          if (s.promoClass === 'com indicio') row.promo++;
+          const m = s.month || 'sem mes';
+          row.months[m] = row.months[m] || { units: 0, revenue: 0 };
+          row.months[m].units += s.units || 0;
+          row.months[m].revenue += s.productRevenue || 0;
+        }
+        if (isReturnEvent(s)) row.returnSales.add(s.saleNumber || s.dedupeKey);
+        if (isComplaintEvent(s)) row.complaintSales.add(s.saleNumber || s.dedupeKey);
+        if (s.eventClass === 'cancelamento') row.cancellationSales.add(s.saleNumber || s.dedupeKey);
+        map.set(key, row);
+      });
+      return [...map.values()].map((r) => {
+        r.avgPrice = r.units ? r.revenue / r.units : 0;
+        r.returns = r.returnSales.size;
+        r.complaints = r.complaintSales.size;
+        r.cancellations = r.cancellationSales.size;
+        r.returnRate = r.sales.size ? r.returns / r.sales.size : 0;
+        r.complaintRate = r.sales.size ? r.complaints / r.sales.size : 0;
+        r.promoShare = r.sales.size ? r.promo / r.sales.size : 0;
+        r.priceDiff = r.avgPrice ? (r.currentPrice - r.avgPrice) / r.avgPrice : 0;
+        const prev = previousMap.get(r.key) || { units: 0, revenue: 0, sales: new Set() };
+        r.recentTrend = {
+          change: prev.units ? (r.units - prev.units) / prev.units : (r.units > 0 ? 1 : 0),
+          current: r.units || 0,
+          previous: prev.units || 0,
+          currentRevenue: r.revenue || 0,
+          previousRevenue: prev.revenue || 0,
+          currentSales: r.sales.size || 0,
+          previousSales: prev.sales.size || 0
+        };
+        r.diagnostic = diagnose(r);
+        r.diagnosis = r.diagnostic.text;
+        r.severity = r.diagnostic.severity;
+        r.priorityScore = r.diagnostic.priorityScore || 0;
+        r.primaryCause = r.diagnostic.primaryCause;
+        r.nextAction = r.diagnostic.nextAction;
+        r.confidence = r.diagnostic.confidence || 'media';
+        r.secondarySignals = r.diagnostic.secondarySignals || [];
+        return applyGovernanceToAggregateRow(r);
+      }).sort((a, b) => b.revenue - a.revenue);
+    }
+
+    function rowMatchesGlobalSearch(r) {
+      const q = (state.globalSearch || '').trim().toLowerCase();
+      if (!q) return true;
+      if (state.globalSearchScope === 'title') return (r.title || '').toLowerCase().includes(q);
+      return [r.key, r.sku, r.mlb, ...(r.mlbs ? [...r.mlbs] : []), ...(r.skus ? [...r.skus] : [])].join(' ').toLowerCase().includes(q);
+    }
+
+    function diagnose(r) {
+      const signals = [];
+      if (!r.sales.size) return diagnosticResult('info', 10, 'Sem venda valida', 'Validar se o relatorio tem SKU ou se o item esta apenas em eventos.', 'baixa', ['Sem venda valida no periodo']);
+      if (r.sales.size >= 5 && r.priceDiff > 0.08) signals.push({ score: 55, text: `Preco atual ${fmtPct(r.priceDiff)} acima da media`, cause: 'Preco atual acima da media historica', action: 'Comparar preco atual com concorrencia e testar ajuste gradual.' });
+      if (r.sales.size >= 5 && r.priceDiff < -0.08) signals.push({ score: 40, text: `Preco atual ${fmtPct(r.priceDiff)} abaixo da media`, cause: 'Preco atual abaixo da media historica', action: 'Validar se queda vem de promocao ou perda de margem.' });
+      if (r.recentTrend.change < -0.30) signals.push({ score: 80, text: `Queda recente ${fmtPct(r.recentTrend.change)}`, cause: 'Queda mensal fora do comum', action: 'Comparar preco, promocao, frete, estoque e status do anuncio no periodo da queda.' });
+      else if (r.recentTrend.change < -0.05) signals.push({ score: 45, text: `Queda recente ${fmtPct(r.recentTrend.change)}`, cause: 'Queda mensal moderada', action: 'Monitorar e validar se houve mudanca de preco, campanha ou estoque.' });
+      if (r.mlbs && r.mlbs.size >= 6) signals.push({ score: 45, text: `${r.mlbs.size} MLBs no mesmo SKU`, cause: 'Possivel dispersao por MLB ou catalogo', action: 'Alternar para MLB e descobrir qual anuncio concentra o problema.' });
+      if (r.promoShare > 0.25) signals.push({ score: 35, text: `${fmtPct(r.promoShare)} das vendas com indicio de promocao`, cause: 'Alta dependencia de promocao', action: 'Revisar performance antes e depois da promocao no fechamento do mes.' });
+      if (!signals.length) return diagnosticResult('ok', 0, 'Operacao normal', 'Manter monitoramento.', 'alta', []);
+      signals.sort((a,b) => b.score - a.score);
+      const primary = signals[0];
+      const severity = primary.score >= 85 ? 'critical' : primary.score >= 60 ? 'warning' : 'attention';
+      const confidence = primary.score >= 75 ? 'alta' : primary.score >= 45 ? 'media' : 'baixa';
+      return diagnosticResult(severity, primary.score, primary.cause, primary.action, confidence, signals.slice(0, 4).map((s) => s.text));
+    }
+
+    function diagnosticResult(severity, priorityScore, primaryCause, nextAction, confidence, secondarySignals) {
+      const text = secondarySignals && secondarySignals.length ? secondarySignals.join(' | ') : primaryCause;
+      return { severity, priorityScore, primaryCause, nextAction, confidence, secondarySignals: secondarySignals || [], text };
+    }
+
+    function governanceRuleEnabled(id) {
+      return !!(state.governance.rule_catalog || []).find((rule) => rule && rule.id === id);
+    }
+
+    function governanceDecisionEnabled(id) {
+      return !!(state.governance.project_decisions || []).find((decision) => decision && decision.id === id);
+    }
+
+    function governanceKnowledgeEnabled(id) {
+      return !!(state.governance.knowledge_catalog || []).find((entry) => entry && entry.id === id);
+    }
+
+    function pushUnique(list, value) {
+      if (!value) return;
+      if (!list.includes(value)) list.push(value);
+    }
+
+    function applyGovernanceToAggregateRow(row) {
+      const r = row;
+      const trace = {
+        loaded_at: state.governance.loaded_at || '',
+        affected_rules: [],
+        consulted_human_decisions: [],
+        blocked: false,
+        altered_behavior: false
+      };
+      if (!state.governance.ok) {
+        r.marketplaceGovernanceTrace = trace;
+        return r;
+      }
+
+      if (governanceDecisionEnabled('UNC-004')) {
+        pushUnique(trace.consulted_human_decisions, 'UNC-004');
+      }
+
+      if (governanceDecisionEnabled('UNC-006') && /promo/i.test(r.primaryCause || '')) {
+        pushUnique(trace.consulted_human_decisions, 'UNC-006');
+        r.primaryCause = 'Dependencia de promocao (sinal, validar causa raiz)';
+        r.nextAction = 'Comparar preco, frete, estoque e concorrencia antes de concluir que a promocao explica a queda.';
+        r.diagnosis = [r.primaryCause, ...(r.secondarySignals || [])].join(' | ');
+        trace.altered_behavior = true;
+      }
+
+      if (governanceRuleEnabled('RULE-SHARED-TAXONOMY-FAMILY-MEMORY') && r.mlbs && r.mlbs.size > 1) {
+        pushUnique(trace.affected_rules, 'RULE-SHARED-TAXONOMY-FAMILY-MEMORY');
+        if (!(r.secondarySignals || []).includes('Governance: SKU com varios MLBs, revisar familia e dispersao por anuncio.')) {
+          r.secondarySignals = ['Governance: SKU com varios MLBs, revisar familia e dispersao por anuncio.', ...(r.secondarySignals || [])].slice(0, 5);
+          r.diagnosis = [r.primaryCause, ...r.secondarySignals].filter(Boolean).join(' | ');
+        }
+        trace.altered_behavior = true;
+      }
+
+      if (governanceRuleEnabled('RULE-SHARED-AMBIGUITY-ESCALATES-NOT-DISCARD') && r.mlbs && r.mlbs.size > 1) {
+        pushUnique(trace.affected_rules, 'RULE-SHARED-AMBIGUITY-ESCALATES-NOT-DISCARD');
+        r.nextAction = 'Alternar para MLB e validar se o problema esta concentrado em um anuncio especifico antes de descartar o SKU.';
+        trace.altered_behavior = true;
+      }
+
+      if (governanceRuleEnabled('RULE-SHARED-BROWSER-DEMAND-FALLBACK') && r.units < 5 && (r.recentTrend?.change || 0) <= -0.05) {
+        pushUnique(trace.affected_rules, 'RULE-SHARED-BROWSER-DEMAND-FALLBACK');
+        r.confidence = 'baixa';
+        r.nextAction = 'Base fraca para conclusao automatica: validar anuncio real, estoque e preco antes de tratar como queda confirmada.';
+        trace.blocked = true;
+        trace.altered_behavior = true;
+      }
+
+      if (governanceRuleEnabled('RULE-SHARED-ML-SALES-BUCKETS-ARE-LOWER-BOUNDS') && r.units > 0) {
+        pushUnique(trace.affected_rules, 'RULE-SHARED-ML-SALES-BUCKETS-ARE-LOWER-BOUNDS');
+        r.secondarySignals = [...(r.secondarySignals || []), 'Governance: vendas publicas do marketplace podem ser piso e nao serie exata.'].slice(0, 5);
+        r.diagnosis = [r.primaryCause, ...r.secondarySignals].filter(Boolean).join(' | ');
+      }
+
+      if (governanceRuleEnabled('RULE-SHARED-ML-CONVERSION-PROXY-AND-CATALOG-HEAT') && r.mlbs && r.mlbs.size > 1) {
+        pushUnique(trace.affected_rules, 'RULE-SHARED-ML-CONVERSION-PROXY-AND-CATALOG-HEAT');
+        r.secondarySignals = [...(r.secondarySignals || []), 'Governance: SKU com varios anuncios pode exigir leitura de calor comercial por catalogo/oferta.'].slice(0, 5);
+        if (r.confidence !== 'baixa') r.confidence = 'media';
+        trace.altered_behavior = true;
+      }
+
+      if (governanceKnowledgeEnabled('MK-AGML-ADS-RULE-CATALOG-INTAKE') && (r.returnRate > 0.01 || r.complaintRate > 0.01)) {
+        pushUnique(trace.affected_rules, 'MK-AGML-ADS-RULE-CATALOG-INTAKE');
+        r.secondarySignals = [...(r.secondarySignals || []), 'Governance Ads: acima de 1% em devolucao/reclamacao pede leitura prioritaria.'].slice(0, 5);
+        r.diagnosis = [r.primaryCause, ...r.secondarySignals].filter(Boolean).join(' | ');
+      }
+
+      if (governanceKnowledgeEnabled('MK-AGML-SKU-CATALOG-OFFER-FALLBACK') && !r.sku && r.mlb) {
+        pushUnique(trace.affected_rules, 'MK-AGML-SKU-CATALOG-OFFER-FALLBACK');
+        r.nextAction = 'Anuncio sem SKU operacional visivel: validar se o SKU esta no nivel da oferta/catalogo antes de consolidar.';
+        trace.blocked = true;
+        trace.altered_behavior = true;
+      }
+
+      if (governanceKnowledgeEnabled('MK-ML-CATALOG-DEMAND-REQUIRES-INDIVIDUAL-AND-AGGREGATE-VIEW') && r.mlbs && r.mlbs.size > 1) {
+        pushUnique(trace.affected_rules, 'MK-ML-CATALOG-DEMAND-REQUIRES-INDIVIDUAL-AND-AGGREGATE-VIEW');
+        r.secondarySignals = [...(r.secondarySignals || []), 'Governance: nao ler catalogo so pelo total; comparar anuncio a anuncio.'].slice(0, 5);
+      }
+
+      if (governanceKnowledgeEnabled('MK-ML-CONVERSION-PROXY-IS-LOWER-BOUND') && r.promoShare > 0) {
+        pushUnique(trace.affected_rules, 'MK-ML-CONVERSION-PROXY-IS-LOWER-BOUND');
+        r.secondarySignals = [...(r.secondarySignals || []), 'Governance: promocao e aquecimento sao sinais comparativos, nao causalidade fechada.'].slice(0, 5);
+      }
+
+      if (governanceKnowledgeEnabled('MK-ML-CATALOG-HEAT-USES-AGGREGATED-VISITS') && r.recentTrend && r.recentTrend.change < -0.05) {
+        pushUnique(trace.affected_rules, 'MK-ML-CATALOG-HEAT-USES-AGGREGATED-VISITS');
+        r.nextAction = 'Queda relevante: comparar tendencia curta, anuncio especifico, promocao, estoque e aquecimento do catalogo.';
+        trace.altered_behavior = true;
+      }
+
+      r.marketplaceGovernanceTrace = trace;
+      return r;
+    }
+
+    function governanceTraceLabel(r) {
+      const trace = r.marketplaceGovernanceTrace || {};
+      const affected = (trace.affected_rules || []).slice(0, 4);
+      const consulted = (trace.consulted_human_decisions || []).slice(0, 3);
+      const parts = [];
+      if (affected.length) parts.push(`Regras: ${affected.join(', ')}`);
+      if (consulted.length) parts.push(`Decisoes: ${consulted.join(', ')}`);
+      if (trace.blocked) parts.push('Bloqueado para validacao');
+      return parts.join(' | ');
+    }
+
+    function recentMonthlyTrend(r) {
+      const keys = Object.keys(r.months || {}).filter((m) => m !== 'sem mes').sort();
+      if (keys.length < 2) return { change: 0, current: 0, previous: 0, currentMonth: '', previousMonth: '' };
+      const currentMonth = keys.at(-1);
+      const previousMonth = keys.at(-2);
+      const current = r.months[currentMonth]?.units || 0;
+      const previous = r.months[previousMonth]?.units || 0;
+      return { change: previous ? (current - previous) / previous : 0, current, previous, currentMonth, previousMonth };
+    }
+
+    function isReturnEvent(s) {
+      return s.eventClass === 'devolucao' ||
+        s.eventClass === 'devolucao perda' ||
+        s.eventClass === 'devolucao reembolso' ||
+        s.eventClass === 'devolucao retorno' ||
+        s.eventClass === 'troca';
+    }
+
+    function isComplaintEvent(s) {
+      return truthyMl(s.complaintOpened) ||
+        truthyMl(s.complaintClosed);
+    }
+
+    function truthyMl(value) {
+      const v = norm(value).toLowerCase();
+      return v && !['nao', 'não', 'no', 'false', '0', '-'].includes(v);
+    }
+
+    function renderCoverage() {
+      if (!state.sales.length) { $('coverageBox').textContent = 'Base vazia. Importe relatorios para iniciar.'; return; }
+      const dates = state.sales.map((s) => s.date).filter(Boolean).sort((a,b) => a-b);
+      $('coverageBox').innerHTML = `Historico local<br>${dates[0].toLocaleDateString('pt-BR')} ate ${dates.at(-1).toLocaleDateString('pt-BR')}<br>${fmtNum(state.sales.length)} linhas normalizadas`;
+    }
+
+    function renderImports() {
+      if (!state.imports.length) { $('importHistory').innerHTML = '<div class="empty">Nenhuma importacao ainda.</div>'; return; }
+      $('importHistory').innerHTML = table(['Arquivo','Periodo','Linhas','Novas','Duplicadas','Eventos','Status'], state.imports.slice().reverse().map((i) => [
+        esc(i.fileName),
+        i.periodStart ? `${new Date(i.periodStart).toLocaleDateString('pt-BR')} - ${new Date(i.periodEnd).toLocaleDateString('pt-BR')}` : '-',
+        fmtNum(i.rows), fmtNum(i.newRows), fmtNum(i.duplicateRows), fmtNum(i.eventRows), badge(i.status)
+      ]));
+    }
+
+    function renderBaseAudit() {
+      if (!$('baseAudit')) return;
+      if (!state.sales.length) {
+        $('baseAudit').innerHTML = '<div class="empty">Base vazia. Importe um relatorio para validar cobertura e totais.</div>';
+        return;
+      }
+      const itemRows = itemSales();
+      const eventRows = state.sales.length - itemRows.length;
+      const orders = new Set(state.sales.map((s) => s.saleNumber).filter(Boolean)).size;
+      const itemOrders = new Set(itemRows.map((s) => s.saleNumber).filter(Boolean)).size;
+      const units = itemRows.reduce((a, s) => a + (s.units || 0), 0);
+      const revenue = itemRows.reduce((a, s) => a + (s.productRevenue || 0), 0);
+      const netTotal = state.sales.reduce((a, s) => a + (s.total || 0), 0);
+      const dates = state.sales.map((s) => s.date).filter(Boolean).sort((a,b) => a-b);
+      const coverage = dates.length ? `${dates[0].toLocaleDateString('pt-BR')} - ${dates.at(-1).toLocaleDateString('pt-BR')}` : '-';
+      const importRows = state.imports.reduce((a, i) => a + (i.rows || 0), 0);
+      const newRows = state.imports.reduce((a, i) => a + (i.newRows || 0), 0);
+      const duplicateRows = state.imports.reduce((a, i) => a + (i.duplicateRows || 0), 0);
+      const duplicateRate = importRows ? duplicateRows / importRows : 0;
+      const failedImports = state.imports.filter((i) => /^Erro:/i.test(i.status || '')).length;
+      const repeatedImports = state.imports.filter((i) => /repetido|sem linhas novas/i.test(i.status || '')).length;
+      const missingRanges = findMissingDateRanges(itemRows);
+      const overlaps = findImportOverlaps(state.imports);
+      const lastImports = state.imports.slice()
+        .sort((a,b) => String(b.importedAt).localeCompare(String(a.importedAt)))
+        .slice(0, 5)
+        .map((i) => [
+          esc(i.fileName),
+          i.periodStart ? `${new Date(i.periodStart).toLocaleDateString('pt-BR')} - ${new Date(i.periodEnd).toLocaleDateString('pt-BR')}` : '-',
+          right(fmtNum(i.newRows || 0)),
+          right(fmtNum(i.duplicateRows || 0)),
+          badge(i.status || 'OK')
+        ]);
+      const monthRows = Object.entries(monthSummary()).sort(([a], [b]) => a.localeCompare(b)).map(([m, r]) => [
+        m,
+        right(fmtNum(r.rows)),
+        right(fmtNum(r.itemRows)),
+        right(fmtNum(r.units)),
+        right(fmtMoney(r.revenue))
+      ]);
+      $('baseAudit').innerHTML = `
+        <div class="kpis">
+          ${auditKpi('Linhas normalizadas', fmtNum(state.sales.length), 'Base local')}
+          ${auditKpi('Itens de venda', fmtNum(itemRows.length), 'Linhas com SKU')}
+          ${auditKpi('Eventos', fmtNum(eventRows), 'Sem item de venda')}
+          ${auditKpi('Pedidos', fmtNum(orders), 'N.º de venda distintos')}
+          ${auditKpi('Unidades', fmtNum(units), 'Soma da primeira coluna Unidades')}
+          ${auditKpi('Receita produto', fmtMoney(revenue), 'Soma Receita por produtos')}
+        </div>
+        <div class="notice">Cobertura local: <strong>${coverage}</strong>. Pedidos com item: <strong>${fmtNum(itemOrders)}</strong>. Total liquido do relatorio: <strong>${fmtMoney(netTotal)}</strong>.</div>
+        <div class="kpis">
+          ${auditKpi('Linhas lidas', fmtNum(importRows), 'Somatorio do historico')}
+          ${auditKpi('Linhas novas', fmtNum(newRows), 'Gravadas na base')}
+          ${auditKpi('Duplicadas barradas', fmtNum(duplicateRows), `${fmtPct(duplicateRate)} das linhas lidas`)}
+          ${auditKpi('Arquivos com alerta', fmtNum(failedImports + repeatedImports), `${fmtNum(failedImports)} erro(s), ${fmtNum(repeatedImports)} repetido(s)/sem novas`)}
+        </div>
+        <div class="notice">${auditQualityText(duplicateRate, failedImports, missingRanges.length, overlaps.length)}</div>
+        ${tableWrap(['Ultimos arquivos','Periodo','Novas','Duplicadas','Status'], lastImports, 'audit_last_imports')}
+        ${missingRanges.length ? tableWrap(['Lacuna de datas','Dias sem venda importada','Leitura'], missingRanges.slice(0, 8).map((g) => [
+          `${g.start.toLocaleDateString('pt-BR')} - ${g.end.toLocaleDateString('pt-BR')}`,
+          right(fmtNum(g.days)),
+          badge(g.days >= 7 ? 'Validar relatorio' : 'Aviso')
+        ]), 'audit_gaps') : '<div class="notice">Nenhuma lacuna diaria encontrada dentro do periodo importado.</div>'}
+        ${overlaps.length ? tableWrap(['Sobreposicao entre arquivos','Dias em comum','Leitura'], overlaps.slice(0, 8).map((o) => [
+          `${esc(o.a)} x ${esc(o.b)}`,
+          right(fmtNum(o.days)),
+          badge('Esperado se houver recorte repetido')
+        ]), 'audit_overlap') : '<div class="notice">Nenhuma sobreposicao de periodo encontrada no historico de arquivos.</div>'}
+        ${tableWrap(['Mes','Linhas','Itens','Unidades','Receita'], monthRows, 'audit_month')}
+      `;
+    }
+
+    function auditKpi(label, value, note) {
+      return `<div class="stat"><label>${label}</label><strong>${value}</strong><span>${note || ''}</span></div>`;
+    }
+
+    function auditQualityText(duplicateRate, failedImports, missingCount, overlapCount) {
+      const parts = [];
+      if (failedImports) parts.push(`${fmtNum(failedImports)} arquivo(s) com erro de leitura`);
+      if (duplicateRate > 0.25) parts.push(`duplicidade alta (${fmtPct(duplicateRate)}), comum quando ha recortes repetidos`);
+      else if (duplicateRate > 0) parts.push(`duplicidade controlada (${fmtPct(duplicateRate)})`);
+      else parts.push('nenhuma duplicidade no historico importado');
+      if (missingCount) parts.push(`${fmtNum(missingCount)} lacuna(s) de data para conferir`);
+      if (overlapCount) parts.push(`${fmtNum(overlapCount)} sobreposicao(oes) de periodo identificada(s)`);
+      return `Qualidade da base: ${parts.join(' | ')}.`;
+    }
+
+    function findMissingDateRanges(rows) {
+      const unique = [...new Set(rows.map((s) => s.date).filter(Boolean).map((d) => dateOnly(d).getTime()))].sort((a,b) => a-b);
+      const gaps = [];
+      for (let i = 1; i < unique.length; i++) {
+        const prev = new Date(unique[i - 1]);
+        const next = new Date(unique[i]);
+        const days = Math.round((next - prev) / 86400000) - 1;
+        if (days > 0) gaps.push({ start: addDays(prev, 1), end: addDays(next, -1), days });
+      }
+      return gaps.sort((a,b) => b.days - a.days);
+    }
+
+    function findImportOverlaps(imports) {
+      const ranges = imports
+        .filter((i) => i.periodStart && i.periodEnd)
+        .map((i) => ({ name: i.fileName, start: dateOnly(new Date(i.periodStart)), end: dateOnly(new Date(i.periodEnd)) }));
+      const overlaps = [];
+      for (let i = 0; i < ranges.length; i++) {
+        for (let j = i + 1; j < ranges.length; j++) {
+          const start = ranges[i].start > ranges[j].start ? ranges[i].start : ranges[j].start;
+          const end = ranges[i].end < ranges[j].end ? ranges[i].end : ranges[j].end;
+          const days = Math.round((end - start) / 86400000) + 1;
+          if (days > 0) overlaps.push({ a: ranges[i].name, b: ranges[j].name, days });
+        }
+      }
+      return overlaps.sort((a,b) => b.days - a.days);
+    }
+
+    function dateOnly(date) {
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    }
+
+    function addDays(date, days) {
+      const out = new Date(date);
+      out.setDate(out.getDate() + days);
+      return out;
+    }
+
+    function monthSummary() {
+      const out = {};
+      state.sales.forEach((s) => {
+        const m = s.month || 'sem mes';
+        out[m] = out[m] || { rows: 0, itemRows: 0, units: 0, revenue: 0 };
+        out[m].rows++;
+        if (s.sku && s.lineType === 'item_sale') {
+          out[m].itemRows++;
+          out[m].units += s.units || 0;
+          out[m].revenue += s.productRevenue || 0;
+        }
+      });
+      return out;
+    }
+
+    function renderDashboard() {
+      const wnd = reportWindowData();
+      const rows = wnd.currentSales.filter((s) => s.sku && s.lineType === 'item_sale');
+      const agSku = aggregateFromSales(wnd.currentSales, 'sku', wnd.previousSales);
+      const revenue = rows.reduce((a, s) => a + (s.productRevenue || 0), 0);
+      const units = rows.reduce((a, s) => a + (s.units || 0), 0);
+      const orders = new Set(rows.map((s) => s.saleNumber)).size;
+      const avgTicket = orders ? revenue / orders : 0;
+      const avgPriceNow = agSku.length ? agSku.reduce((a, r) => a + (r.currentPrice || 0), 0) / agSku.length : 0;
+      $('dashboardCoverage').innerHTML = dashboardCoverageNotice();
+      const cmp = dashboardComparison(wnd);
+      $('kpis').innerHTML = [
+        kpi('R$', 'Receita', fmtMoney(revenue), trendNote(cmp.revenue), 'Receita por produtos'),
+        kpi('U', 'Unidades', fmtNum(units), trendNote(cmp.units), 'Itens vendidos'),
+        kpi('P', 'Pedidos', fmtNum(orders), trendNote(cmp.orders), 'N.º de venda distintos'),
+        kpi('TM', 'Ticket medio', fmtMoney(avgTicket), trendNote(cmp.ticket), 'Receita por pedido'),
+        kpi('R$', 'Preco medio atual', fmtMoney(avgPriceNow), trendNote(cmp.price), 'Media dos SKUs'),
+        kpi('%', 'Queda recente', fmtPct(cmp.dropAbs || 0), trendNote(cmp.dropAbs, true), 'intensidade media')
+      ].join('');
+      renderGovernancePanel(agSku);
+      renderChart(rows);
+      const agSkuAlerts = aggregateFromSales(wnd.currentSales, 'sku', wnd.previousSales);
+      const alerts = agSkuAlerts
+        .filter((r) => r.diagnosis !== 'Sem alerta critico')
+        .sort((a,b) => dashboardRiskScore(b) - dashboardRiskScore(a))
+        .slice(0, 12);
+      $('alertsPanel').innerHTML = alerts.length ? `<div class="alert-list">${alerts.map((a) => {
+        const severe = (a.recentTrend?.change || 0) < -0.30 || a.priceDiff > 0.10;
+        return `<div class="alert-item"><span class="alert-ico ${severe ? 'bad':''}">!</span><div><div class="alert-code">${esc(a.key)}</div><div class="muted"><strong>${esc(a.primaryCause || a.diagnosis)}</strong></div><div class="alert-meta">Confianca ${esc(a.confidence || 'media')} | Score ${fmtNum(a.priorityScore || 0)} | Receita ${fmtMoney(a.revenue)}</div><div class="alert-meta">${esc((a.secondarySignals || []).slice(0, 3).join(' | ') || a.diagnosis)}</div><div class="alert-meta"><strong>Acao do dia:</strong> ${esc(a.nextAction || 'Monitorar e revisar em 7 dias.')}</div></div><span class="alert-time">${severe ? 'Critico' : 'Atencao'}</span></div>`;
+      }).join('')}</div><div class="notice" style="margin-top:8px">Fonte dos alertas: ultimos 7 dias (dinamico).</div>` : '<div class="empty">Sem alertas com a base atual (ultimos 7 dias).</div>';
+      renderDashboardSkuTable(agSku);
+      renderSellMorePlan(agSku);
+      renderDashboardImportSummary();
+    }
+
+    function renderGovernancePanel(rows) {
+      if (!$('governancePanel')) return;
+      if (!state.governance.ok) {
+        $('governancePanel').innerHTML = `<div class="notice">Governance central indisponivel no momento. Motivo: ${esc(state.governance.error || 'sem resposta da API local')}.</div>`;
+        return;
+      }
+      const traces = (rows || []).map((row) => row.marketplaceGovernanceTrace || {}).filter(Boolean);
+      const affectedRules = [...new Set(traces.flatMap((trace) => trace.affected_rules || []))];
+      const consultedDecisions = [...new Set(traces.flatMap((trace) => trace.consulted_human_decisions || []))];
+      const blockedCount = traces.filter((trace) => !!trace.blocked).length;
+      const alteredCount = traces.filter((trace) => !!trace.altered_behavior).length;
+      const governanceNotes = [];
+      if (governanceDecisionEnabled('UNC-003')) governanceNotes.push('Deduplicacao local nao usa apenas N. de venda como chave unica.');
+      if (governanceDecisionEnabled('UNC-005')) governanceNotes.push('Exportacao/publicacao deve preservar base limpa e anonimizada.');
+      if (governanceDecisionEnabled('UNC-006')) governanceNotes.push('Promocao e tratada como sinal, nao como causa padrao.');
+      const recentRegistration = (state.governanceRegistrations || []).slice(-1)[0];
+      $('governancePanel').innerHTML = `
+        <div class="summary-list">
+          <div class="summary-item"><span class="summary-ico">GOV</span><div><strong>${fmtNum((state.governance.consulted_files || []).length)}</strong><span class="muted">arquivos centrais carregados</span></div></div>
+          <div class="summary-item"><span class="summary-ico">RG</span><div><strong>${fmtNum(affectedRules.length)}</strong><span class="muted">regras afetaram o dashboard</span></div></div>
+          <div class="summary-item"><span class="summary-ico">HD</span><div><strong>${fmtNum(consultedDecisions.length)}</strong><span class="muted">decisoes humanas consultadas</span></div></div>
+          <div class="summary-item"><span class="summary-ico">ALT</span><div><strong>${fmtNum(alteredCount)}</strong><span class="muted">SKUs com comportamento alterado</span></div></div>
+          <div class="summary-item"><span class="summary-ico">BLK</span><div><strong>${fmtNum(blockedCount)}</strong><span class="muted">leituras travadas para validacao</span></div></div>
+        </div>
+        <div class="notice" style="margin-top:10px"><strong>Carregado em:</strong> ${esc(state.governance.loaded_at || '-')}<br><strong>Regras locais verificadas:</strong> ${esc((state.governance.local_rules_checked || []).join(', ') || '-')}</div>
+        <div class="notice" style="margin-top:10px"><strong>Regras afetadas:</strong> ${esc(affectedRules.join(', ') || 'nenhuma')}<br><strong>Decisoes humanas:</strong> ${esc(consultedDecisions.join(', ') || 'nenhuma')}</div>
+        ${recentRegistration ? `<div class="notice" style="margin-top:10px"><strong>Ultimo registro automatico:</strong> ${esc(recentRegistration.id)} em ${new Date(recentRegistration.at).toLocaleString('pt-BR')}</div>` : ''}
+        ${governanceNotes.length ? `<div class="notice" style="margin-top:10px">${governanceNotes.map((note) => `• ${esc(note)}`).join('<br>')}</div>` : ''}
+      `;
+    }
+
+    function kpi(icon, label, value, trend, note) { return `<div class="kpi"><span class="kpi-icon">${icon}</span><div><label>${label}</label><strong>${value}</strong><small>${trend || note}</small></div></div>`; }
+
+    function dashboardRiskScore(row) {
+      let score = Number(row.priorityScore || row.diagnostic?.priorityScore || 0);
+      if (row.returnRate > .01) score += 10 + row.returnRate * 100;
+      if (row.complaintRate > .01) score += 10 + row.complaintRate * 100;
+      if (row.revenue > 0) score += Math.min(25, (row.revenue || 0) / 7000);
+      if (row.units > 0) score += Math.min(10, (row.units || 0) / 15);
+      return score;
+    }
+
+    function dashboardComparison(wnd) {
+      const summarize = (salesList) => {
+        const monthRows = salesList.filter((s) => s.sku && s.lineType === 'item_sale');
+        const monthSaleNumbers = new Set(monthRows.map((s) => s.saleNumber));
+        const revenue = monthRows.reduce((a, s) => a + (s.productRevenue || 0), 0);
+        const units = monthRows.reduce((a, s) => a + (s.units || 0), 0);
+        const orders = monthSaleNumbers.size;
+        const ticket = orders ? revenue / orders : 0;
+        const skuRows = aggregateFromSales(salesList, 'sku');
+        const price = skuRows.length ? skuRows.reduce((a, r) => a + (r.currentPrice || 0), 0) / skuRows.length : 0;
+        const dropAbs = Math.abs((skuRows.reduce((a, r) => a + (Math.min(0, r.recentTrend?.change || 0)), 0)) / (skuRows.length || 1));
+        return { revenue, units, orders, ticket, price, dropAbs };
+      };
+      const cur = summarize(wnd.currentSales), prev = summarize(wnd.previousSales);
+      return {
+        revenue: pctChange(cur.revenue, prev.revenue),
+        units: pctChange(cur.units, prev.units),
+        orders: pctChange(cur.orders, prev.orders),
+        ticket: pctChange(cur.ticket, prev.ticket),
+        price: pctChange(cur.price, prev.price),
+        dropAbs: cur.dropAbs
+      };
+    }
+
+    function pctChange(current, previous) {
+      if (!previous) return null;
+      return (current - previous) / previous;
+    }
+
+    function trendNote(value, inverse = false) {
+      if (value === null || value === undefined || Number.isNaN(value)) return '<span class="muted">sem comparativo</span>';
+      const cls = value >= 0 ? (inverse ? 'neg' : 'pos') : (inverse ? 'pos' : 'neg');
+      const arrow = value >= 0 ? '+' : '-';
+      return `<span class="${cls}">${arrow} ${fmtPct(Math.abs(value))}</span> <span class="muted">vs. periodo anterior</span>`;
+    }
+    function renderChart(rows) {
+      const by = {};
+      rows.forEach((s) => {
+        by[s.month] = by[s.month] || { revenue: 0, units: 0 };
+        by[s.month].revenue += s.productRevenue || 0;
+        by[s.month].units += s.units || 0;
+      });
+      const months = Object.keys(by).sort();
+      if (!months.length) { $('salesChart').innerHTML = '<div class="empty">Sem dados para grafico.</div>'; return; }
+      const revVals = months.map((m) => by[m].revenue);
+      const unitVals = months.map((m) => by[m].units);
+      const useRevenue = state.dashboardMetric !== 'units';
+      const vals = useRevenue ? revVals : unitVals;
+      const maxVal = Math.max(...vals, 1);
+      const x = (i) => 58 + i * (680 / Math.max(1, months.length - 1));
+      const points = vals.map((v, i) => `${x(i)},${210 - (v / maxVal) * 160}`).join(' ');
+      const dots = vals.map((v, i) => `<circle cx="${x(i)}" cy="${210 - (v / maxVal) * 160}" r="5" fill="${useRevenue ? '#0f8b8d' : '#1f66d1'}"><title>${formatMonthShort(months[i])}: ${useRevenue ? fmtMoney(v) : fmtNum(v)}</title></circle>`).join('');
+      const labels = months.map((m, i) => `<text x="${x(i)}" y="238" font-size="11" text-anchor="middle" fill="#66758a">${m.slice(5)}/${m.slice(2,4)}</text>`).join('');
+      const grid = [0,1,2,3].map((n) => {
+        const y = 50 + n * 53;
+        const gv = maxVal * (1 - n / 3);
+        return `<line x1="50" y1="${y}" x2="750" y2="${y}" stroke="#e2e8f0" stroke-dasharray="4 4"/><text x="42" y="${y+4}" font-size="10" text-anchor="end" fill="#66758a">${useRevenue ? fmtCompact(gv) : fmtNum(gv)}</text>`;
+      }).join('');
+      $('salesChart').innerHTML = `<svg viewBox="0 0 800 250" aria-label="Vendas por mes">${grid}<text x="330" y="24" font-size="12" fill="${useRevenue ? '#0f8b8d' : '#1f66d1'}">${useRevenue ? 'Receita' : 'Unidades'}</text><line x1="390" y1="20" x2="430" y2="20" stroke="${useRevenue ? '#0f8b8d' : '#1f66d1'}" stroke-width="4"/><polyline fill="none" stroke="${useRevenue ? '#0f8b8d' : '#1f66d1'}" stroke-width="4" points="${points}"/>${dots}<line x1="50" y1="212" x2="750" y2="212" stroke="#d9e1ea"/>${labels}</svg>`;
+    }
+
+    function formatMonthShort(key) {
+      if (!key || !/^\d{4}-\d{2}$/.test(key)) return key || '';
+      const [y, m] = key.split('-');
+      return `${m}/${y.slice(2)}`;
+    }
+
+    function renderDashboardSkuTable(agSku) {
+      const pageSize = 10;
+      const ranked = sortDashboardSkuRows(agSku.slice());
+      const totalPages = Math.max(1, Math.ceil(ranked.length / pageSize));
+      state.dashboardSkuPage = Math.min(Math.max(1, state.dashboardSkuPage), totalPages);
+      const start = (state.dashboardSkuPage - 1) * pageSize;
+      const rows = ranked.slice(start, start + pageSize).map((r) => [
+        `<strong>${esc(r.key)}</strong><span class="subline">${esc(r.title || '-')}</span><span class="subline">Preco atual ${fmtMoney(r.currentPrice)} | medio ${fmtMoney(r.avgPrice)} | causa principal: ${esc(r.primaryCause || '-')}</span>${governanceTraceLabel(r) ? `<span class="subline">${esc(governanceTraceLabel(r))}</span>` : ''}`,
+        right(fmtNum(r.units)),
+        right(fmtMoney(r.revenue)),
+        right(fmtMoney(r.avgPrice)),
+        trendCell(r.recentTrend?.change || 0),
+        `${diagnosisBadge(r)}<span class="subline">Confianca: ${esc(r.confidence || 'media')} | Score: ${fmtNum(r.priorityScore || 0)}</span><span class="subline">${esc((r.secondarySignals || []).slice(0, 2).join(' | ') || r.diagnosis || '')}</span><span class="subline">${esc(r.nextAction || '')}</span>${r.marketplaceGovernanceTrace?.blocked ? '<span class="subline"><strong>Governance:</strong> leitura travada para validacao.</span>' : ''}`
+      ]);
+      $('dashboardSkuTable').innerHTML = `
+        ${tableWrap(['SKU','Vendas','Receita','Preco medio','Variação recente','Diagnostico'], rows, 'dashboard_sku')}
+        <div class="filters" style="justify-content:space-between;margin-top:10px">
+          <span class="muted">${start + 1} - ${Math.min(start + pageSize, ranked.length)} de ${ranked.length} SKUs priorizados por alerta</span>
+          <span class="filters">
+            <button class="btn" onclick="__marketplaceApp.dashboardSkuPage(-1)">Anterior</button>
+            <span class="badge info">${state.dashboardSkuPage}</span>
+            <button class="btn" onclick="__marketplaceApp.dashboardSkuPage(1)">Proxima</button>
+          </span>
+        </div>`;
+    }
+
+    function sortDashboardSkuRows(rows) {
+      const cfg = state.tableSort.dashboard_sku || { index: 1, dir: 'desc' };
+      const dir = cfg.dir === 'asc' ? 1 : -1;
+      const pick = (r, idx) => {
+        if (idx === 0) return String(r.key || '').toLowerCase();
+        if (idx === 1) return Number(r.units || 0);
+        if (idx === 2) return Number(r.revenue || 0);
+        if (idx === 3) return Number(r.avgPrice || 0);
+        if (idx === 4) return Number(r.recentTrend?.change || 0);
+        if (idx === 5) return dashboardRiskScore(r);
+        return Number(r.units || 0);
+      };
+      return rows.sort((a, b) => {
+        const av = pick(a, cfg.index);
+        const bv = pick(b, cfg.index);
+        if (typeof av === 'number' && typeof bv === 'number' && Number.isFinite(av) && Number.isFinite(bv)) {
+          if (av !== bv) return (av - bv) * dir;
+        } else {
+          const cmp = String(av).localeCompare(String(bv), 'pt-BR');
+          if (cmp !== 0) return cmp * dir;
+        }
+        return (dashboardRiskScore(b) - dashboardRiskScore(a)) || (b.revenue - a.revenue);
+      });
+    }
+
+    function renderSellMorePlan(agSku) {
+      const rows = agSku.map((r) => ({
+        r,
+        priority: dashboardRiskScore(r),
+        reason: r.primaryCause || 'Operacao normal',
+        action: r.nextAction || 'Manter anuncio e monitorar 7 dias.'
+      }))
+      .sort((a, b) => b.priority - a.priority || b.r.revenue - a.r.revenue)
+      .slice(0, 12);
+      if (!rows.length) {
+        $('sellMorePlan').innerHTML = '<div class="empty">Sem dados suficientes para montar o plano.</div>';
+        return;
+      }
+      $('sellMorePlan').innerHTML = tableWrap(
+        ['Prioridade','SKU','Produto','Sinal','Acao de hoje','Status'],
+        rows.map((x) => [
+          right(`<span class="prio-dot ${x.priority >= 80 ? 'prio-high' : x.priority >= 60 ? 'prio-mid' : 'prio-low'}">${x.priority >= 80 ? '!' : x.priority >= 60 ? '•' : '✓'}</span><span class="badge ${x.priority >= 80 ? 'bad' : x.priority >= 60 ? 'warn' : 'ok'}">${x.priority}</span>`),
+          esc(x.r.key),
+          esc(x.r.title || '-'),
+          `${esc(x.reason)}<span class="subline">Confianca ${esc(x.r.confidence || 'media')} | ${esc((x.r.secondarySignals || []).slice(0, 2).join(' | ') || 'sem sinais secundarios')}</span>`,
+          `<strong>${x.priority >= 80 ? 'Hoje:' : x.priority >= 60 ? 'Esta semana:' : 'Rotina:'}</strong> ${esc(x.action)}`,
+          planStatusCell(x.r.key, x.r.title || '-', x.reason, x.action)
+        ]),
+        'sell_more_plan'
+      ) + renderPlanJournalPreview();
+    }
+
+    function planStatusCell(code, title, reason, suggestedAction) {
+      const safeCode = String(code || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const safeTitle = String(title || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const safeReason = String(reason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const safeAction = String(suggestedAction || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const status = state.planStatus[code] || 'pendente';
+      const badge = status === 'done'
+        ? '<span class="badge ok">Concluido</span>'
+        : status === 'testing'
+          ? '<span class="badge info">Em teste</span>'
+          : '<span class="badge warn">Pendente</span>';
+      return `${badge}<span class="subline"><button class="btn" onclick="__marketplaceApp.setPlanStatus('${safeCode}','testing')">Marcar em teste</button> <button class="btn" onclick="__marketplaceApp.setPlanStatus('${safeCode}','done')">Concluido</button> <button class="btn" onclick="__marketplaceApp.registerPlanAction('${safeCode}','${safeTitle}','${safeReason}','${safeAction}')">Registrar acao</button></span>`;
+    }
+
+    function renderPlanJournalPreview() {
+      if (!state.planJournal.length) return '<div class="notice" style="margin-top:8px">Nenhuma acao registrada ainda.</div>';
+      const rows = state.planJournal.slice().sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 12).map((j) => [
+        new Date(j.at).toLocaleString('pt-BR'),
+        j.reviewAt ? new Date(j.reviewAt).toLocaleDateString('pt-BR') : '-',
+        esc(j.code || ''),
+        esc(j.title || '-'),
+        esc(j.suggested || '-'),
+        esc(j.done || '-'),
+        esc(j.status || 'pendente'),
+        esc(j.result || '-')
+      ]);
+      return `<div style="margin-top:10px">${tableWrap(['Data','Reavaliar em','SKU','Produto','Sugerido','Feito','Status','Resultado'], rows, 'plan_journal')}</div>`;
+    }
+
+    function renderDashboardImportSummary() {
+      const ordered = state.imports.slice().sort((a,b) => String(b.importedAt).localeCompare(String(a.importedAt)));
+      const last = ordered[0];
+      if (!last) {
+        $('dashboardImportSummary').innerHTML = '<div class="empty">Nenhuma importacao registrada.</div>';
+        return;
+      }
+      const totalNew = state.imports.reduce((a, i) => a + (i.newRows || 0), 0);
+      const totalDuplicate = state.imports.reduce((a, i) => a + (i.duplicateRows || 0), 0);
+      const totalEvents = state.imports.reduce((a, i) => a + (i.eventRows || 0), 0);
+      const dates = state.sales.map((s) => s.date).filter(Boolean).sort((a,b) => a-b);
+      const coverage = dates.length ? `${dates[0].toLocaleDateString('pt-BR')} - ${dates.at(-1).toLocaleDateString('pt-BR')}` : '-';
+      $('dashboardImportSummary').innerHTML = `<div class="summary-list">
+        <div class="summary-item"><span class="summary-ico">OK</span><div><strong>${fmtNum(totalNew)}</strong><span class="muted">linhas novas gravadas na base</span></div></div>
+        <div class="summary-item"><span class="summary-ico">DUP</span><div><strong>${fmtNum(totalDuplicate)}</strong><span class="muted">duplicadas ignoradas automaticamente</span></div></div>
+        <div class="summary-item"><span class="summary-ico">EV</span><div><strong>${fmtNum(totalEvents)}</strong><span class="muted">eventos sem SKU / linhas de ajuste</span></div></div>
+        <div class="summary-item"><span class="summary-ico">DT</span><div><strong>${coverage}</strong><span class="muted">cobertura local confirmada</span></div></div>
+        <div class="summary-item"><span class="summary-ico">ARQ</span><div><strong>${esc(last.fileName || 'arquivo')}</strong><span class="muted">ultimo arquivo confirmado</span></div></div>
+      </div>`;
+    }
+
+    function dashboardCoverageNotice() {
+      if (!state.sales.length) return '<div class="notice">Base vazia. Importe relatorios para iniciar.</div>';
+      const dates = state.sales.map((s) => s.date).filter(Boolean).sort((a,b) => a-b);
+      if (!dates.length) return '<div class="notice">Base importada sem datas validas.</div>';
+      const first = dates[0], last = dates.at(-1);
+      const days = Math.max(1, Math.round((last - first) / 86400000) + 1);
+      if (state.sales.length < 1000 || days < 60) {
+        return `<div class="notice"><strong>Base parcial:</strong> cobertura atual de ${first.toLocaleDateString('pt-BR')} ate ${last.toLocaleDateString('pt-BR')}. Importe os relatorios historicos para um dashboard completo.</div>`;
+      }
+      return '';
+    }
+
+    function diagnosisBadge(r) {
+      if (r.severity === 'critical') return '<span class="badge bad">Critico</span>';
+      if (r.severity === 'warning') return '<span class="badge warn">Atencao</span>';
+      if (r.severity === 'attention') return '<span class="badge info">Monitorar</span>';
+      return '<span class="badge ok">Baixo</span>';
+    }
+
+    function renderAnalysis() {
+      let rows = aggregate(state.group).filter(rowMatchesGlobalSearch);
+      $('analysisTable').innerHTML = tableWrap(['Codigo','Titulo','Unid.','Receita','Preco atual','Preco medio','Dev.','Recl.','Queda','Causa provavel','Proxima acao'], rows.slice(0, 500).map((r) => [
+        `<strong>${esc(r.key)}</strong><span class="subline">Media mensal: ${fmtNum(avgMonthly(r).toFixed(1))} un | MLBs: ${r.mlbs ? r.mlbs.size : 1}</span>${governanceTraceLabel(r) ? `<span class="subline">${esc(governanceTraceLabel(r))}</span>` : ''}`,
+        esc(r.title || '-'),
+        right(fmtNum(r.units)),
+        right(fmtMoney(r.revenue)),
+        right(fmtMoney(r.currentPrice)),
+        right(fmtMoney(r.avgPrice)),
+        rateCell(r.returnRate),
+        rateCell(r.complaintRate),
+        trendCell(r.recentTrend?.change || 0),
+        `<strong>${diagnosisBadge(r)}</strong><span class="subline">Causa principal: ${esc(r.primaryCause || '-')}</span><span class="subline">Confianca: ${esc(r.confidence || 'media')} | Score: ${fmtNum(r.priorityScore || 0)}</span><span class="subline">${esc((r.secondarySignals || []).join(' | ') || r.diagnosis)}</span>${r.marketplaceGovernanceTrace?.blocked ? '<span class="subline"><strong>Governance:</strong> item pede validacao antes de concluir.</span>' : ''}`,
+        `${esc(r.nextAction || '-')}${governanceTraceLabel(r) ? `<span class="subline">${esc(governanceTraceLabel(r))}</span>` : ''}`
+      ]), 'analysis');
+    }
+
+    function profitRows(group = 'sku', salesScope = null) {
+      const taxRate = Math.max(0, Number(state.profitTaxRate || 0)) / 100;
+      const salesList = Array.isArray(salesScope) ? salesScope : state.sales;
+      const returnedSaleNumbers = new Set(salesList.filter((s) => isReturnEvent(s)).map((s) => s.saleNumber || s.dedupeKey));
+      const baseRows = salesList.filter((s) =>
+        s.sku &&
+        s.lineType === 'item_sale' &&
+        !returnedSaleNumbers.has(s.saleNumber || s.dedupeKey) &&
+        s.eventClass !== 'cancelamento'
+      );
+      const map = new Map();
+      baseRows.forEach((s) => {
+        const key = group === 'sku' ? s.sku : (s.mlb || '(sem MLB)');
+        if (!key || (group === 'mlb' && key === '(sem MLB)')) return;
+        const row = map.get(key) || { key, title: s.title || '', units: 0, gross: 0, netBeforeCostTax: 0, cost: 0, tax: 0, profit: 0, orders: new Set(), skus: new Set() };
+        const skuCost = Number(state.costBySku[s.sku] || 0);
+        const gross = Number(s.productRevenue || 0);
+        const netBeforeCostTax = gross + Number(s.shippingRevenue || 0) + Number(s.sellingFee || 0) + Number(s.shippingFee || 0) + Number(s.discounts || 0) + Number(s.refunds || 0);
+        const cost = Number(s.units || 0) * skuCost;
+        const tax = gross * taxRate;
+        row.units += Number(s.units || 0);
+        row.gross += gross;
+        row.netBeforeCostTax += netBeforeCostTax;
+        row.cost += cost;
+        row.tax += tax;
+        row.profit += netBeforeCostTax - cost - tax;
+        row.orders.add(s.saleNumber || s.dedupeKey);
+        row.skus.add(s.sku);
+        if (!row.title || ((s.title || '').length < row.title.length)) row.title = s.title || row.title;
+        map.set(key, row);
+      });
+      return [...map.values()].map((r) => {
+        r.margin = r.gross ? r.profit / r.gross : 0;
+        r.loss = r.profit < 0;
+        r.avgSkuCost = r.units ? r.cost / r.units : 0;
+        return r;
+      });
+    }
+
+    function renderProfit() {
+      const salesScope = profitWindowedSales();
+      if (state.reportWindow === 'custom' && !reportWindowData().valid) {
+        $('profitSummary').innerHTML = '<div class="notice">Periodo personalizado invalido. Ajuste as datas no topo para calcular lucro e prejuizo.</div>';
+        $('profitTable').innerHTML = '<div class="empty">Ajuste o periodo global para continuar.</div>';
+        $('profitDetail').innerHTML = '';
+        return;
+      }
+      let rows = profitRows(state.profitGroup, salesScope).filter(rowMatchesGlobalSearch);
+      rows = rows.sort((a, b) => (a.loss === b.loss ? a.profit - b.profit : (a.loss ? -1 : 1)));
+      const totalGross = rows.reduce((a, r) => a + r.gross, 0);
+      const totalProfit = rows.reduce((a, r) => a + r.profit, 0);
+      const lossCount = rows.filter((r) => r.loss).length;
+      const margin = totalGross ? totalProfit / totalGross : 0;
+      $('profitSummary').innerHTML = `<div class="notice">Resultado liquido (sem devolucoes): <strong>${fmtMoney(totalProfit)}</strong> | Margem media: <strong class="${margin >= 0 ? 'pos' : 'neg'}">${fmtPct(margin)}</strong> | Itens com prejuizo: <strong class="${lossCount ? 'neg' : 'pos'}">${fmtNum(lossCount)}</strong></div>`;
+      const headers = [
+        state.profitGroup === 'sku' ? 'SKU' : 'MLB',
+        'Produto',
+        'Unidades',
+        'Receita',
+        'Base liquida',
+        state.profitGroup === 'sku' ? 'Custo un.' : 'Custo medio un.',
+        'Imposto',
+        'Lucro',
+        'Margem',
+        'Alerta'
+      ];
+      const tableRows = rows.map((r) => {
+        const safeKey = String(r.key || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const costCell = state.profitGroup === 'sku'
+          ? `<input class="control" type="number" min="0" step="0.01" value="${Number(state.costBySku[r.key] || 0).toFixed(2)}" style="width:110px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onfocus="event.stopPropagation()" onchange="__marketplaceApp.setSkuCost('${safeKey}', this.value)">`
+          : right(fmtMoney(r.avgSkuCost));
+        const alert = r.cost === 0 && r.gross > 0
+          ? '<span class="badge info">Custo nao informado</span>'
+          : r.loss ? '<span class="badge bad">Prejuizo</span>' : r.margin < 0.08 ? '<span class="badge warn">Margem baixa</span>' : '<span class="badge ok">Saudavel</span>';
+        const row = [
+          `<strong>${esc(r.key)}</strong>${state.profitGroup === 'mlb' ? `<span class="subline">${fmtNum(r.skus.size)} SKU(s)</span>` : ''}`,
+          esc(r.title || '-'),
+          right(fmtNum(r.units)),
+          right(fmtMoney(r.gross)),
+          right(fmtMoney(r.netBeforeCostTax)),
+          costCell,
+          right(fmtMoney(r.tax)),
+          right(`<span class="${r.profit >= 0 ? 'pos' : 'neg'}">${fmtMoney(r.profit)}</span>`),
+          right(`<span class="${r.margin >= 0 ? 'pos' : 'neg'}">${fmtPct(r.margin)}</span>`),
+          alert
+        ];
+        row._rowClass = `row-clickable ${state.selectedProfitKey === r.key ? 'active' : ''}`;
+        row._rowAttrs = `onclick="__marketplaceApp.selectProfitKey('${safeKey}')"`;
+        return row;
+      });
+      $('profitTable').innerHTML = tableWrap(headers, tableRows, 'profit_table');
+      renderProfitDetail(salesScope);
+    }
+
+    function renderProfitDetail(salesScope) {
+      const target = $('profitDetail');
+      if (!target) return;
+      if (!state.selectedProfitKey) {
+        target.innerHTML = '<div class="notice">Clique em um SKU/MLB para abrir o lucro por venda.</div>';
+        return;
+      }
+      const taxRate = Math.max(0, Number(state.profitTaxRate || 0)) / 100;
+      const salesList = Array.isArray(salesScope) ? salesScope : profitWindowedSales();
+      const returnedSaleNumbers = new Set(salesList.filter((s) => isReturnEvent(s)).map((s) => s.saleNumber || s.dedupeKey));
+      const filtered = salesList.filter((s) =>
+        s.sku &&
+        s.lineType === 'item_sale' &&
+        !returnedSaleNumbers.has(s.saleNumber || s.dedupeKey) &&
+        s.eventClass !== 'cancelamento' &&
+        (state.profitGroup === 'sku' ? s.sku === state.selectedProfitKey : (s.mlb || '(sem MLB)') === state.selectedProfitKey)
+      );
+      if (!filtered.length) {
+        target.innerHTML = '<div class="notice">Sem vendas validas para o item selecionado neste periodo.</div>';
+        return;
+      }
+      const rows = filtered.slice().sort((a, b) => (b.date || 0) - (a.date || 0)).map((s) => {
+        const gross = Number(s.productRevenue || 0);
+        const base = gross + Number(s.shippingRevenue || 0) + Number(s.sellingFee || 0) + Number(s.shippingFee || 0) + Number(s.discounts || 0) + Number(s.refunds || 0);
+        const unitCost = Number(state.costBySku[s.sku] || 0);
+        const cost = Number(s.units || 0) * unitCost;
+        const tax = gross * taxRate;
+        const profit = base - cost - tax;
+        const margin = gross ? profit / gross : 0;
+        return [
+          esc(s.saleNumber || '-'),
+          s.date ? s.date.toLocaleDateString('pt-BR') : '-',
+          esc(s.sku || '-'),
+          esc(s.mlb || '-'),
+          right(fmtNum(s.units || 0)),
+          right(fmtMoney(gross)),
+          right(fmtMoney(base)),
+          right(fmtMoney(cost)),
+          right(fmtMoney(tax)),
+          right(`<span class="${profit >= 0 ? 'pos' : 'neg'}">${fmtMoney(profit)}</span>`),
+          right(`<span class="${margin >= 0 ? 'pos' : 'neg'}">${fmtPct(margin)}</span>`)
+        ];
+      });
+      target.innerHTML = `<div class="section"><div class="section-head"><h2 class="section-title">Lucro por venda: ${esc(state.selectedProfitKey)}</h2></div><div class="section-body">${tableWrap(['Venda','Data','SKU','MLB','Unid.','Receita','Base liquida','Custo','Imposto','Lucro','Margem'], rows, 'profit_detail')}</div></div>`;
+    }
+
+    function renderMonthly() {
+      let rows = monthlyRows().filter(rowMatchesGlobalSearch).slice(0, 300);
+      const months = monthlyMonthKeys();
+      const headers = ['Produto','Media', ...months.map((m) => formatMonthLong(m))];
+      const body = rows.map((r) => {
+        const activeClass = state.selectedMonthlySku === r.key ? 'active' : '';
+        const cmp = compareByPeriod(r);
+        const cmpPct = cmp.prev === 0 ? (cmp.current > 0 ? '+100,0%' : '0,0%') : fmtPct(cmp.change);
+        const cmpVal = state.monthlyMetric === 'revenue' ? fmtMoney(cmp.delta) : fmtNum(cmp.delta);
+        const cmpTone = cmp.change > 0 ? 'pos' : cmp.change < 0 ? 'neg' : '';
+        const cells = [`<strong>${esc(r.key)}</strong><span class="subline">${esc(r.title || '-')}</span><span class="subline">Media mensal: ${fmtNum(avgMonthly(r).toFixed(1))} un | Preco atual: ${fmtMoney(r.currentPrice)} | Preco medio: ${fmtMoney(r.avgPrice)} | <span class="${cmpTone}">${cmpPct}</span> (${cmpVal}) vs periodo anterior</span>`, fmtNum(avgByMode(r).toFixed(1))];
+        let prev = null;
+        months.forEach((m) => {
+          const val = r.months[m]?.[state.monthlyMetric] || 0;
+          let cls = '';
+          if (prev && prev > 0) {
+            const ch = (val - prev) / prev;
+            if (ch < -0.30) cls = 'critical';
+            else if (ch < -0.05) cls = 'neg';
+            else if (ch > 0.30) cls = 'up-strong';
+            else if (ch > 0.05) cls = 'pos';
+          }
+          cells.push(`<span class="${cls}">${state.monthlyMetric === 'revenue' ? fmtMoney(val) : fmtNum(val)}</span>`);
+          prev = val;
+        });
+        const safeKey = String(r.key || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        cells._rowClass = `row-clickable ${activeClass}`;
+        cells._rowAttrs = `onclick="__marketplaceApp.selectMonthlySku('${safeKey}')"`;
+        return cells;
+      });
+      renderMonthlySkuChart(rows, months);
+      renderMonthlyAlerts(rows, months);
+      $('monthlyTable').innerHTML = tableWrap(headers, body, 'monthly');
+    }
+
+    function renderMonthlyAlerts(rows, months) {
+      const target = $('monthlyAlerts');
+      if (!target) return;
+      if (!rows.length || months.length < 2) {
+        target.innerHTML = '<div class="notice">Alertas mensais: dados insuficientes para comparacao.</div>';
+        return;
+      }
+      const riskAlerts = [];
+      const opportunityAlerts = [];
+      const monthTd = state.reportWindow === 'monthtd' ? monthToDateWindow() : null;
+      rows.forEach((r) => {
+        const cmp = compareByPeriod(r);
+        const ch1 = cmp.change || 0;
+        const keys = Object.keys(r.months || {}).filter((m) => m !== 'sem mes').sort();
+        const vals = keys.map((k) => r.months[k]?.[state.monthlyMetric] || 0);
+        const prevBase = vals.length >= 3 ? vals[vals.length - 3] : 0;
+        const prevPrevBase = vals.length >= 4 ? vals[vals.length - 4] : 0;
+        const ch2 = prevBase ? ((cmp.prev - prevBase) / prevBase) : 0;
+        const ch3 = prevPrevBase ? ((prevBase - prevPrevBase) / prevPrevBase) : 0;
+
+        const lastMonth = monthTd ? `${formatMonthLong(monthTd.currentMonthKey)} (1-${monthTd.currentEnd.getDate()})` : formatMonthLong(keys[keys.length - 1]);
+        const prevMonth = monthTd ? `${formatMonthLong(monthTd.previousMonthKey)} (1-${monthTd.previousEnd.getDate()})` : formatMonthLong(keys[keys.length - 2]);
+        const unitLabel = state.monthlyMetric === 'revenue' ? 'faturamento' : 'vendas';
+
+        if (ch1 <= -0.10) {
+          riskAlerts.push([`<strong>${esc(r.key)}</strong>`, `<span class="neg">${fmtPct(ch1)}</span>`, `${unitLabel} menor que ${prevMonth} em ${lastMonth}`]);
+        }
+        if (vals.length >= 3 && ch1 <= -0.10 && ch2 <= -0.10) {
+          riskAlerts.push([`<strong>${esc(r.key)}</strong>`, '<span class="badge warn">2 meses</span>', `queda de ${unitLabel} por 2 meses seguidos`]);
+        }
+        if (vals.length >= 4 && ch1 <= -0.10 && ch2 <= -0.10 && ch3 <= -0.10) {
+          riskAlerts.push([`<strong>${esc(r.key)}</strong>`, '<span class="badge bad">3 meses</span>', `queda de ${unitLabel} pelo 3º mes seguido`]);
+        }
+        if (ch1 >= 0.10) {
+          opportunityAlerts.push([`<strong>${esc(r.key)}</strong>`, `<span class="pos">${fmtPct(ch1)}</span>`, `aumento acima de 10% em ${lastMonth}`]);
+        }
+      });
+      const tab = state.monthlyAlertTab === 'opportunity' ? 'opportunity' : 'risk';
+      const activeRows = (tab === 'risk' ? riskAlerts : opportunityAlerts).slice(0, 80);
+      const tabBar = `<div class="seg" style="margin:0 0 8px 0">
+        <button class="${tab === 'risk' ? 'active' : ''}" onclick="__marketplaceApp.setMonthlyAlertTab('risk')">Risco (quedas)</button>
+        <button class="${tab === 'opportunity' ? 'active' : ''}" onclick="__marketplaceApp.setMonthlyAlertTab('opportunity')">Oportunidade (aumentos)</button>
+      </div>`;
+      if (!riskAlerts.length && !opportunityAlerts.length) {
+        target.innerHTML = tabBar + '<div class="notice">Alertas mensais: nenhum item com variacao acima de 10% no ultimo fechamento.</div>';
+        return;
+      }
+      if (!activeRows.length) {
+        target.innerHTML = tabBar + '<div class="notice">Sem itens nesta aba no fechamento atual.</div>';
+        return;
+      }
+      target.innerHTML = tabBar + tableWrap(['Item','Variacao','Alerta'], activeRows, 'monthly_alerts_' + tab);
+    }
+
+    function renderMonthlySkuChart(rows, months) {
+      const target = $('monthlySkuChart');
+      if (!target) return;
+      if (!rows.length || !months.length) { target.innerHTML = '<div class="empty">Sem dados para grafico mensal.</div>'; return; }
+      const selected = rows.find((r) => r.key === state.selectedMonthlySku) || null;
+      let vals;
+      let revenueVals;
+      let title;
+      const period = comparisonPeriod(months);
+      const displayMonths = period.keys.length ? period.keys : months;
+      if (selected) {
+        vals = displayMonths.map((m) => selected.months[m]?.[state.monthlyMetric] || 0);
+        revenueVals = displayMonths.map((m) => selected.months[m]?.revenue || 0);
+        title = `<strong>${esc(selected.key)}</strong> <span class="muted">| ${state.monthlyMetric === 'revenue' ? 'Faturamento' : 'Unidades'} por mes</span>`;
+      } else {
+        vals = displayMonths.map((m) => rows.reduce((a, r) => a + (r.months[m]?.[state.monthlyMetric] || 0), 0));
+        revenueVals = displayMonths.map((m) => rows.reduce((a, r) => a + (r.months[m]?.revenue || 0), 0));
+        title = `<strong>Conta total</strong> <span class="muted">| ${state.monthlyMetric === 'revenue' ? 'Faturamento' : 'Unidades'} por mes</span>`;
+      }
+      const compareNote = period.prevCount && period.currCount ? `<div class="monthly-pie-note"><strong>Comparativo:</strong> ${period.labelPrev} vs ${period.labelCurr}</div>` : '';
+      const valueFmt = (v) => state.monthlyMetric === 'revenue' ? fmtMoney(v) : fmtNum(v);
+      const revFmt = (v) => fmtMoney(v);
+      const maxRev = Math.max(...revenueVals, 0);
+      const minRev = Math.min(...revenueVals, maxRev);
+      const maxRevIdx = revenueVals.findIndex((v) => v === maxRev);
+      const minRevIdx = revenueVals.findIndex((v) => v === minRev);
+
+      const max = Math.max(...vals, 1);
+      const plotW = Math.max(1220, displayMonths.length * 220);
+      const innerW = plotW - 140;
+      const slotW = innerW / Math.max(1, displayMonths.length);
+      const barW = Math.max(34, Math.min(72, slotW * 0.62));
+      const xBar = (i) => 70 + i * slotW + (slotW - barW) / 2;
+      const y = (v) => 300 - (v / max) * 220;
+      const h = (v) => Math.max(2, (v / max) * 220);
+      const bars = vals.map((v, i) => `<rect x="${xBar(i)}" y="${y(v)}" width="${barW}" height="${h(v)}" rx="6" fill="#1f66d1"><title>${formatMonthLong(months[i])}: ${valueFmt(v)}</title></rect>`).join('');
+      const barValues = vals.map((v, i) => {
+        const lx = xBar(i) + barW / 2;
+        return `<text x="${lx}" y="${y(v) - 8}" font-size="13" font-weight="700" text-anchor="middle" fill="#1f2937">${revFmt(revenueVals[i])}</text>`;
+      }).join('');
+      const labels = displayMonths.map((m, i) => {
+        const text = formatMonthLong(m).split(' ');
+        const year = text.pop();
+        const month = text.join(' ');
+        const lx = xBar(i) + barW / 2;
+        return `<text x="${lx}" y="334" font-size="14" text-anchor="middle" fill="#66758a"><tspan x="${lx}" dy="0">${month}</tspan><tspan x="${lx}" dy="16">${year}</tspan></text>`;
+      }).join('');
+      const splitLine = period.prevCount && period.currCount ? `<line x1="${70 + period.prevCount * slotW}" y1="52" x2="${70 + period.prevCount * slotW}" y2="320" stroke="#94a3b8" stroke-dasharray="6 4"/>` : '';
+      const splitText = period.prevCount && period.currCount ? `<text x="${70 + (period.prevCount * slotW) / 2}" y="44" font-size="12" text-anchor="middle" fill="#64748b">${period.labelPrev}</text><text x="${70 + period.prevCount * slotW + (period.currCount * slotW) / 2}" y="44" font-size="12" text-anchor="middle" fill="#1f66d1">${period.labelCurr}</text>` : '';
+      const grid = [0,1,2,3].map((n) => {
+        const gy = 80 + n * 72;
+        const gv = max * (1 - n / 3);
+        return `<line x1="60" y1="${gy}" x2="${plotW - 40}" y2="${gy}" stroke="#e2e8f0" stroke-dasharray="4 4"/><text x="54" y="${gy + 4}" font-size="13" text-anchor="end" fill="#66758a">${valueFmt(gv)}</text>`;
+      }).join('');
+
+      const total = vals.reduce((a, b) => a + b, 0);
+      const colors = ['#1f66d1', '#0f8b8d', '#f59e0b', '#ef4444', '#8b5cf6', '#22c55e', '#14b8a6', '#f97316', '#e11d48', '#64748b', '#10b981', '#3b82f6'];
+      if (state.monthlyPieHover === undefined) state.monthlyPieHover = -1;
+      if (state.monthlyPieHover >= vals.length) state.monthlyPieHover = -1;
+      const pieHover = state.monthlyPieHover;
+      const cx = 140, cy = 140, r = 92;
+      let angle = -Math.PI / 2;
+      const piePaths = vals.map((v, i) => {
+        const frac = total ? v / total : 0;
+        const a0 = angle;
+        const a1 = angle + frac * Math.PI * 2;
+        angle = a1;
+        const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+        const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+        const large = (a1 - a0) > Math.PI ? 1 : 0;
+        const mid = (a0 + a1) / 2;
+        const dx = pieHover === i ? Math.cos(mid) * 12 : 0;
+        const dy = pieHover === i ? Math.sin(mid) * 12 : 0;
+        const d = `M ${cx + dx} ${cy + dy} L ${x0 + dx} ${y0 + dy} A ${r} ${r} 0 ${large} 1 ${x1 + dx} ${y1 + dy} Z`;
+        return `<path d="${d}" fill="${colors[i % colors.length]}" stroke="#fff" stroke-width="2" onmouseenter="__marketplaceApp.monthlyPieHover(${i})" onmouseleave="__marketplaceApp.monthlyPieHover(-1)"><title>${formatMonthLong(displayMonths[i])}: ${valueFmt(v)}</title></path>`;
+      }).join('');
+      const idx = pieHover >= 0 ? pieHover : vals.findIndex((v) => v === Math.max(...vals));
+      const infoIdx = idx >= 0 ? idx : 0;
+      const infoPct = total ? ((vals[infoIdx] / total) * 100) : 0;
+      const info = `<div><strong>${formatMonthLong(displayMonths[infoIdx])}</strong><div class="monthly-pie-note">${state.monthlyMetric === 'revenue' ? 'Faturamento' : 'Unidades'}: ${valueFmt(vals[infoIdx])}</div><div class="monthly-pie-note">Fatia: ${fmtPct(infoPct / 100)}</div></div>`;
+      const pieLegend = displayMonths.map((m, i) => `<div class="monthly-pie-item"><span class="monthly-pie-dot" style="background:${colors[i % colors.length]}"></span><span>${formatMonthLong(m)}</span><span>${valueFmt(vals[i])}</span></div>`).join('');
+      const legendClass = months.length >= 8 ? 'monthly-pie-legend cols-2' : 'monthly-pie-legend';
+      const extremes = `<div class="monthly-pie-note"><strong>Maior faturamento:</strong> ${formatMonthLong(months[maxRevIdx])} (${revFmt(maxRev)})</div><div class="monthly-pie-note"><strong>Menor faturamento:</strong> ${formatMonthLong(months[minRevIdx])} (${revFmt(minRev)})</div>`;
+
+      target.innerHTML = `<div class="monthly-chart-box">${title}${compareNote}${extremes}<div class="monthly-chart-layout"><div class="monthly-chart-scroll"><svg viewBox="0 0 ${plotW} 420" aria-label="Evolucao mensal em colunas">${grid}${splitLine}${splitText}${bars}${barValues}<line x1="60" y1="300" x2="${plotW - 40}" y2="300" stroke="#d9e1ea"/>${labels}</svg></div><div class="monthly-pie-box"><div style="font-weight:800;margin-bottom:8px">Fatia por mes</div><svg viewBox="0 0 280 280" aria-label="Fatia por mes">${piePaths}<circle cx="${cx}" cy="${cy}" r="44" fill="#fff"/></svg>${info}<div class="${legendClass}">${pieLegend}</div></div></div></div>`;
+    }
+
+    function comparisonPeriod(months) {
+      const keys = (months || []).slice().sort();
+      const span = periodSize();
+      if (!keys.length) return { keys: [], prevCount: 0, currCount: 0, labelPrev: '', labelCurr: '' };
+      if (state.reportWindow === 'monthtd') {
+        const wnd = monthToDateWindow();
+        return {
+          keys: [wnd.previousMonthKey, wnd.currentMonthKey].filter(Boolean),
+          prevCount: 1,
+          currCount: 1,
+          labelPrev: `${formatMonthLong(wnd.previousMonthKey)} (1 ao dia ${wnd.previousEnd.getDate()})`,
+          labelCurr: `${formatMonthLong(wnd.currentMonthKey)} (1 ao dia ${wnd.currentEnd.getDate()})`
+        };
+      }
+      if (state.avgMode === 'total') {
+        return { keys, prevCount: 0, currCount: keys.length, labelPrev: '', labelCurr: 'Periodo total' };
+      }
+      const curr = keys.slice(-span);
+      const prev = keys.slice(Math.max(0, keys.length - span * 2), Math.max(0, keys.length - span));
+      const labelPrev = prev.length ? `Anterior (${prev.length}m)` : '';
+      const labelCurr = `Atual (${curr.length}m)`;
+      return { keys: [...prev, ...curr], prevCount: prev.length, currCount: curr.length, labelPrev, labelCurr };
+    }
+
+    function periodSize() {
+      if (state.avgMode === 'quarter') return 3;
+      if (state.avgMode === 'semester') return 6;
+      if (state.avgMode === 'annual') return 12;
+      if (state.avgMode === 'total') return 999;
+      return 1;
+    }
+
+    function compareByPeriod(r) {
+      if (state.reportWindow === 'monthtd') {
+        const wnd = monthToDateWindow();
+        const current = r.months?.[wnd.currentMonthKey]?.[state.monthlyMetric] || 0;
+        const prev = r.months?.[wnd.previousMonthKey]?.[state.monthlyMetric] || 0;
+        const delta = current - prev;
+        const change = prev ? delta / prev : (current > 0 ? 1 : 0);
+        return { current, prev, delta, change };
+      }
+      const keys = Object.keys(r.months || {}).filter((m) => m !== 'sem mes').sort();
+      if (!keys.length) return { current: 0, prev: 0, delta: 0, change: 0 };
+      const span = periodSize();
+      const take = Math.min(span, keys.length);
+      const currentKeys = keys.slice(-take);
+      const prevKeys = keys.slice(Math.max(0, keys.length - take * 2), Math.max(0, keys.length - take));
+      const sumFor = (arr) => arr.reduce((a, k) => a + (r.months[k]?.[state.monthlyMetric] || 0), 0);
+      const current = sumFor(currentKeys);
+      const prev = sumFor(prevKeys);
+      const delta = current - prev;
+      const change = prev ? delta / prev : (current > 0 ? 1 : 0);
+      return { current, prev, delta, change };
+    }
+
+    function formatMonthLong(key) {
+      if (!key || !/^\d{4}-\d{2}$/.test(key)) return key || '';
+      const [y, m] = key.split('-').map(Number);
+      const names = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+      return `${names[(m || 1) - 1] || key} ${y}`;
+    }
+
+    function renderNoSales() {
+      const today = maxDate() || new Date();
+      const rejectedMap = state.noSalesRejected || {};
+      const historyRows = aggregateFromSales(state.sales, state.noSalesGroup, [])
+        .sort((a, b) => (b.currentDate || 0) - (a.currentDate || 0));
+      let rows = historyRows
+        .filter(rowMatchesGlobalSearch)
+        .filter((r) => r.currentDate)
+        .map((r) => ({ ...r, noSaleDays: Math.floor((today - r.currentDate) / 86400000) }));
+      if (state.noSalesMode === 'rejected') {
+        rows = rows.filter((r) => rejectedMap[r.key]);
+        $('noSalesSummary').innerHTML = '<div class="notice">Lista de produtos retirados da leitura operacional. Use reativar se o item voltar a fazer sentido comercialmente.</div>';
+        $('noSalesTable').innerHTML = tableWrap(['Codigo','Titulo','Ultima venda','Dias sem venda','Motivo','Acao'], rows.map((r) => [
+          esc(r.key),
+          esc(r.title || '-'),
+          r.currentDate.toLocaleDateString('pt-BR'),
+          right(r.noSaleDays),
+          esc(rejectedMap[r.key]?.reason || 'Fora de linha'),
+          `<button class="btn" onclick="__marketplaceApp.restoreNoSalesItem('${String(r.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')">Reativar</button>`
+        ]), 'nosales_rejected');
+        return;
+      }
+      const threshold = state.noSalesDays === 0 ? 0 : state.noSalesDays;
+      rows = rows.filter((r) => !rejectedMap[r.key] && r.noSaleDays >= threshold);
+      const totalHidden = historyRows.filter(rowMatchesGlobalSearch).filter((r) => rejectedMap[r.key]).length;
+      const thresholdLabel = state.reportWindow === 'total'
+        ? 'historico total'
+        : state.reportWindow === 'quarter'
+          ? '90 dias'
+          : state.reportWindow === 'custom'
+            ? `${fmtNum(state.noSalesDays)} dias personalizados`
+            : `${fmtNum(state.noSalesDays)} dias`;
+      $('noSalesSummary').innerHTML = `<div class="notice">Leitura operacional com base em <strong>${thresholdLabel}</strong> sem venda. Rejeitados manualmente: <strong>${fmtNum(totalHidden)}</strong>.</div>`;
+      $('noSalesTable').innerHTML = tableWrap(['Codigo','Titulo','Ultima venda','Dias sem venda','Media mensal','Diagnostico','Acao'], rows.map((r) => [
+        esc(r.key),
+        esc(r.title || '-'),
+        r.currentDate.toLocaleDateString('pt-BR'),
+        right(r.noSaleDays),
+        right(fmtNum(avgMonthly(r).toFixed(1))),
+        `Produto sem venda ha ${r.noSaleDays} dias. Verificar preco, promocao, estoque, catalogo ou anuncio.`,
+        `<button class="btn" onclick="__marketplaceApp.rejectNoSalesItem('${String(r.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')">Rejeitar SKU</button>`
+      ]), 'nosales');
+    }
+
+    function renderIssues() {
+      const rows = aggregate('sku').filter(rowMatchesGlobalSearch).filter((r) => r.returnRate > .01 || r.complaintRate > .01 || r.cancellations > 0);
+      $('issuesTable').innerHTML = tableWrap(['SKU','Vendas','Devolucoes','Reclamacoes','Cancel.','Taxa dev.','Taxa recl.','Diagnostico'], rows.map((r) => [
+        esc(r.key), right(fmtNum(r.sales.size)), right(fmtNum(r.returns)), right(fmtNum(r.complaints)), right(fmtNum(r.cancellations)), rateCell(r.returnRate), rateCell(r.complaintRate), esc(r.diagnosis)
+      ]), 'issues');
+    }
+
+    function renderPromo() {
+      const rows = aggregate('sku').filter(rowMatchesGlobalSearch).filter((r) => r.promo || (r.avgPrice && Math.abs(r.currentPrice / r.avgPrice - 1) > .05));
+      $('promoTable').innerHTML = tableWrap(['SKU','Unid.','Preco atual','Preco medio','Variacao','Indicios promo','Diagnostico'], rows.map((r) => {
+        const diff = r.priceDiff || 0;
+        return [esc(r.key), right(fmtNum(r.units)), right(fmtMoney(r.currentPrice)), right(fmtMoney(r.avgPrice)), `<span class="${diff >= 0 ? 'pos':'neg'}">${fmtPct(diff)}</span>`, right(fmtNum(r.promo)), esc(r.diagnosis)];
+      }), 'promo');
+    }
+
+    async function addEvent() {
+      const ev = { id: crypto.randomUUID(), scope: $('eventScope').value, code: normKey($('eventCode').value), date: $('eventDate').value, type: $('eventType').value, description: norm($('eventDescription').value), createdAt: new Date().toISOString() };
+      if (!ev.code || !ev.date) return alert('Informe codigo e data.');
+      await putMany('events', [ev]);
+      state.events = await getAll('events');
+      await registerHumanDecision(makeHumanDecisionPayload('MANUAL_EVENT', {
+        code: ev.code,
+        description: `Evento manual ${ev.type} registrado para ${ev.code} em ${ev.date}. ${ev.description}`.trim(),
+        extra: ev
+      }));
+      $('eventCode').value = ''; $('eventDescription').value = '';
+      renderEvents();
+    }
+
+    function renderEvents() {
+      $('eventsTable').innerHTML = state.events.length ? tableWrap(['Data','Escopo','Codigo','Tipo','Descricao'], state.events.slice().reverse().map((e) => [e.date, e.scope.toUpperCase(), esc(e.code), esc(e.type), esc(e.description)]), 'events') : '<div class="empty">Nenhum evento manual registrado.</div>';
+    }
+
+    function avgMonthly(r) {
+      const months = Object.keys(r.months || {}).filter((m) => m !== 'sem mes').length || 1;
+      return (r.units || 0) / months;
+    }
+    function avgByMode(r) {
+      const keys = Object.keys(r.months || {}).sort();
+      const take = state.avgMode === 'quarter' ? 3 : state.avgMode === 'semester' ? 6 : state.avgMode === 'annual' ? 12 : keys.length;
+      const vals = keys.slice(-take).map((k) => r.months[k]?.[state.monthlyMetric] || 0);
+      return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : 0;
+    }
+    function maxDate() {
+      const dates = state.sales.map((s) => s.date).filter(Boolean).sort((a,b) => a-b);
+      return dates.at(-1) || null;
+    }
+
+    function table(headers, rows, tableKey = '') {
+      const sorted = sortTableRows(headers, rows, tableKey);
+      const sortCfg = state.tableSort[tableKey] || { index: -1, dir: 'asc' };
+      const head = headers.map((h, i) => {
+        const mark = sortCfg.index === i ? (sortCfg.dir === 'asc' ? ' ▲' : ' ▼') : '';
+        if (!tableKey) return `<th>${h}${mark}</th>`;
+        return `<th onclick="__marketplaceApp.sortTable('${tableKey}', ${i})" style="cursor:pointer">${h}${mark}</th>`;
+      }).join('');
+      return `<table><thead><tr>${head}</tr></thead><tbody>${sorted.map((r) => `<tr class="${r._rowClass || ''}" ${r._rowAttrs || ''}>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    }
+    function tableWrap(headers, rows, tableKey = '') {
+      if (!rows.length) return '<div class="empty">Sem dados para esta visao.</div>';
+      return `<div class="table-wrap-shell"><div class="table-scroll-top is-hidden"><div class="table-scroll-spacer"></div></div><div class="table-wrap">${table(headers, rows, tableKey)}</div></div>`;
+    }
+    function enhanceTableScrollbars() {
+      document.querySelectorAll('.table-wrap-shell').forEach((shell) => {
+        const top = shell.querySelector('.table-scroll-top');
+        const spacer = shell.querySelector('.table-scroll-spacer');
+        const body = shell.querySelector('.table-wrap');
+        const tableEl = body?.querySelector('table');
+        if (!top || !spacer || !body || !tableEl) return;
+        spacer.style.width = `${tableEl.scrollWidth}px`;
+        const needX = tableEl.scrollWidth > body.clientWidth + 2;
+        top.classList.toggle('is-hidden', !needX);
+        if (body.dataset.syncBound === '1') return;
+        let syncingTop = false;
+        let syncingBody = false;
+        top.addEventListener('scroll', () => {
+          if (syncingBody) return;
+          syncingTop = true;
+          body.scrollLeft = top.scrollLeft;
+          syncingTop = false;
+        });
+        body.addEventListener('scroll', () => {
+          if (syncingTop) return;
+          syncingBody = true;
+          top.scrollLeft = body.scrollLeft;
+          syncingBody = false;
+        });
+        body.dataset.syncBound = '1';
+      });
+    }
+    function sortCellValue(html) {
+      const txt = String(html ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      const num = Number(txt.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
+      return Number.isFinite(num) && txt.match(/\d/) ? num : txt.toLowerCase();
+    }
+    function sortTableRows(headers, rows, tableKey) {
+      if (!tableKey) return rows;
+      if (tableKey === 'dashboard_sku') return rows;
+      const cfg = state.tableSort[tableKey];
+      if (!cfg || cfg.index < 0) return rows;
+      const idx = cfg.index;
+      const dir = cfg.dir === 'desc' ? -1 : 1;
+      return rows.slice().sort((a, b) => {
+        const av = sortCellValue(a[idx]);
+        const bv = sortCellValue(b[idx]);
+        if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+        return String(av).localeCompare(String(bv), 'pt-BR') * dir;
+      });
+    }
+    function right(v) { return `<span class="right nowrap">${v}</span>`; }
+    function rateCell(v) { return `<span class="badge ${v > .01 ? 'bad':'ok'}">${fmtPct(v)}</span>`; }
+    function trendCell(v) {
+      if (!v) return '<span class="badge ok">0,0%</span>';
+      const cls = v < -0.30 ? 'bad' : v < -0.05 ? 'warn' : v > 0.05 ? 'ok' : 'info';
+      return `<span class="badge ${cls}">${fmtPct(v)}</span>`;
+    }
+    function badge(text) {
+      const t = String(text || '');
+      const cls = t.includes('Erro') || t.includes('repetido') ? 'bad' : t.includes('Sem') ? 'warn' : 'ok';
+      return `<span class="badge ${cls}">${esc(t)}</span>`;
+    }
+
+    function exportCurrentCsv() {
+      const active = document.querySelector('.view.active')?.id || 'view-analysis';
+      if (active === 'view-import') return exportImportsCsv();
+      if (active === 'view-profit') return exportProfitCsv();
+      if (active === 'view-monthly') return exportMonthlyCsv();
+      if (active === 'view-nosales') return exportNoSalesCsv();
+      if (active === 'view-issues') return exportIssuesCsv();
+      if (active === 'view-promo') return exportPromoCsv();
+      return exportAnalysisCsv();
+    }
+
+    function exportAnalysisCsv() {
+      const rows = aggregate(state.group).filter(rowMatchesGlobalSearch);
+      const csvRows = [['codigo','sku','mlb','titulo','unidades','receita','preco_atual','preco_medio','variacao_preco','queda_recente','taxa_devolucao','taxa_reclamacao','severidade','causa_provavel','proxima_acao','diagnostico']];
+      rows.forEach((r) => csvRows.push(analysisCsvRow(r)));
+      downloadCsv(`analise_${state.group}.csv`, csvRows);
+    }
+
+    function analysisCsvRow(r) {
+      return [r.key, r.sku || '', r.mlb || [...(r.mlbs || [])].join(' '), r.title || '', r.units, r.revenue.toFixed(2), r.currentPrice.toFixed(2), r.avgPrice.toFixed(2), (r.priceDiff || 0).toFixed(4), (r.recentTrend?.change || 0).toFixed(4), r.returnRate.toFixed(4), r.complaintRate.toFixed(4), r.severity || '', r.primaryCause || '', r.nextAction || '', r.diagnosis];
+    }
+
+    function exportImportsCsv() {
+      const rows = [['arquivo','periodo_inicio','periodo_fim','linhas','novas','duplicadas','eventos','status']];
+      state.imports.forEach((i) => rows.push([i.fileName, i.periodStart || '', i.periodEnd || '', i.rows || 0, i.newRows || 0, i.duplicateRows || 0, i.eventRows || 0, i.status || '']));
+      downloadCsv('importacoes_marketplace.csv', rows);
+    }
+
+    function exportMonthlyCsv() {
+      const months = monthlyMonthKeys();
+      const rows = [['codigo','media',...months]];
+      monthlyRows().filter(rowMatchesGlobalSearch).forEach((r) => rows.push([r.key, avgByMode(r).toFixed(2), ...months.map((m) => (r.months[m]?.[state.monthlyMetric] || 0).toFixed(state.monthlyMetric === 'revenue' ? 2 : 0))]));
+      downloadCsv(`evolucao_mensal_${state.monthlyMetric}.csv`, rows);
+    }
+
+    function exportProfitCsv() {
+      const rows = [['grupo','codigo','titulo','unidades','receita_produto','base_liquida','custo_total','imposto','lucro','margem','alerta']];
+      profitRows(state.profitGroup, profitWindowedSales()).filter(rowMatchesGlobalSearch).forEach((r) => rows.push([
+        state.profitGroup,
+        r.key,
+        r.title || '',
+        r.units || 0,
+        Number(r.gross || 0).toFixed(2),
+        Number(r.netBeforeCostTax || 0).toFixed(2),
+        Number(r.cost || 0).toFixed(2),
+        Number(r.tax || 0).toFixed(2),
+        Number(r.profit || 0).toFixed(2),
+        Number(r.margin || 0).toFixed(4),
+        r.loss ? 'prejuizo' : (r.margin < 0.08 ? 'margem baixa' : 'saudavel')
+      ]));
+      downloadCsv(`lucro_prejuizo_${state.profitGroup}.csv`, rows);
+    }
+
+    function exportNoSalesCsv() {
+      const today = maxDate() || new Date();
+      const rows = [['codigo','titulo','ultima_venda','dias_sem_venda','media_mensal','diagnostico']];
+      const rejectedMap = state.noSalesRejected || {};
+      aggregate(state.noSalesGroup)
+        .filter(rowMatchesGlobalSearch)
+        .filter((r) => r.currentDate)
+        .forEach((r) => {
+          const days = Math.floor((today - r.currentDate) / 86400000);
+          if (state.noSalesMode === 'rejected') {
+            if (!rejectedMap[r.key]) return;
+          } else {
+            if (rejectedMap[r.key]) return;
+            if (days < state.noSalesDays) return;
+            if (state.noSalesDays !== 0 && days > 60) return;
+          }
+          rows.push([r.key, r.title || '', r.currentDate.toISOString().slice(0,10), days, avgMonthly(r).toFixed(2), `Produto sem venda ha ${days} dias. Verificar preco, promocao, estoque, catalogo ou anuncio.`]);
+        });
+      downloadCsv(state.noSalesMode === 'rejected' ? 'skus_rejeitados_sem_venda.csv' : `sem_vendas_${state.noSalesDays === 0 ? 'total_operacional' : state.noSalesDays + '_dias'}.csv`, rows);
+    }
+
+    function exportIssuesCsv() {
+      const rows = [['sku','vendas','devolucoes','reclamacoes','cancelamentos','taxa_devolucao','taxa_reclamacao','diagnostico']];
+      aggregate('sku').filter(rowMatchesGlobalSearch).filter((r) => r.returnRate > .01 || r.complaintRate > .01 || r.cancellations > 0).forEach((r) => rows.push([r.key, r.sales.size, r.returns, r.complaints, r.cancellations, r.returnRate.toFixed(4), r.complaintRate.toFixed(4), r.diagnosis]));
+      downloadCsv('devolucoes_reclamacoes.csv', rows);
+    }
+
+    function exportPromoCsv() {
+      const rows = [['sku','unidades','preco_atual','preco_medio','variacao_preco','indicios_promocao','participacao_promocao','diagnostico']];
+      aggregate('sku').filter(rowMatchesGlobalSearch).filter((r) => r.promo || (r.avgPrice && Math.abs(r.currentPrice / r.avgPrice - 1) > .05)).forEach((r) => {
+        const diff = r.avgPrice ? (r.currentPrice - r.avgPrice) / r.avgPrice : 0;
+        rows.push([r.key, r.units, r.currentPrice.toFixed(2), r.avgPrice.toFixed(2), diff.toFixed(4), r.promo, r.promoShare.toFixed(4), r.diagnosis]);
+      });
+      downloadCsv('promocoes_preco.csv', rows);
+    }
+
+    function exportPlanJournalCsv() {
+      const rows = [['data','reavaliar_em','sku','produto','sugerido','feito','status','resultado','cliente']];
+      (state.planJournal || []).slice().sort((a, b) => String(a.at).localeCompare(String(b.at))).forEach((j) => {
+        rows.push([
+          j.at || '',
+          j.reviewAt || '',
+          j.code || '',
+          j.title || '',
+          j.suggested || '',
+          j.done || '',
+          j.status || '',
+          j.result || '',
+          norm($('clientName').value) || 'Cliente teste'
+        ]);
+      });
+      downloadCsv('acompanhamento_acoes.csv', rows);
+    }
+
+    function exportBackup() {
+      const payload = {
+        app: 'un-clic-inteligencia-vendas-marketplace',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        warning: 'Este backup pode conter dados reais importados pelo usuario. Nao enviar sem revisar.',
+        sales: state.sales,
+        imports: state.imports,
+        events: state.events,
+        planStatus: state.planStatus || {},
+        planJournal: state.planJournal || [],
+        costBySku: state.costBySku || {},
+        profitTaxRate: Number(state.profitTaxRate || 0),
+        profitWindow: state.profitWindow || '30d',
+        profitDateStart: state.profitDateStart || '',
+        profitDateEnd: state.profitDateEnd || '',
+        reportWindow: state.reportWindow || '30d',
+        reportDateStart: state.reportDateStart || '',
+        reportDateEnd: state.reportDateEnd || '',
+        globalSearchScope: state.globalSearchScope || 'code',
+        globalSearch: state.globalSearch || '',
+        noSalesRejected: state.noSalesRejected || {}
+      };
+      const text = JSON.stringify(payload, (key, value) => {
+        if (value instanceof Date) return value.toISOString();
+        return value;
+      }, 2);
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json;charset=utf-8' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'backup_inteligencia_marketplace_' + new Date().toISOString().slice(0,10) + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportSnapshotHtml() {
+      const payload = {
+        app: 'un-clic-inteligencia-vendas-marketplace',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        warning: 'Este HTML contem dados reais importados pelo usuario. Compartilhe apenas com pessoas autorizadas.',
+        sales: state.sales,
+        imports: state.imports,
+        events: state.events,
+        planStatus: state.planStatus || {},
+        planJournal: state.planJournal || [],
+        costBySku: state.costBySku || {},
+        profitTaxRate: Number(state.profitTaxRate || 0),
+        profitWindow: state.profitWindow || '30d',
+        profitDateStart: state.profitDateStart || '',
+        profitDateEnd: state.profitDateEnd || '',
+        reportWindow: state.reportWindow || '30d',
+        reportDateStart: state.reportDateStart || '',
+        reportDateEnd: state.reportDateEnd || '',
+        globalSearchScope: state.globalSearchScope || 'code',
+        globalSearch: state.globalSearch || '',
+        noSalesRejected: state.noSalesRejected || {}
+      };
+      const json = JSON.stringify(payload).replace(/</g, '\\u003c');
+      const loader = `<script id="snapshotPayload" type="application/json">${json}<\\/script>
+<script>
+(function () {
+  function hydrate() {
+    try {
+      var node = document.getElementById('snapshotPayload');
+      if (!node || !window.__marketplaceApp || !window.__marketplaceApp.setMemoryData) return false;
+      var data = JSON.parse(node.textContent || '{}');
+      window.__marketplaceApp.setMemoryData({
+        sales: Array.isArray(data.sales) ? data.sales : [],
+        imports: Array.isArray(data.imports) ? data.imports : [],
+        events: Array.isArray(data.events) ? data.events : [],
+        planStatus: data.planStatus && typeof data.planStatus === 'object' ? data.planStatus : {},
+        planJournal: Array.isArray(data.planJournal) ? data.planJournal : [],
+        costBySku: data.costBySku && typeof data.costBySku === 'object' ? data.costBySku : {},
+        profitTaxRate: Number(data.profitTaxRate || 0),
+        profitWindow: data.profitWindow || '30d',
+        profitDateStart: data.profitDateStart || '',
+        profitDateEnd: data.profitDateEnd || '',
+        reportWindow: data.reportWindow || '30d',
+        reportDateStart: data.reportDateStart || '',
+        reportDateEnd: data.reportDateEnd || '',
+        globalSearchScope: data.globalSearchScope || 'code',
+        globalSearch: data.globalSearch || '',
+        noSalesRejected: data.noSalesRejected && typeof data.noSalesRejected === 'object' ? data.noSalesRejected : {}
+      });
+      return true;
+    } catch (e) {
+      console.error('Falha ao carregar snapshot', e);
+      return true;
+    }
+  }
+  if (!hydrate()) {
+    var t = setInterval(function () {
+      if (hydrate()) clearInterval(t);
+    }, 120);
+    setTimeout(function () { clearInterval(t); }, 8000);
+  }
+})();
+<\\/script>`;
+      let html = '<!doctype html>\n' + document.documentElement.outerHTML;
+      if (!/<meta\\s+name="viewport"/i.test(html)) {
+        html = html.replace(/<head>/i, '<head>\n<meta name="viewport" content="width=device-width, initial-scale=1">');
+      }
+      html = html.replace(/<\/body>/i, loader + '\n</body>');
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'inteligencia_marketplace_snapshot_' + new Date().toISOString().slice(0,10) + '.html';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function restoreBackup(file) {
+      if (!file) return;
+      if (!confirm('Restaurar backup vai substituir a base local atual deste navegador. Continuar?')) return;
+      try {
+        const payload = JSON.parse(await file.text());
+        if (payload.app !== 'un-clic-inteligencia-vendas-marketplace') throw new Error('Backup nao pertence a este programa.');
+        const sales = (payload.sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
+        const imports = payload.imports || [];
+        const events = payload.events || [];
+        const planStatus = payload.planStatus && typeof payload.planStatus === 'object' ? payload.planStatus : {};
+        const planJournal = Array.isArray(payload.planJournal) ? payload.planJournal : [];
+        const costBySku = payload.costBySku && typeof payload.costBySku === 'object' ? payload.costBySku : {};
+        const profitTaxRate = Number(payload.profitTaxRate || 0);
+        const profitWindow = payload.profitWindow || '30d';
+        const profitDateStart = payload.profitDateStart || '';
+        const profitDateEnd = payload.profitDateEnd || '';
+        const reportWindow = payload.reportWindow || '30d';
+        const reportDateStart = payload.reportDateStart || '';
+        const reportDateEnd = payload.reportDateEnd || '';
+        const globalSearchScope = payload.globalSearchScope || 'code';
+        const globalSearch = payload.globalSearch || '';
+        const noSalesRejected = payload.noSalesRejected && typeof payload.noSalesRejected === 'object' ? payload.noSalesRejected : {};
+        await clearStore('sales');
+        await clearStore('imports');
+        await clearStore('events');
+        if (sales.length) await putMany('sales', sales);
+        if (imports.length) await putMany('imports', imports);
+        if (events.length) await putMany('events', events);
+        state.sales = await getAll('sales');
+        state.imports = await getAll('imports');
+        state.events = await getAll('events');
+        state.planStatus = planStatus;
+        state.planJournal = planJournal;
+        state.costBySku = costBySku;
+        state.profitTaxRate = Number.isFinite(profitTaxRate) ? Math.max(0, profitTaxRate) : 0;
+        state.profitWindow = ['1d','7d','15d','30d','quarter','total','custom'].includes(profitWindow) ? profitWindow : '30d';
+        state.profitDateStart = String(profitDateStart || '');
+        state.profitDateEnd = String(profitDateEnd || '');
+        state.reportWindow = ['7d','15d','30d','60d','monthtd','quarter','total','custom'].includes(reportWindow) ? reportWindow : '30d';
+        state.reportDateStart = String(reportDateStart || '');
+        state.reportDateEnd = String(reportDateEnd || '');
+        state.globalSearchScope = globalSearchScope === 'title' ? 'title' : 'code';
+        state.globalSearch = String(globalSearch || '');
+        state.noSalesRejected = noSalesRejected;
+        syncDerivedWindowsFromReport();
+        if ($('profitTaxInput')) $('profitTaxInput').value = String(state.profitTaxRate);
+        if ($('profitDateStart')) $('profitDateStart').value = state.profitDateStart;
+        if ($('profitDateEnd')) $('profitDateEnd').value = state.profitDateEnd;
+        syncWindowControls();
+        toggleProfitCustomDates();
+        renderAll();
+      } catch (err) {
+        alert('Nao foi possivel restaurar o backup: ' + err.message);
+      } finally {
+        $('restoreInput').value = '';
+      }
+    }
+
+    function downloadCsv(name, rows) {
+      const text = '\ufeff' + rows.map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
+      const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = name; a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    window.__marketplaceApp = {
+      getState: () => state,
+      setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku = {}, profitTaxRate = 0, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {} }) => {
+        state.sales = (sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
+        state.imports = imports;
+        state.events = events;
+        state.planStatus = planStatus && typeof planStatus === 'object' ? planStatus : {};
+        state.planJournal = Array.isArray(planJournal) ? planJournal : [];
+        state.costBySku = costBySku && typeof costBySku === 'object' ? costBySku : {};
+        state.profitTaxRate = Number.isFinite(Number(profitTaxRate)) ? Math.max(0, Number(profitTaxRate)) : 0;
+        state.profitWindow = ['1d','7d','15d','30d','quarter','total','custom'].includes(profitWindow) ? profitWindow : '30d';
+        state.profitDateStart = String(profitDateStart || '');
+        state.profitDateEnd = String(profitDateEnd || '');
+        state.reportWindow = ['7d','15d','30d','60d','monthtd','quarter','total','custom'].includes(reportWindow) ? reportWindow : '30d';
+        state.reportDateStart = String(reportDateStart || '');
+        state.reportDateEnd = String(reportDateEnd || '');
+        state.globalSearchScope = globalSearchScope === 'title' ? 'title' : 'code';
+        state.globalSearch = String(globalSearch || '');
+        state.noSalesRejected = noSalesRejected && typeof noSalesRejected === 'object' ? noSalesRejected : {};
+        syncDerivedWindowsFromReport();
+        if ($('profitTaxInput')) $('profitTaxInput').value = String(state.profitTaxRate);
+        if ($('profitDateStart')) $('profitDateStart').value = state.profitDateStart;
+        if ($('profitDateEnd')) $('profitDateEnd').value = state.profitDateEnd;
+        syncWindowControls();
+        toggleProfitCustomDates();
+        renderAll();
+      },
+      createDemoSales,
+      readXlsx,
+      handleFiles,
+      confirmPendingImports,
+      normalizeSale,
+      uniqueHeaders,
+      isReturnEvent,
+      isComplaintEvent,
+      aggregate,
+      monthSummary,
+      renderImportPreview,
+      renderAll,
+      setSkuCost: (sku, value) => {
+        const key = normKey(sku);
+        if (!key) return;
+        const v = Math.max(0, Number(value || 0));
+        state.costBySku[key] = Number.isFinite(v) ? v : 0;
+        renderProfit();
+      },
+      rejectNoSalesItem: (key) => {
+        const code = normKey(key);
+        if (!code) return;
+        const reason = prompt('Motivo da rejeicao deste SKU/MLB nos relatorios operacionais:', 'Fora de linha') || 'Fora de linha';
+        state.noSalesRejected[code] = { reason: String(reason || 'Fora de linha').trim(), at: new Date().toISOString() };
+        registerHumanDecision(makeHumanDecisionPayload('NO_SALES_REJECTION', {
+          code,
+          description: `SKU/MLB ${code} rejeitado manualmente na tela Sem vendas. Motivo: ${state.noSalesRejected[code].reason}`,
+          extra: state.noSalesRejected[code]
+        }));
+        renderNoSales();
+      },
+      restoreNoSalesItem: (key) => {
+        const code = normKey(key);
+        if (!code) return;
+        registerHumanDecision(makeHumanDecisionPayload('NO_SALES_RESTORE', {
+          code,
+          description: `SKU/MLB ${code} reativado manualmente na tela Sem vendas.`,
+          extra: state.noSalesRejected[code] || null
+        }));
+        delete state.noSalesRejected[code];
+        renderNoSales();
+      },
+      selectProfitKey: (key) => {
+        const k = String(key || '');
+        state.selectedProfitKey = state.selectedProfitKey === k ? '' : k;
+        renderProfit();
+      },
+      sortTable: (tableKey, index) => {
+        const prev = state.tableSort[tableKey] || { index: -1, dir: 'asc' };
+        const dir = prev.index === index ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'asc';
+        state.tableSort[tableKey] = { index, dir };
+        if (tableKey === 'dashboard_sku') state.dashboardSkuPage = 1;
+        renderAll();
+      },
+      selectMonthlySku: (sku) => {
+        state.selectedMonthlySku = state.selectedMonthlySku === sku ? '' : (sku || '');
+        renderMonthly();
+      },
+      monthlyPieHover: (index) => {
+        state.monthlyPieHover = Number(index);
+        renderMonthly();
+      },
+      setMonthlyAlertTab: (tab) => {
+        state.monthlyAlertTab = tab === 'opportunity' ? 'opportunity' : 'risk';
+        renderMonthly();
+      },
+      setPlanStatus: (code, status) => {
+        if (!code) return;
+        state.planStatus[code] = status === 'done' ? 'done' : status === 'testing' ? 'testing' : 'pendente';
+        registerHumanDecision(makeHumanDecisionPayload('PLAN_STATUS', {
+          code,
+          description: `Status manual do plano alterado para ${state.planStatus[code]} no item ${code}.`,
+          extra: { status: state.planStatus[code] }
+        }));
+        renderDashboard();
+      },
+      registerPlanAction: (code, title, reason, suggestedAction) => {
+        if (!code) return;
+        const done = prompt('Qual acao foi feita? (ex.: ajuste de preco para R$ 54,90)', '');
+        if (done === null) return;
+        const baseDate = new Date();
+        baseDate.setDate(baseDate.getDate() + 7);
+        const yyyy = baseDate.getFullYear();
+        const mm = String(baseDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(baseDate.getDate()).padStart(2, '0');
+        const suggestedReview = `${yyyy}-${mm}-${dd}`;
+        const reviewAt = prompt('Data para reavaliar (YYYY-MM-DD):', suggestedReview);
+        if (reviewAt === null) return;
+        const result = prompt('Resultado inicial/observacao (ex.: aguardando 7 dias)', '') || '';
+        const status = state.planStatus[code] || 'pendente';
+        state.planJournal.push({
+          at: new Date().toISOString(),
+          reviewAt: String(reviewAt || '').trim(),
+          code,
+          title: title || '',
+          reason: reason || '',
+          suggested: suggestedAction || '',
+          done: String(done || '').trim(),
+          status,
+          result: String(result || '').trim()
+        });
+        registerHumanDecision(makeHumanDecisionPayload('PLAN_ACTION', {
+          code,
+          title,
+          description: `Acao manual registrada para ${code}: ${String(done || '').trim() || 'sem descricao'}. Resultado inicial: ${String(result || '').trim() || 'sem observacao'}.`,
+          extra: state.planJournal.at(-1)
+        }));
+        renderDashboard();
+      },
+      dashboardSkuPage: (delta) => {
+        state.dashboardSkuPage += delta;
+        renderDashboard();
+      }
+    };
+
+    boot().catch((err) => alert('Erro ao iniciar: ' + err.message));
+  </script>
+</body>
+</html>

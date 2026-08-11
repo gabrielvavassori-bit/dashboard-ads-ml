@@ -88,7 +88,7 @@ MAX_BODY_BYTES = MAX_UPLOAD_BYTES * 2 + 1 * 1024 * 1024
 AGENTE_ML_BASE_URL = os.environ.get("AGENTE_ML_BASE_URL", "https://agente-ml.onrender.com").rstrip("/")
 ML_LINK_ATTACH_SECRET = (os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")).strip()
 ONLINE_TZ = ZoneInfo("America/Sao_Paulo")
-SALES_INTELLIGENCE_HTML = pathlib.Path(__file__).resolve().parents[1] / "prototipos" / "inteligencia-vendas-marketplace.html"
+SALES_INTELLIGENCE_HTML = pathlib.Path(__file__).resolve().parent / "assets" / "inteligencia-vendas-marketplace.html"
 
 # Serializa geracoes pesadas para nao estourar memoria em planos pequenos.
 # 2 dashboards em paralelo eh saudavel ate em 512MB-1GB RAM.
