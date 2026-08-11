@@ -1574,22 +1574,33 @@
       return [...new Set(itemSales().map((s) => s.month).filter(Boolean))].sort();
     }
 
+    function orderCountOf(sale) {
+      const explicit = Number(sale && sale.ordersCount);
+      if (Number.isFinite(explicit) && explicit >= 0) return explicit;
+      return sale && (sale.saleNumber || sale.dedupeKey) ? 1 : 0;
+    }
+
+    function sumOrderCount(rows) {
+      return (rows || []).reduce((total, sale) => total + orderCountOf(sale), 0);
+    }
+
     function aggregateFromSales(salesList, group = 'sku', previousSalesList = []) {
       const map = new Map();
       const previousMap = new Map();
       (previousSalesList || []).filter((s) => s.sku && s.lineType === 'item_sale').forEach((s) => {
         const key = group === 'sku' ? s.sku : s.mlb || '(sem MLB)';
         if (!key || key === '(sem MLB)' && group === 'sku') return;
-        const row = previousMap.get(key) || { units: 0, revenue: 0, sales: new Set() };
+        const row = previousMap.get(key) || { units: 0, revenue: 0, orders: 0, sales: new Set() };
         row.units += s.units || 0;
         row.revenue += s.productRevenue || 0;
+        row.orders += orderCountOf(s);
         row.sales.add(s.saleNumber || s.dedupeKey);
         previousMap.set(key, row);
       });
       (salesList || []).filter((s) => s.sku).forEach((s) => {
         const key = group === 'sku' ? s.sku : s.mlb || '(sem MLB)';
         if (!key || key === '(sem MLB)' && group === 'sku') return;
-        const row = map.get(key) || { key, sku: group === 'sku' ? key : s.sku, mlb: group === 'mlb' ? key : '', title: s.title, titleDate: null, units: 0, revenue: 0, sales: new Set(), returnSales: new Set(), complaintSales: new Set(), cancellationSales: new Set(), mlbs: new Set(), currentPrice: 0, currentDate: null, returns: 0, complaints: 0, cancellations: 0, promo: 0, months: {} };
+        const row = map.get(key) || { key, sku: group === 'sku' ? key : s.sku, mlb: group === 'mlb' ? key : '', title: s.title, titleDate: null, units: 0, revenue: 0, orders: 0, sales: new Set(), returnSales: new Set(), complaintSales: new Set(), cancellationSales: new Set(), mlbs: new Set(), currentPrice: 0, currentDate: null, returns: 0, complaints: 0, cancellations: 0, promo: 0, months: {} };
         if (s.mlb) row.mlbs.add(s.mlb);
         if (s.title) {
           if (group === 'sku') {
@@ -1606,6 +1617,7 @@
         if (s.lineType === 'item_sale') {
           row.units += s.units || 0;
           row.revenue += s.productRevenue || 0;
+          row.orders += orderCountOf(s);
           row.sales.add(s.saleNumber);
           if (s.date && (!row.currentDate || s.date > row.currentDate)) { row.currentDate = s.date; row.currentPrice = s.unitPrice || 0; }
           if (s.promoClass === 'com indicio') row.promo++;
@@ -1624,19 +1636,19 @@
         r.returns = r.returnSales.size;
         r.complaints = r.complaintSales.size;
         r.cancellations = r.cancellationSales.size;
-        r.returnRate = r.sales.size ? r.returns / r.sales.size : 0;
-        r.complaintRate = r.sales.size ? r.complaints / r.sales.size : 0;
-        r.promoShare = r.sales.size ? r.promo / r.sales.size : 0;
+        r.returnRate = r.orders ? r.returns / r.orders : 0;
+        r.complaintRate = r.orders ? r.complaints / r.orders : 0;
+        r.promoShare = r.orders ? r.promo / r.orders : 0;
         r.priceDiff = r.avgPrice ? (r.currentPrice - r.avgPrice) / r.avgPrice : 0;
-        const prev = previousMap.get(r.key) || { units: 0, revenue: 0, sales: new Set() };
+        const prev = previousMap.get(r.key) || { units: 0, revenue: 0, orders: 0, sales: new Set() };
         r.recentTrend = {
           change: prev.units ? (r.units - prev.units) / prev.units : (r.units > 0 ? 1 : 0),
           current: r.units || 0,
           previous: prev.units || 0,
           currentRevenue: r.revenue || 0,
           previousRevenue: prev.revenue || 0,
-          currentSales: r.sales.size || 0,
-          previousSales: prev.sales.size || 0
+          currentSales: r.orders || 0,
+          previousSales: prev.orders || 0
         };
         r.diagnostic = diagnose(r);
         r.diagnosis = r.diagnostic.text;
@@ -1853,8 +1865,8 @@
       }
       const itemRows = itemSales();
       const eventRows = state.sales.length - itemRows.length;
-      const orders = new Set(state.sales.map((s) => s.saleNumber).filter(Boolean)).size;
-      const itemOrders = new Set(itemRows.map((s) => s.saleNumber).filter(Boolean)).size;
+      const orders = sumOrderCount(state.sales);
+      const itemOrders = sumOrderCount(itemRows);
       const units = itemRows.reduce((a, s) => a + (s.units || 0), 0);
       const revenue = itemRows.reduce((a, s) => a + (s.productRevenue || 0), 0);
       const netTotal = state.sales.reduce((a, s) => a + (s.total || 0), 0);
@@ -1991,7 +2003,7 @@
       const agSku = aggregateFromSales(wnd.currentSales, 'sku', wnd.previousSales);
       const revenue = rows.reduce((a, s) => a + (s.productRevenue || 0), 0);
       const units = rows.reduce((a, s) => a + (s.units || 0), 0);
-      const orders = new Set(rows.map((s) => s.saleNumber)).size;
+      const orders = sumOrderCount(rows);
       const avgTicket = orders ? revenue / orders : 0;
       const avgPriceNow = agSku.length ? agSku.reduce((a, r) => a + (r.currentPrice || 0), 0) / agSku.length : 0;
       $('dashboardCoverage').innerHTML = dashboardCoverageNotice();
@@ -2065,10 +2077,9 @@
     function dashboardComparison(wnd) {
       const summarize = (salesList) => {
         const monthRows = salesList.filter((s) => s.sku && s.lineType === 'item_sale');
-        const monthSaleNumbers = new Set(monthRows.map((s) => s.saleNumber));
         const revenue = monthRows.reduce((a, s) => a + (s.productRevenue || 0), 0);
         const units = monthRows.reduce((a, s) => a + (s.units || 0), 0);
-        const orders = monthSaleNumbers.size;
+        const orders = sumOrderCount(monthRows);
         const ticket = orders ? revenue / orders : 0;
         const skuRows = aggregateFromSales(salesList, 'sku');
         const price = skuRows.length ? skuRows.reduce((a, r) => a + (r.currentPrice || 0), 0) / skuRows.length : 0;
@@ -3265,7 +3276,8 @@
       }
     };
 
-    boot().catch((err) => alert('Erro ao iniciar: ' + err.message));
+    window.__marketplaceAppReady = boot();
+    window.__marketplaceAppReady.catch((err) => alert('Erro ao iniciar: ' + err.message));
   </script>
 </body>
 </html>
