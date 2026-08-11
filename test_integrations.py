@@ -1157,6 +1157,95 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertIn("Inteligencia de Vendas esta bloqueada", blocked_body)
         raised.exception.close()
 
+    def test_sales_intelligence_route_injects_online_snapshot_when_link_exists(self):
+        user_id, cookie = self._login_cookie("sales-online@example.com")
+        db.upsert_user_ml_link(
+            user_id,
+            client_id="conta-ativa",
+            ml_user_id="14252670",
+            nickname="LONAS_ONLINE",
+            advertiser_id="164424",
+        )
+        original = app._build_sales_intelligence_memory_data
+        app._build_sales_intelligence_memory_data = lambda *_args, **_kwargs: ({
+            "clientName": "LONAS_ONLINE",
+            "pageSubtitle": "Leitura online beta da conta vinculada.",
+            "sales": [{
+                "dedupeKey": "pedido-1|2026-08-10T10:00:00-03:00|SKU-1|MLB1|1|10.00|10.00",
+                "importId": "online:conta-ativa",
+                "fileName": "OAuth Mercado Livre - LONAS_ONLINE",
+                "rowNumber": 1,
+                "client": "LONAS_ONLINE",
+                "channel": "Mercado Livre",
+                "saleNumber": "pedido-1",
+                "date": "2026-08-10T10:00:00-03:00",
+                "month": "2026-08",
+                "status": "paid",
+                "statusDescription": "Venda online por OAuth/cache",
+                "packageMulti": "",
+                "isKit": "",
+                "units": 1,
+                "productRevenue": 10,
+                "unitPrice": 10,
+                "total": 10,
+                "sellingFee": 0,
+                "shippingRevenue": 0,
+                "shippingFee": 0,
+                "discounts": 0,
+                "refunds": 0,
+                "billingMonth": "2026-08",
+                "adsSale": "",
+                "sku": "SKU-1",
+                "mlb": "MLB1",
+                "title": "Produto teste",
+                "listingType": "",
+                "deliveryMethod": "",
+                "result": "",
+                "destination": "",
+                "resultReason": "",
+                "complaintOpened": "",
+                "complaintClosed": "",
+                "mediation": "",
+                "lineType": "item_sale",
+                "eventClass": "venda",
+                "promoClass": "indefinido",
+            }],
+            "imports": [{
+                "importId": "online:conta-ativa",
+                "fileName": "OAuth Mercado Livre - LONAS_ONLINE",
+                "periodStart": "2026-04-13",
+                "periodEnd": "2026-08-10",
+                "rows": 1,
+                "newRows": 1,
+                "duplicateRows": 0,
+                "units": 1,
+                "revenue": 10,
+                "status": "Online / OAuth cache bruto",
+                "importedAt": "2026-08-11T09:00:00-03:00",
+            }],
+            "events": [],
+            "reportWindow": "7d",
+            "profitWindow": "30d",
+            "globalSearchScope": "code",
+            "globalSearch": "",
+            "noSalesRejected": {},
+        }, "")
+        try:
+            request = Request(
+                f"{self.base_url}/inteligencia-vendas",
+                headers={"Cookie": cookie},
+                method="GET",
+            )
+            with urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8", errors="replace")
+            self.assertEqual(response.status, 200)
+            self.assertIn("salesIntelligenceBootstrap", body)
+            self.assertIn("OAuth Mercado Livre - LONAS_ONLINE", body)
+            self.assertIn("pedido-1", body)
+            self.assertIn("Leitura online beta da conta vinculada.", body)
+        finally:
+            app._build_sales_intelligence_memory_data = original
+
     def test_admin_can_extend_existing_user_for_x_days(self):
         user_id = db.upsert_manual_user(
             email="renew@example.com",

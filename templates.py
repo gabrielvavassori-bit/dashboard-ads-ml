@@ -251,6 +251,19 @@ def render_error_page(message: str, traceback_text: str = "") -> str:
     return _layout("Erro", body)
 
 
+def render_online_cache_pending(message: str, retry_seconds: int = 5) -> str:
+    delay_ms = max(1, int(retry_seconds)) * 1000
+    body = f"""
+    <h1>Preparando o periodo selecionado</h1>
+    <p>O dashboard esta coletando os dados desta janela em segundo plano.</p>
+    <div class="alert ok">{_html.escape(message)}</div>
+    <p>Esta pagina tentara novamente automaticamente.</p>
+    <p><a href="javascript:window.location.reload()">Verificar agora</a></p>
+    <script>window.setTimeout(function(){{window.location.reload();}}, {delay_ms});</script>
+    """
+    return _layout("Preparando dashboard", body)
+
+
 def render_admin_login(error: str = "") -> str:
     err_html = f'<div class="alert err">{_html.escape(error)}</div>' if error else ""
     body = f"""

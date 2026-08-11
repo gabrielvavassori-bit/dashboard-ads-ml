@@ -143,6 +143,44 @@ class OnlinePeriodTests(unittest.TestCase):
             ],
         )
 
+    def test_online_builder_reports_pending_while_period_refresh_runs(self):
+        stale_payload = {
+            "ok": True,
+            "period_cache_hit": False,
+            "latest": {
+                "date_from": "2026-07-24",
+                "date_to": "2026-07-30",
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": "2026-07-24",
+                "date_to": "2026-07-30",
+                "items": [{"item_id": "MLB123", "cost": 1, "total_amount": 2}],
+            },
+            "sales": {"items": {}},
+        }
+
+        def fake_fetch(path, _params):
+            if path.endswith("online-cache-refresh"):
+                return {"ok": True, "status": "running", "http_status": 202}
+            return stale_payload
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fake_fetch):
+            data, message = app._build_online_dashboard_data(
+                client="conta-ativa",
+                date_from="2026-07-24",
+                date_to="2026-07-30",
+                requested_period={"dateFrom": "2026-07-24", "dateTo": "2026-07-30"},
+            )
+
+        self.assertIsNone(data)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
+        html = app.templates.render_online_cache_pending(
+            message[len(app.ONLINE_CACHE_PENDING_PREFIX):],
+        )
+        self.assertIn("Preparando o periodo selecionado", html)
+        self.assertIn("window.location.reload", html)
+
     def test_online_builder_uses_requested_period_when_explicit_dates_are_empty(self):
         payload = {
             "ok": True,

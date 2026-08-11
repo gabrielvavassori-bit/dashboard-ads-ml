@@ -88,6 +88,7 @@ MAX_BODY_BYTES = MAX_UPLOAD_BYTES * 2 + 1 * 1024 * 1024
 AGENTE_ML_BASE_URL = os.environ.get("AGENTE_ML_BASE_URL", "https://agente-ml.onrender.com").rstrip("/")
 ML_LINK_ATTACH_SECRET = (os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")).strip()
 ONLINE_TZ = ZoneInfo("America/Sao_Paulo")
+ONLINE_CACHE_PENDING_PREFIX = "__ONLINE_CACHE_PENDING__:"
 SALES_INTELLIGENCE_HTML = pathlib.Path(__file__).resolve().parent / "assets" / "inteligencia-vendas-marketplace.html"
 
 # Serializa geracoes pesadas para nao estourar memoria em planos pequenos.
@@ -425,11 +426,15 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
     latest_date_from = latest.get("date_from") or ads.get("date_from") or ""
     latest_date_to = latest.get("date_to") or ads.get("date_to") or ""
+    period_cache_hit = latest_payload.get("period_cache_hit") is not False
     period_match = not (requested_from or requested_to) or (
-        latest_date_from == requested_from and latest_date_to == requested_to
+        period_cache_hit
+        and latest_date_from == requested_from
+        and latest_date_to == requested_to
     )
+    refresh_payload = {}
     if not period_match and requested_from and requested_to:
-        _fetch_dash_ads_json(
+        refresh_payload = _fetch_dash_ads_json(
             "/internal/dash-ads/online-cache-refresh",
             {"client": client, "advertiser_id": advertiser_id, **period_params},
         )
@@ -438,6 +443,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             {"client": client, "advertiser_id": advertiser_id, **period_params},
         )
         if refreshed_payload.get("ok"):
+            latest_payload = refreshed_payload
+            period_cache_hit = refreshed_payload.get("period_cache_hit") is not False
             latest = refreshed_payload.get("latest") if isinstance(refreshed_payload.get("latest"), dict) else {}
             ads = refreshed_payload.get("ads") if isinstance(refreshed_payload.get("ads"), dict) else {}
             sales = refreshed_payload.get("sales") if isinstance(refreshed_payload.get("sales"), dict) else {}
@@ -583,8 +590,17 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     total_ads_sales = sum(item["adsSales"] for item in items)
     latest_date_from = latest.get("date_from") or ads.get("date_from") or ""
     latest_date_to = latest.get("date_to") or ads.get("date_to") or ""
-    period_match = not (requested_from or requested_to) or (latest_date_from == requested_from and latest_date_to == requested_to)
+    period_match = not (requested_from or requested_to) or (
+        period_cache_hit
+        and latest_date_from == requested_from
+        and latest_date_to == requested_to
+    )
     if not period_match:
+        if refresh_payload.get("ok") and refresh_payload.get("status") == "running":
+            return None, (
+                f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {requested_from} a {requested_to}. "
+                "A pagina sera atualizada automaticamente quando a coleta terminar."
+            )
         return None, (
             f"Cache online fora do periodo selecionado ({latest_date_from or 'sem data'} a "
             f"{latest_date_to or 'sem data'}). Solicitado {requested_from or 'sem data'} a "
@@ -844,6 +860,306 @@ def _render_sales_intelligence() -> str:
     return SALES_INTELLIGENCE_HTML.read_text(encoding="utf-8", errors="replace")
 
 
+def _sales_intelligence_default_period(now: datetime | None = None) -> dict:
+    current = (now or datetime.now(ONLINE_TZ)).date()
+    yesterday = current - timedelta(days=1)
+    start = current - timedelta(days=119)
+    return {
+        "mode": "bootstrap",
+        "dateFrom": start.isoformat(),
+        "dateTo": yesterday.isoformat(),
+        "label": "Ultimos 120 dias fechados",
+    }
+
+
+def _sales_intelligence_parse_dt(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _sales_intelligence_fetch_latest(client: str, advertiser_id: str, date_from: str, date_to: str) -> tuple[dict | None, str]:
+    params = {"client": client, "advertiser_id": advertiser_id, "date_from": date_from, "date_to": date_to}
+    latest_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-latest", params)
+    if not latest_payload.get("ok"):
+        return None, "Nao foi possivel ler o cache online desta conta agora."
+    latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
+    ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
+    latest_from = str(latest.get("date_from") or ads.get("date_from") or "").strip()
+    latest_to = str(latest.get("date_to") or ads.get("date_to") or "").strip()
+    if latest_from == date_from and latest_to == date_to:
+        return latest_payload, ""
+
+    refresh_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-refresh", params)
+    refreshed_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-latest", params)
+    if refreshed_payload.get("ok"):
+        latest_payload = refreshed_payload
+        latest = refreshed_payload.get("latest") if isinstance(refreshed_payload.get("latest"), dict) else {}
+        ads = refreshed_payload.get("ads") if isinstance(refreshed_payload.get("ads"), dict) else {}
+        latest_from = str(latest.get("date_from") or ads.get("date_from") or "").strip()
+        latest_to = str(latest.get("date_to") or ads.get("date_to") or "").strip()
+    if latest_from == date_from and latest_to == date_to:
+        return latest_payload, ""
+    if refresh_payload.get("ok") and refresh_payload.get("status") == "running":
+        return None, (
+            f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {date_from} a {date_to}. "
+            "A pagina sera atualizada automaticamente quando a coleta terminar."
+        )
+    return None, (
+        f"Cache online fora do periodo solicitado ({latest_from or 'sem data'} a {latest_to or 'sem data'}). "
+        "Tente novamente em alguns minutos."
+    )
+
+
+def _sales_intelligence_collect_item_meta(latest_payload: dict) -> dict[str, dict]:
+    sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
+    sales_items = sales.get("items") if isinstance(sales.get("items"), dict) else {}
+    ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
+    ads_rows = ads.get("items") if isinstance(ads.get("items"), list) else []
+    meta: dict[str, dict] = {}
+    for raw_code, raw_sale in sales_items.items():
+        code = _normalize_mlb_code(raw_code)
+        sale = raw_sale if isinstance(raw_sale, dict) else {}
+        if not code:
+            continue
+        if _number(sale.get("units_total")) <= 0 and _number(sale.get("revenue_total")) <= 0:
+            continue
+        meta[code] = {
+            "code": code,
+            "sku": str(sale.get("sku") or sale.get("seller_sku") or sale.get("sellerSku") or "").strip(),
+            "title": str(sale.get("title") or sale.get("item_title") or sale.get("itemTitle") or "").strip(),
+        }
+    for raw in ads_rows:
+        if not isinstance(raw, dict):
+            continue
+        code = _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
+        if not code or code not in meta:
+            continue
+        if not meta[code]["sku"]:
+            meta[code]["sku"] = str(raw.get("sku") or "").strip()
+        if not meta[code]["title"]:
+            meta[code]["title"] = str(raw.get("title") or "").strip()
+    return meta
+
+
+def _sales_intelligence_chunk_item_ids(item_ids: list[str], max_items: int = 60, max_chars: int = 2500) -> list[list[str]]:
+    chunks: list[list[str]] = []
+    current: list[str] = []
+    current_size = 0
+    for item_id in item_ids:
+        extra = len(item_id) + (1 if current else 0)
+        if current and (len(current) >= max_items or current_size + extra > max_chars):
+            chunks.append(current)
+            current = []
+            current_size = 0
+        current.append(item_id)
+        current_size += extra
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _sales_intelligence_fetch_orders(client: str, item_ids: list[str], date_from: str, date_to: str) -> tuple[dict[str, dict], list[str]]:
+    collected: dict[str, dict] = {}
+    errors: list[str] = []
+    for chunk in _sales_intelligence_chunk_item_ids(item_ids):
+        payload = _fetch_dash_ads_json(
+            "/vendas-items-detalhado",
+            {
+                "client": client,
+                "date_from": date_from,
+                "date_to": date_to,
+                "items": ",".join(chunk),
+            },
+        )
+        if isinstance(payload.get("items"), list):
+            for raw in payload["items"]:
+                if not isinstance(raw, dict):
+                    continue
+                code = _normalize_mlb_code(raw.get("item_id"))
+                if code:
+                    collected[code] = raw
+            continue
+        errors.append(str(payload.get("erro") or payload.get("message") or "falha ao consultar pedidos"))
+    return collected, errors
+
+
+def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]:
+    client_id = str(link["client_id"] or "").strip()
+    if not client_id:
+        return None, "Conta Mercado Livre vinculada sem client_id ativo."
+    advertiser_id = str(link["advertiser_id"] or "").strip()
+    period = _sales_intelligence_default_period()
+    latest_payload, message = _sales_intelligence_fetch_latest(
+        client_id,
+        advertiser_id,
+        period["dateFrom"],
+        period["dateTo"],
+    )
+    if not latest_payload:
+        return None, message
+
+    item_meta = _sales_intelligence_collect_item_meta(latest_payload)
+    if not item_meta:
+        return {
+            "clientName": link["official_store"] or link["nickname"] or client_id or (user["name"] or user["email"]),
+            "pageSubtitle": "Leitura online beta da conta vinculada. Nenhuma venda encontrada na janela carregada.",
+            "onlineNotice": "Base online sem vendas no periodo carregado. O upload manual continua disponivel para validacao historica.",
+            "sales": [],
+            "imports": [],
+            "events": [],
+            "reportWindow": "7d",
+            "profitWindow": "30d",
+            "globalSearchScope": "code",
+            "globalSearch": "",
+            "noSalesRejected": {},
+        }, ""
+
+    orders_by_item, errors = _sales_intelligence_fetch_orders(
+        client_id,
+        sorted(item_meta.keys()),
+        period["dateFrom"],
+        period["dateTo"],
+    )
+    sales_rows = []
+    import_id = f"online:{client_id}:{period['dateFrom']}:{period['dateTo']}"
+    row_number = 0
+    for code in sorted(orders_by_item.keys()):
+        meta = item_meta.get(code) or {"sku": "", "title": ""}
+        item_payload = orders_by_item.get(code) if isinstance(orders_by_item.get(code), dict) else {}
+        orders = item_payload.get("orders") if isinstance(item_payload.get("orders"), list) else []
+        for order in orders:
+            if not isinstance(order, dict):
+                continue
+            row_number += 1
+            qty = max(0, int(_number(order.get("quantity"))))
+            unit_price = _number(order.get("unit_price"))
+            gross = _number(order.get("gross")) or (qty * unit_price)
+            dt = _sales_intelligence_parse_dt(order.get("date_created"))
+            if dt and dt.tzinfo is not None:
+                dt = dt.astimezone(ONLINE_TZ)
+            month = f"{dt.year:04d}-{dt.month:02d}" if dt else ""
+            date_value = dt.isoformat() if dt else str(order.get("date_created") or "").strip()
+            sale_number = str(order.get("order_id") or "").strip()
+            title = str(order.get("title") or meta.get("title") or "").strip()
+            sku = str(meta.get("sku") or "").strip()
+            dedupe_parts = [sale_number, date_value, sku, code, str(qty), f"{unit_price:.2f}", f"{gross:.2f}"]
+            sales_rows.append({
+                "dedupeKey": "|".join(dedupe_parts),
+                "importId": import_id,
+                "fileName": f"OAuth Mercado Livre - {client_id}",
+                "rowNumber": row_number,
+                "client": link["official_store"] or link["nickname"] or client_id or (user["name"] or user["email"]),
+                "channel": "Mercado Livre",
+                "saleNumber": sale_number,
+                "date": date_value,
+                "month": month,
+                "status": str(order.get("status") or "paid").strip(),
+                "statusDescription": "Venda online por OAuth/cache",
+                "packageMulti": "",
+                "isKit": "",
+                "units": qty,
+                "productRevenue": gross,
+                "unitPrice": unit_price,
+                "total": gross,
+                "sellingFee": 0,
+                "shippingRevenue": 0,
+                "shippingFee": 0,
+                "discounts": 0,
+                "refunds": 0,
+                "billingMonth": month,
+                "adsSale": "",
+                "sku": sku,
+                "mlb": code,
+                "title": title,
+                "listingType": "",
+                "deliveryMethod": "",
+                "result": "",
+                "destination": "",
+                "resultReason": "",
+                "complaintOpened": "",
+                "complaintClosed": "",
+                "mediation": "",
+                "lineType": "item_sale",
+                "eventClass": "venda",
+                "promoClass": "indefinido",
+            })
+    sales_rows.sort(key=lambda row: (str(row.get("date") or ""), str(row.get("saleNumber") or ""), str(row.get("mlb") or "")))
+    total_units = sum(_number(row.get("units")) for row in sales_rows)
+    total_revenue = sum(_number(row.get("productRevenue")) for row in sales_rows)
+    imported_at = datetime.now(ONLINE_TZ).isoformat(timespec="seconds")
+    client_label = link["official_store"] or link["nickname"] or client_id or (user["name"] or user["email"])
+    online_notice = (
+        f"Base online carregada via OAuth/cache para {client_label}. Cobertura inicial: {period['dateFrom']} ate {period['dateTo']}."
+    )
+    if errors:
+        online_notice += " Parte dos itens nao retornou pedidos detalhados; valide no XLSX se notar divergencia."
+    return {
+        "clientName": client_label,
+        "pageSubtitle": "Leitura online beta da conta vinculada. O upload manual continua disponivel para validacao e historico completo.",
+        "onlineNotice": online_notice,
+        "sales": sales_rows,
+        "imports": [{
+            "importId": import_id,
+            "fileName": f"OAuth Mercado Livre - {client_label}",
+            "periodStart": period["dateFrom"],
+            "periodEnd": period["dateTo"],
+            "rows": len(sales_rows),
+            "newRows": len(sales_rows),
+            "duplicateRows": 0,
+            "units": total_units,
+            "revenue": total_revenue,
+            "status": "Online / OAuth cache bruto",
+            "importedAt": imported_at,
+        }],
+        "events": [],
+        "reportWindow": "7d",
+        "profitWindow": "30d",
+        "globalSearchScope": "code",
+        "globalSearch": "",
+        "noSalesRejected": {},
+    }, ""
+
+
+def _inject_sales_intelligence_memory_data(html_text: str, payload: dict) -> str:
+    snapshot = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
+    loader = f"""<script id="salesIntelligenceBootstrap" type="application/json">{snapshot}</script>
+<script>
+(function () {{
+  function boot() {{
+    try {{
+      var node = document.getElementById('salesIntelligenceBootstrap');
+      if (!node || !window.__marketplaceApp || !window.__marketplaceApp.setMemoryData) return false;
+      var data = JSON.parse(node.textContent || '{{}}');
+      var clientInput = document.getElementById('clientName');
+      if (clientInput && data.clientName) clientInput.value = data.clientName;
+      var subtitle = document.getElementById('pageSubtitle');
+      if (subtitle && data.pageSubtitle) subtitle.textContent = data.pageSubtitle;
+      window.__marketplaceApp.setMemoryData(data);
+      return true;
+    }} catch (err) {{
+      console.error('Falha ao hidratar Inteligencia de Vendas online', err);
+      return true;
+    }}
+  }}
+  if (!boot()) {{
+    var timer = setInterval(function () {{
+      if (boot()) clearInterval(timer);
+    }}, 120);
+    setTimeout(function () {{ clearInterval(timer); }}, 8000);
+  }}
+}})();
+</script>"""
+    if "</body>" in html_text:
+        return html_text.replace("</body>", loader + "\n</body>")
+    return html_text + loader
+
+
 def _sync_beta_access(user) -> bool:
     if beta_config.BETA_MODE:
         return True
@@ -1003,7 +1319,22 @@ class Handler(BaseHTTPRequestHandler):
                 if not _sales_access_allowed(user):
                     _send_html(self, templates.render_error_page("A Inteligencia de Vendas esta bloqueada para este cliente no painel admin."), 403)
                     return
-                _send_html(self, _render_sales_intelligence())
+                html = _render_sales_intelligence()
+                link = db.get_active_ml_link_for_user(user["id"])
+                if link:
+                    payload, message = _build_sales_intelligence_memory_data(user, link)
+                    if payload:
+                        html = _inject_sales_intelligence_memory_data(html, payload)
+                    elif message.startswith(ONLINE_CACHE_PENDING_PREFIX):
+                        _send_html(
+                            self,
+                            templates.render_online_cache_pending(
+                                message[len(ONLINE_CACHE_PENDING_PREFIX):],
+                            ),
+                            202,
+                        )
+                        return
+                _send_html(self, html)
                 return
             if path == "/online":
                 user, _ = _current_user(self)
@@ -1048,6 +1379,15 @@ class Handler(BaseHTTPRequestHandler):
                     requested_period=period,
                 )
                 if not dashboard_data:
+                    if message.startswith(ONLINE_CACHE_PENDING_PREFIX):
+                        _send_html(
+                            self,
+                            templates.render_online_cache_pending(
+                                message[len(ONLINE_CACHE_PENDING_PREFIX):],
+                            ),
+                            202,
+                        )
+                        return
                     _send_html(self, templates.render_error_page(message), 503)
                     return
                 _send_html(self, render_dashboard(dashboard_data))
