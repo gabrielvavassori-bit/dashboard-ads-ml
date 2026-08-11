@@ -196,6 +196,64 @@ class OnlinePeriodTests(unittest.TestCase):
             injected.rfind("salesIntelligenceBootstrap"),
             injected.rfind("<div>ok</div>"),
         )
+        self.assertIn("window.__marketplaceAppReady.then(applyData)", injected)
+
+    def test_sales_intelligence_uses_daily_snapshots_without_detailed_order_scan(self):
+        latest = {
+            "sales": {"items": {"MLB123": {
+                "sku": "SKU-123",
+                "title": "Produto teste",
+                "units_total": 3,
+                "revenue_total": 150,
+            }}},
+            "ads": {"items": []},
+        }
+        daily = [{
+            "item_id": "MLB123",
+            "snapshot_date": "2026-08-10",
+            "orders_count": 2,
+            "units_total": 3,
+            "revenue_total": 150,
+        }]
+        user = {"name": "Cliente", "email": "cliente@example.com"}
+        link = {"client_id": "cliente", "advertiser_id": "1", "official_store": "Loja", "nickname": ""}
+
+        with patch.object(app, "_sales_intelligence_fetch_latest", return_value=(latest, "")), \
+             patch.object(app, "_sales_intelligence_fetch_daily_sales", return_value=(daily, "")), \
+             patch.object(app, "_sales_intelligence_fetch_orders") as detailed_fetch:
+            data, message = app._build_sales_intelligence_memory_data(user, link)
+
+        self.assertEqual(message, "")
+        detailed_fetch.assert_not_called()
+        self.assertEqual(len(data["sales"]), 1)
+        self.assertEqual(data["sales"][0]["ordersCount"], 2)
+        self.assertEqual(data["sales"][0]["units"], 3)
+        self.assertEqual(data["sales"][0]["productRevenue"], 150)
+        self.assertEqual(data["sales"][0]["sku"], "SKU-123")
+
+    def test_sales_intelligence_does_not_mask_daily_snapshot_failure_as_empty_base(self):
+        latest = {
+            "sales": {"items": {"MLB123": {
+                "sku": "SKU-123", "units_total": 1, "revenue_total": 50,
+            }}},
+            "ads": {"items": []},
+        }
+        user = {"name": "Cliente", "email": "cliente@example.com"}
+        link = {"client_id": "cliente", "advertiser_id": "1", "official_store": "Loja", "nickname": ""}
+
+        with patch.object(app, "_sales_intelligence_fetch_latest", return_value=(latest, "")), \
+             patch.object(app, "_sales_intelligence_fetch_daily_sales", return_value=([], "worker_timeout")):
+            data, message = app._build_sales_intelligence_memory_data(user, link)
+
+        self.assertIsNone(data)
+        self.assertIn("snapshots diarios", message)
+        self.assertIn("worker_timeout", message)
+
+    def test_sales_intelligence_asset_counts_aggregated_daily_orders(self):
+        source = Path(__file__).with_name("assets").joinpath("inteligencia-vendas-marketplace.html").read_text(encoding="utf-8")
+        self.assertIn("function orderCountOf(sale)", source)
+        self.assertIn("const orders = sumOrderCount(rows);", source)
+        self.assertIn("window.__marketplaceAppReady = boot();", source)
 
     def test_online_builder_uses_requested_period_when_explicit_dates_are_empty(self):
         payload = {

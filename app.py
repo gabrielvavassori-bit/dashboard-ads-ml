@@ -991,6 +991,21 @@ def _sales_intelligence_fetch_orders(client: str, item_ids: list[str], date_from
     return collected, errors
 
 
+def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: str) -> tuple[list[dict], str]:
+    payload = _fetch_dash_ads_json(
+        "/internal/dash-ads/sales-daily",
+        {
+            "client": client,
+            "date_from": date_from,
+            "date_to": date_to,
+        },
+    )
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    if payload.get("ok") is True:
+        return [row for row in rows if isinstance(row, dict)], ""
+    return [], str(payload.get("erro") or payload.get("error") or "snapshots_diarios_indisponiveis")
+
+
 def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]:
     client_id = str(link["client_id"] or "").strip()
     if not client_id:
@@ -1007,7 +1022,18 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
         return None, message
 
     item_meta = _sales_intelligence_collect_item_meta(latest_payload)
-    if not item_meta:
+    daily_rows, daily_error = _sales_intelligence_fetch_daily_sales(
+        client_id,
+        period["dateFrom"],
+        period["dateTo"],
+    )
+    if daily_error:
+        return None, (
+            "Nao foi possivel ler os snapshots diarios de vendas agora. "
+            "A coleta continua em segundo plano; tente novamente em alguns minutos. "
+            f"Detalhe tecnico: {daily_error}."
+        )
+    if not item_meta and not daily_rows:
         return {
             "clientName": link["official_store"] or link["nickname"] or client_id or (user["name"] or user["email"]),
             "pageSubtitle": "Leitura online beta da conta vinculada. Nenhuma venda encontrada na janela carregada.",
@@ -1021,76 +1047,72 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
             "globalSearch": "",
             "noSalesRejected": {},
         }, ""
-
-    orders_by_item, errors = _sales_intelligence_fetch_orders(
-        client_id,
-        sorted(item_meta.keys()),
-        period["dateFrom"],
-        period["dateTo"],
-    )
+    if not daily_rows and item_meta:
+        return None, (
+            "O cache agregado possui vendas, mas os snapshots diarios ainda nao estao disponiveis "
+            "para esta janela. A coleta continua em segundo plano; tente novamente em alguns minutos."
+        )
     sales_rows = []
     import_id = f"online:{client_id}:{period['dateFrom']}:{period['dateTo']}"
     row_number = 0
-    for code in sorted(orders_by_item.keys()):
-        meta = item_meta.get(code) or {"sku": "", "title": ""}
-        item_payload = orders_by_item.get(code) if isinstance(orders_by_item.get(code), dict) else {}
-        orders = item_payload.get("orders") if isinstance(item_payload.get("orders"), list) else []
-        for order in orders:
-            if not isinstance(order, dict):
-                continue
-            row_number += 1
-            qty = max(0, int(_number(order.get("quantity"))))
-            unit_price = _number(order.get("unit_price"))
-            gross = _number(order.get("gross")) or (qty * unit_price)
-            dt = _sales_intelligence_parse_dt(order.get("date_created"))
-            if dt and dt.tzinfo is not None:
-                dt = dt.astimezone(ONLINE_TZ)
-            month = f"{dt.year:04d}-{dt.month:02d}" if dt else ""
-            date_value = dt.isoformat() if dt else str(order.get("date_created") or "").strip()
-            sale_number = str(order.get("order_id") or "").strip()
-            title = str(order.get("title") or meta.get("title") or "").strip()
-            sku = str(meta.get("sku") or "").strip()
-            dedupe_parts = [sale_number, date_value, sku, code, str(qty), f"{unit_price:.2f}", f"{gross:.2f}"]
-            sales_rows.append({
-                "dedupeKey": "|".join(dedupe_parts),
-                "importId": import_id,
-                "fileName": f"OAuth Mercado Livre - {client_id}",
-                "rowNumber": row_number,
-                "client": link["official_store"] or link["nickname"] or client_id or (user["name"] or user["email"]),
-                "channel": "Mercado Livre",
-                "saleNumber": sale_number,
-                "date": date_value,
-                "month": month,
-                "status": str(order.get("status") or "paid").strip(),
-                "statusDescription": "Venda online por OAuth/cache",
-                "packageMulti": "",
-                "isKit": "",
-                "units": qty,
-                "productRevenue": gross,
-                "unitPrice": unit_price,
-                "total": gross,
-                "sellingFee": 0,
-                "shippingRevenue": 0,
-                "shippingFee": 0,
-                "discounts": 0,
-                "refunds": 0,
-                "billingMonth": month,
-                "adsSale": "",
-                "sku": sku,
-                "mlb": code,
-                "title": title,
-                "listingType": "",
-                "deliveryMethod": "",
-                "result": "",
-                "destination": "",
-                "resultReason": "",
-                "complaintOpened": "",
-                "complaintClosed": "",
-                "mediation": "",
-                "lineType": "item_sale",
-                "eventClass": "venda",
-                "promoClass": "indefinido",
-            })
+    for daily in daily_rows:
+        code = _normalize_mlb_code(daily.get("item_id"))
+        if not code:
+            continue
+        meta = item_meta.get(code) or {"sku": code, "title": ""}
+        row_number += 1
+        qty = max(0, int(_number(daily.get("units_total"))))
+        orders_count = max(0, int(_number(daily.get("orders_count"))))
+        gross = _number(daily.get("revenue_total"))
+        unit_price = gross / qty if qty else 0
+        snapshot_date = str(daily.get("snapshot_date") or "").strip()
+        date_value = f"{snapshot_date}T12:00:00-03:00" if snapshot_date else ""
+        month = snapshot_date[:7] if len(snapshot_date) >= 7 else ""
+        sale_number = f"daily:{snapshot_date}:{code}"
+        title = str(meta.get("title") or "").strip()
+        sku = str(meta.get("sku") or code).strip()
+        dedupe_parts = [sale_number, date_value, sku, code, str(qty), f"{unit_price:.2f}", f"{gross:.2f}"]
+        sales_rows.append({
+            "dedupeKey": "|".join(dedupe_parts),
+            "importId": import_id,
+            "fileName": f"OAuth Mercado Livre - {client_id}",
+            "rowNumber": row_number,
+            "client": link["official_store"] or link["nickname"] or client_id or (user["name"] or user["email"]),
+            "channel": "Mercado Livre",
+            "saleNumber": sale_number,
+            "ordersCount": orders_count,
+            "date": date_value,
+            "month": month,
+            "status": "paid",
+            "statusDescription": "Venda online por OAuth/cache",
+            "packageMulti": "",
+            "isKit": "",
+            "units": qty,
+            "productRevenue": gross,
+            "unitPrice": unit_price,
+            "total": gross,
+            "sellingFee": 0,
+            "shippingRevenue": 0,
+            "shippingFee": 0,
+            "discounts": 0,
+            "refunds": 0,
+            "billingMonth": month,
+            "adsSale": "",
+            "sku": sku,
+            "mlb": code,
+            "title": title,
+            "listingType": "",
+            "deliveryMethod": "",
+            "result": "",
+            "destination": "",
+            "resultReason": "",
+            "complaintOpened": "",
+            "complaintClosed": "",
+            "mediation": "",
+            "lineType": "item_sale",
+            "eventClass": "venda",
+            "promoClass": "indefinido",
+        })
     sales_rows.sort(key=lambda row: (str(row.get("date") or ""), str(row.get("saleNumber") or ""), str(row.get("mlb") or "")))
     total_units = sum(_number(row.get("units")) for row in sales_rows)
     total_revenue = sum(_number(row.get("productRevenue")) for row in sales_rows)
@@ -1099,8 +1121,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     online_notice = (
         f"Base online carregada via OAuth/cache para {client_label}. Cobertura inicial: {period['dateFrom']} ate {period['dateTo']}."
     )
-    if errors:
-        online_notice += " Parte dos itens nao retornou pedidos detalhados; valide no XLSX se notar divergencia."
+    online_notice += " Fonte: snapshots diarios persistidos; a abertura da pagina nao refaz a busca de pedidos no Mercado Livre."
     return {
         "clientName": client_label,
         "pageSubtitle": "Leitura online beta da conta vinculada. O upload manual continua disponivel para validacao e historico completo.",
@@ -1138,11 +1159,18 @@ def _inject_sales_intelligence_memory_data(html_text: str, payload: dict) -> str
       var node = document.getElementById('salesIntelligenceBootstrap');
       if (!node || !window.__marketplaceApp || !window.__marketplaceApp.setMemoryData) return false;
       var data = JSON.parse(node.textContent || '{{}}');
-      var clientInput = document.getElementById('clientName');
-      if (clientInput && data.clientName) clientInput.value = data.clientName;
-      var subtitle = document.getElementById('pageSubtitle');
-      if (subtitle && data.pageSubtitle) subtitle.textContent = data.pageSubtitle;
-      window.__marketplaceApp.setMemoryData(data);
+      var applyData = function () {{
+        var clientInput = document.getElementById('clientName');
+        if (clientInput && data.clientName) clientInput.value = data.clientName;
+        var subtitle = document.getElementById('pageSubtitle');
+        if (subtitle && data.pageSubtitle) subtitle.textContent = data.pageSubtitle;
+        window.__marketplaceApp.setMemoryData(data);
+      }};
+      if (window.__marketplaceAppReady && typeof window.__marketplaceAppReady.then === 'function') {{
+        window.__marketplaceAppReady.then(applyData);
+      }} else {{
+        applyData();
+      }}
       return true;
     }} catch (err) {{
       console.error('Falha ao hidratar Inteligencia de Vendas online', err);
