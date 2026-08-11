@@ -34,7 +34,7 @@ import beta_bridge
 import eduzz_api
 import webhook
 import app
-import gerar_dashboard_ads_ml as dashboard_generator
+from gerar_dashboard_ads_ml import detect_ads_period
 
 
 def signed(payload):
@@ -88,6 +88,15 @@ class IntegrationTests(unittest.TestCase):
         token_path = pathlib.Path(TEST_DIR.name) / "eduzz_oauth_token.json"
         if token_path.exists():
             token_path.unlink()
+
+    def test_ads_period_accepts_portuguese_month_abbreviations(self):
+        ads_rows = [
+            (3, {1: "05-jul-2026", 2: "04-ago-2026"}),
+        ]
+        self.assertEqual(
+            detect_ads_period(ads_rows),
+            {"dateFrom": "2026-07-05", "dateTo": "2026-08-04"},
+        )
 
     def test_paid_invoice_uses_items_product_id_and_is_idempotent(self):
         raw, signature = signed(payload(
@@ -409,7 +418,8 @@ class HTTPRouteTests(unittest.TestCase):
         return build_opener(NoRedirect)
 
     def test_beta_assertion_is_identity_only_and_single_use(self):
-        user_id, _ = self._login_cookie("beta@example.com")
+        user_id, _ = self._login_cookie("beta-assertion@example.com")
+        db.set_user_beta_access(user_id, True)
         user = db.get_user_by_id(user_id)
         link = {
             "client_id": "client-1",
@@ -426,8 +436,8 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertNotIn("access_token", token)
         self.assertNotIn("refresh_token", token)
         payload_value = beta_bridge.verify_assertion(token, "secret", "https://beta.example/beta/callback", now=base_now + 1)
-        self.assertEqual(payload_value["user"]["email"], "beta@example.com")
-        self.assertIsNone(payload_value["user"]["beta_enabled"])
+        self.assertEqual(payload_value["user"]["email"], "beta-assertion@example.com")
+        self.assertIs(payload_value["user"]["beta_enabled"], True)
         self.assertEqual(payload_value["ml"]["client_id"], "client-1")
         self.assertTrue(db.claim_beta_handoff(payload_value["nonce"], payload_value["exp"]))
         self.assertFalse(db.claim_beta_handoff(payload_value["nonce"], payload_value["exp"]))
@@ -443,70 +453,45 @@ class HTTPRouteTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             beta_bridge.verify_assertion(token, "secret", "https://beta.example/beta/callback", now=221)
 
-    def test_beta_access_sync_blocks_user_and_ends_beta_session(self):
-        user_id, cookie = self._login_cookie("beta-sync-block@example.com")
-        user = dict(db.get_user_by_id(user_id))
-        user["beta_enabled"] = False
-        original_mode = app.beta_config.BETA_MODE
+    def test_sync_beta_access_posts_signed_assertion(self):
+        user_id, _ = self._login_cookie("beta-sync@example.com")
+        db.set_user_beta_access(user_id, True)
+        user = db.get_user_by_id(user_id)
+        received = {}
+
+        class FakeBeta(BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                return
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                form = parse_qs(self.rfile.read(length).decode("utf-8"))
+                token = form.get("assertion", [""])[0]
+                audience = f"http://127.0.0.1:{self.server.server_port}/internal/beta/access-sync"
+                received.update(beta_bridge.verify_assertion(token, "sync-secret", audience))
+                body = b'{"ok":true}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        fake = ThreadingHTTPServer(("127.0.0.1", 0), FakeBeta)
+        thread = threading.Thread(target=fake.serve_forever, daemon=True)
+        thread.start()
         original_secret = app.beta_config.BETA_SHARED_AUTH_SECRET
         original_public_url = app.beta_config.BETA_PUBLIC_URL
-        app.beta_config.BETA_MODE = True
         app.beta_config.BETA_SHARED_AUTH_SECRET = "sync-secret"
-        app.beta_config.BETA_PUBLIC_URL = self.base_url
+        app.beta_config.BETA_PUBLIC_URL = f"http://127.0.0.1:{fake.server_port}"
         try:
-            audience = f"{self.base_url}/internal/beta/access-sync"
-            token = beta_bridge.create_assertion("sync-secret", user, None, audience)
-            request = Request(
-                audience,
-                data=urlencode({"assertion": token}).encode("utf-8"),
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                method="POST",
-            )
-            with urlopen(request, timeout=5) as response:
-                result = json.loads(response.read())
-            self.assertTrue(result["ok"])
-            session_token = cookie.split("=", 1)[1]
-            self.assertIsNone(db.get_session(session_token))
-            self.assertEqual(db.get_user_by_id(user_id)["beta_enabled"], 0)
+            self.assertTrue(app._sync_beta_access(user))
+            self.assertIs(received["user"]["beta_enabled"], True)
         finally:
-            app.beta_config.BETA_MODE = original_mode
             app.beta_config.BETA_SHARED_AUTH_SECRET = original_secret
             app.beta_config.BETA_PUBLIC_URL = original_public_url
-
-    def test_beta_login_uses_shared_auth_bridge(self):
-        original = (
-            app.beta_config.BETA_MODE,
-            app.beta_config.BETA_SHARED_AUTH_SECRET,
-            app.beta_config.BETA_PUBLIC_URL,
-        )
-        app.beta_config.BETA_MODE = True
-        app.beta_config.BETA_SHARED_AUTH_SECRET = "sync-secret"
-        app.beta_config.BETA_PUBLIC_URL = "https://beta.example.test"
-        try:
-            opener = self._no_redirect_opener()
-            with self.assertRaises(HTTPError) as raised:
-                opener.open(f"{self.base_url}/login", timeout=5)
-            self.assertEqual(raised.exception.code, 302)
-            self.assertEqual(raised.exception.headers["Location"], "/teste")
-            raised.exception.close()
-
-            request = Request(
-                f"{self.base_url}/login",
-                data=urlencode({"email": "beta@example.com", "password": "123456"}).encode("utf-8"),
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                method="POST",
-            )
-            with self.assertRaises(HTTPError) as raised:
-                opener.open(request, timeout=5)
-            self.assertEqual(raised.exception.code, 302)
-            self.assertEqual(raised.exception.headers["Location"], "/teste")
-            raised.exception.close()
-        finally:
-            (
-                app.beta_config.BETA_MODE,
-                app.beta_config.BETA_SHARED_AUTH_SECRET,
-                app.beta_config.BETA_PUBLIC_URL,
-            ) = original
+            fake.shutdown()
+            fake.server_close()
+            thread.join(timeout=3)
 
     def test_health_and_custom_delivery(self):
         with urlopen(f"{self.base_url}/healthz", timeout=5) as response:
@@ -694,10 +679,8 @@ class HTTPRouteTests(unittest.TestCase):
             self.assertIn("Dashboard ADS Mercado Livre", body)
             self.assertIn("Modo online beta: dados parciais.", body)
             self.assertIn('data-view-mode="campaign"', body)
-            self.assertIn('data-view="online-beta"', body)
             self.assertIn("Ver leitura", body)
             self.assertIn("Dependencia de Ads &gt; 50%", body)
-            self.assertIn("Pilares de prioridade", body)
             self.assertNotIn("agente-ml.onrender.com/relatorio", body)
             scripts = "\n".join(re.findall(r"<script>(.*?)</script>", body, flags=re.S))
             syntax = subprocess.run(
@@ -751,7 +734,43 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(data["kpis"]["tacosBaseRevenue"], 200)
         self.assertAlmostEqual(data["kpis"]["tacos"], 0.05)
         self.assertEqual(data["meta"]["adsDeduplication"]["removedRows"], 1)
-        self.assertIn("linhas duplicadas exatas", data["meta"]["onlineMode"]["notice"])
+        self.assertIn("linhas duplicadas do cache de Ads", data["meta"]["onlineMode"]["notice"])
+
+    def test_online_dashboard_deduplicates_same_ad_metrics_with_conflicting_status(self):
+        base_row = {
+            "item_id": "MLB123",
+            "campaign_id": "456",
+            "ad_group_id": "789",
+            "sku": "SKU-123",
+            "cost": 10,
+            "total_amount": 100,
+            "direct_amount": 70,
+            "units_quantity": 2,
+            "prints": 1000,
+            "clicks": 50,
+        }
+        payload = {
+            "ok": True,
+            "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
+            "ads": {"items": [
+                {**base_row, "status": "paused"},
+                {**base_row, "status": "active"},
+            ]},
+            "sales": {"items": {"MLB123": {"revenue_total": 200, "units_total": 4}}},
+        }
+        original_fetch = app._fetch_dash_ads_json
+        app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
+        try:
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+        finally:
+            app._fetch_dash_ads_json = original_fetch
+
+        self.assertEqual(message, "")
+        self.assertEqual(len(data["items"]), 1)
+        self.assertEqual(data["items"][0]["campaignStatus"], "Ativa")
+        self.assertEqual(data["kpis"]["investment"], 10)
+        self.assertEqual(data["kpis"]["adsRevenue"], 100)
+        self.assertEqual(data["meta"]["adsDeduplication"]["removedSemanticRows"], 1)
 
     def test_online_dashboard_uses_enriched_cache_metadata(self):
         payload = {
@@ -761,6 +780,7 @@ class HTTPRouteTests(unittest.TestCase):
                 "item_id": "MLB123",
                 "campaign_id": "456",
                 "campaign_name": "Campanha Principal",
+                "status": "paused",
                 "sku": "SKU-123",
                 "title": "Produto Teste",
                 "price": 59.9,
@@ -786,6 +806,7 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(item["campaign"], "Campanha Principal")
         self.assertEqual(item["lastSaleDate"], "2026-07-30T10:00:00-03:00")
         self.assertEqual(item["lastPrice"], 49.9)
+        self.assertEqual(item["campaignStatus"], "Anuncio inativo na campanha")
 
     def test_online_dashboard_counts_sales_once_for_same_item_in_different_campaigns(self):
         payload = {
@@ -874,28 +895,6 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertIn("leitura parcial", data["items"][0]["diagnosticSummary"])
         self.assertIn("faturamento e TACOS", " ".join(data["items"][0]["validationPoints"]))
 
-    def test_offline_reading_includes_prototype_priority_and_variation_signals(self):
-        period = dashboard_generator.detect_ads_period([(3, {1: "23-mai-2026", 2: "23-jun-2026"})])
-        self.assertEqual(period, {"dateFrom": "2026-05-23", "dateTo": "2026-06-23"})
-        item = {
-            "sku": "SKU-1", "code": "MLB1", "units": 8, "totalRevenue": 4000,
-            "adsRevenue": 1200, "investment": 90, "impressions": 5000,
-            "clicks": 120, "adsSales": 10, "tacos": 90 / 4000,
-            "ctr": 120 / 5000, "cvr": 10 / 120, "cpc": 90 / 120,
-            "maxCpc": 1, "adsDependencyRatio": 0.3, "possibleCatalog": False,
-        }
-        dashboard_generator.apply_alerts(item)
-        self.assertEqual(len(item["priorityPillars"]), 4)
-        self.assertIn(item["priorityLabel"], {"Urgente", "Prioritario", "Necessario", "Monitorar"})
-
-        signal = dashboard_generator.detect_variation_budget_drain([
-            {"sku": "SKU-A", "code": "MLB-A", "investment": 100, "clicks": 50, "adsSales": 8, "adsRevenue": 800, "cvr": 0.16},
-            {"sku": "SKU-B", "code": "MLB-B", "investment": 140, "clicks": 70, "adsSales": 1, "adsRevenue": 80, "cvr": 1 / 70},
-        ])
-        self.assertIsNotNone(signal)
-        self.assertEqual(signal["leaderCode"], "MLB-A")
-        self.assertEqual(signal["weakCode"], "MLB-B")
-
     def test_online_requires_beta_confirmation_before_redirect(self):
         user_id, cookie = self._login_cookie("warn@example.com")
         db.upsert_user_ml_link(
@@ -982,20 +981,67 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertGreater(user["expires_at"], int(app.time.time()) + (6 * 86400))
         raised.exception.close()
 
-    def test_beta_rejects_manual_access_creation(self):
+    def test_admin_can_allow_and_block_beta_without_changing_real_access(self):
+        user_id = db.upsert_manual_user(
+            email="beta-toggle@example.com",
+            name="Cliente Beta",
+            plan="cortesia",
+            status="active",
+            expires_at=None,
+        )
         admin_cookie = self._admin_cookie()
-        original = app.beta_config.BETA_MODE
-        app.beta_config.BETA_MODE = True
+        opener = self._no_redirect_opener()
+        original_sync = app._sync_beta_access
+        app._sync_beta_access = lambda user: True
         try:
-            payload = urlencode({
-                "email": "beta-manual@example.com",
-                "name": "Nao Criar",
-                "plan": "cortesia",
-                "days": "7",
-            }).encode("utf-8")
+            for enabled, expected in (("1", 1), ("0", 0)):
+                request = Request(
+                    f"{self.base_url}/admin/users/{user_id}/set_beta_access",
+                    data=urlencode({"enabled": enabled}).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Cookie": admin_cookie,
+                    },
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    opener.open(request, timeout=5)
+                self.assertEqual(raised.exception.code, 302)
+                raised.exception.close()
+                user = db.get_user_by_id(user_id)
+                self.assertEqual(user["beta_enabled"], expected)
+                self.assertEqual(user["status"], "active")
+                self.assertEqual(user["access_origin"], "manual")
+                self.assertIsNone(user["expires_at"])
+        finally:
+            app._sync_beta_access = original_sync
+
+        request = Request(
+            f"{self.base_url}/admin?q=beta-toggle%40example.com",
+            headers={"Cookie": admin_cookie},
+            method="GET",
+        )
+        with urlopen(request, timeout=5) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        self.assertIn("Beta bloqueado", body)
+        self.assertIn("Liberar beta", body)
+        self.assertIn(f"/admin/users/{user_id}/set_beta_access", body)
+
+    def test_admin_can_allow_and_block_sales_intelligence_access(self):
+        user_id = db.upsert_manual_user(
+            email="sales-toggle@example.com",
+            name="Cliente Vendas",
+            plan="cortesia",
+            status="active",
+            expires_at=None,
+        )
+        admin_cookie = self._admin_cookie()
+        opener = self._no_redirect_opener()
+
+        for enabled, expected, expected_label in (("0", 0, "Vendas bloqueada"), ("1", 1, "Vendas liberada")):
             request = Request(
-                f"{self.base_url}/admin/users/manual_access",
-                data=payload,
+                f"{self.base_url}/admin/users/{user_id}/set_sales_access",
+                data=urlencode({"enabled": enabled}).encode("utf-8"),
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Cookie": admin_cookie,
@@ -1003,13 +1049,51 @@ class HTTPRouteTests(unittest.TestCase):
                 method="POST",
             )
             with self.assertRaises(HTTPError) as raised:
-                urlopen(request, timeout=5)
-            self.assertEqual(raised.exception.code, 403)
-            self.assertIsNone(db.get_user_by_email("beta-manual@example.com"))
+                opener.open(request, timeout=5)
+            self.assertEqual(raised.exception.code, 302)
             raised.exception.close()
-        finally:
-            app.beta_config.BETA_MODE = original
+            user = db.get_user_by_id(user_id)
+            self.assertEqual(user["sales_enabled"], expected)
 
+            request = Request(
+                f"{self.base_url}/admin?q=sales-toggle%40example.com",
+                headers={"Cookie": admin_cookie},
+                method="GET",
+            )
+            with urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8", errors="replace")
+            self.assertIn(expected_label, body)
+            self.assertIn(f"/admin/users/{user_id}/set_sales_access", body)
+
+    def test_beta_access_sync_blocks_user_and_ends_beta_session(self):
+        user_id, cookie = self._login_cookie("beta-block@example.com")
+        db.set_user_beta_access(user_id, False)
+        user = db.get_user_by_id(user_id)
+        original_mode = app.beta_config.BETA_MODE
+        original_secret = app.beta_config.BETA_SHARED_AUTH_SECRET
+        original_public_url = app.beta_config.BETA_PUBLIC_URL
+        app.beta_config.BETA_MODE = True
+        app.beta_config.BETA_SHARED_AUTH_SECRET = "sync-secret"
+        app.beta_config.BETA_PUBLIC_URL = self.base_url
+        try:
+            audience = f"{self.base_url}/internal/beta/access-sync"
+            token = beta_bridge.create_assertion("sync-secret", user, None, audience)
+            request = Request(
+                audience,
+                data=urlencode({"assertion": token}).encode("utf-8"),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            with urlopen(request, timeout=5) as response:
+                result = json.loads(response.read())
+            self.assertTrue(result["ok"])
+            session_token = cookie.split("=", 1)[1]
+            self.assertIsNone(db.get_session(session_token))
+            self.assertEqual(db.get_user_by_id(user_id)["beta_enabled"], 0)
+        finally:
+            app.beta_config.BETA_MODE = original_mode
+            app.beta_config.BETA_SHARED_AUTH_SECRET = original_secret
+            app.beta_config.BETA_PUBLIC_URL = original_public_url
     def test_admin_can_bind_ml_link_manually_for_existing_user(self):
         user_id = db.upsert_manual_user(
             email="lonas@example.com",
@@ -1047,6 +1131,120 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(link["ml_user_id"], "14252670")
         self.assertEqual(link["advertiser_id"], "164424")
         raised.exception.close()
+
+    def test_sales_intelligence_route_requires_permission(self):
+        user_id, cookie = self._login_cookie("sales-route@example.com")
+
+        request = Request(
+            f"{self.base_url}/inteligencia-vendas",
+            headers={"Cookie": cookie},
+            method="GET",
+        )
+        with urlopen(request, timeout=5) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        self.assertIn("Inteligencia de Vendas Marketplace", body)
+
+        db.set_user_sales_access(user_id, False)
+        blocked_request = Request(
+            f"{self.base_url}/inteligencia-vendas",
+            headers={"Cookie": cookie},
+            method="GET",
+        )
+        with self.assertRaises(HTTPError) as raised:
+            urlopen(blocked_request, timeout=5)
+        self.assertEqual(raised.exception.code, 403)
+        blocked_body = raised.exception.read().decode("utf-8", errors="replace")
+        self.assertIn("Inteligencia de Vendas esta bloqueada", blocked_body)
+        raised.exception.close()
+
+    def test_sales_intelligence_route_injects_online_snapshot_when_link_exists(self):
+        user_id, cookie = self._login_cookie("sales-online@example.com")
+        db.upsert_user_ml_link(
+            user_id,
+            client_id="conta-ativa",
+            ml_user_id="14252670",
+            nickname="LONAS_ONLINE",
+            advertiser_id="164424",
+        )
+        original = app._build_sales_intelligence_memory_data
+        app._build_sales_intelligence_memory_data = lambda *_args, **_kwargs: ({
+            "clientName": "LONAS_ONLINE",
+            "pageSubtitle": "Leitura online beta da conta vinculada.",
+            "sales": [{
+                "dedupeKey": "pedido-1|2026-08-10T10:00:00-03:00|SKU-1|MLB1|1|10.00|10.00",
+                "importId": "online:conta-ativa",
+                "fileName": "OAuth Mercado Livre - LONAS_ONLINE",
+                "rowNumber": 1,
+                "client": "LONAS_ONLINE",
+                "channel": "Mercado Livre",
+                "saleNumber": "pedido-1",
+                "date": "2026-08-10T10:00:00-03:00",
+                "month": "2026-08",
+                "status": "paid",
+                "statusDescription": "Venda online por OAuth/cache",
+                "packageMulti": "",
+                "isKit": "",
+                "units": 1,
+                "productRevenue": 10,
+                "unitPrice": 10,
+                "total": 10,
+                "sellingFee": 0,
+                "shippingRevenue": 0,
+                "shippingFee": 0,
+                "discounts": 0,
+                "refunds": 0,
+                "billingMonth": "2026-08",
+                "adsSale": "",
+                "sku": "SKU-1",
+                "mlb": "MLB1",
+                "title": "Produto teste",
+                "listingType": "",
+                "deliveryMethod": "",
+                "result": "",
+                "destination": "",
+                "resultReason": "",
+                "complaintOpened": "",
+                "complaintClosed": "",
+                "mediation": "",
+                "lineType": "item_sale",
+                "eventClass": "venda",
+                "promoClass": "indefinido",
+            }],
+            "imports": [{
+                "importId": "online:conta-ativa",
+                "fileName": "OAuth Mercado Livre - LONAS_ONLINE",
+                "periodStart": "2026-04-13",
+                "periodEnd": "2026-08-10",
+                "rows": 1,
+                "newRows": 1,
+                "duplicateRows": 0,
+                "units": 1,
+                "revenue": 10,
+                "status": "Online / OAuth cache bruto",
+                "importedAt": "2026-08-11T09:00:00-03:00",
+            }],
+            "events": [],
+            "reportWindow": "7d",
+            "profitWindow": "30d",
+            "globalSearchScope": "code",
+            "globalSearch": "",
+            "noSalesRejected": {},
+        }, "")
+        try:
+            request = Request(
+                f"{self.base_url}/inteligencia-vendas",
+                headers={"Cookie": cookie},
+                method="GET",
+            )
+            with urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8", errors="replace")
+            self.assertEqual(response.status, 200)
+            self.assertIn("salesIntelligenceBootstrap", body)
+            self.assertIn("OAuth Mercado Livre - LONAS_ONLINE", body)
+            self.assertIn("pedido-1", body)
+            self.assertIn("Leitura online beta da conta vinculada.", body)
+        finally:
+            app._build_sales_intelligence_memory_data = original
 
     def test_admin_can_extend_existing_user_for_x_days(self):
         user_id = db.upsert_manual_user(

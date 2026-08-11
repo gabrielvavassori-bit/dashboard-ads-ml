@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
     plan              TEXT,
     status            TEXT NOT NULL DEFAULT 'pending',  -- pending | active | suspended | refunded | expired
     beta_enabled      INTEGER DEFAULT NULL,             -- NULL = allowlist, 1 = liberado, 0 = bloqueado
+    sales_enabled     INTEGER NOT NULL DEFAULT 1,       -- 1 = inteligencia de vendas liberada, 0 = bloqueada
     expires_at        INTEGER,                          -- timestamp unix; NULL = sem expiração
     password_hash     TEXT,                             -- NULL ate o primeiro acesso
     created_at        INTEGER NOT NULL,
@@ -185,6 +186,13 @@ def init_db():
                 )
             if "beta_enabled" not in user_columns:
                 conn.execute("ALTER TABLE users ADD COLUMN beta_enabled INTEGER DEFAULT NULL")
+            if "sales_enabled" not in user_columns:
+                conn.execute("ALTER TABLE users ADD COLUMN sales_enabled INTEGER NOT NULL DEFAULT 1")
+            conn.execute(
+                """UPDATE users
+                   SET sales_enabled=1
+                   WHERE status='active' AND (sales_enabled IS NULL OR sales_enabled NOT IN (0,1))"""
+            )
             ml_link_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(user_ml_links)")
             }
@@ -555,14 +563,34 @@ def set_user_status(user_id: int, status: str, expires_at=None):
         conn.close()
 
 
+def set_user_beta_access(user_id: int, enabled: bool) -> None:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE users SET beta_enabled=?, updated_at=? WHERE id=?",
+            (1 if enabled else 0, now(), user_id),
+        )
+    finally:
+        conn.close()
+
+
+def set_user_sales_access(user_id: int, enabled: bool) -> None:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE users SET sales_enabled=?, updated_at=? WHERE id=?",
+            (1 if enabled else 0, now(), user_id),
+        )
+    finally:
+        conn.close()
+
+
 def delete_user_sessions(user_id: int) -> None:
     conn = get_conn()
     try:
         conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
     finally:
         conn.close()
-
-
 def reset_user_password(user_id: int):
     """Limpa a senha — força o cliente a cadastrar nova senha no próximo acesso."""
     conn = get_conn()

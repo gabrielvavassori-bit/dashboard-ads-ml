@@ -108,7 +108,7 @@ def render_register(error: str = "", email: str = "") -> str:
     return _layout("Cadastrar", body)
 
 
-def render_app_shell(user_name: str, version: str, error: str = "", linked_client_name: str = "") -> str:
+def render_app_shell(user_name: str, version: str, error: str = "", linked_client_name: str = "", sales_enabled: bool = True) -> str:
     """Tela principal apos login - formulario de upload dos arquivos."""
     err_html = f'<div class="alert err">{_html.escape(error)}</div>' if error else ""
     extra_css = """
@@ -132,6 +132,11 @@ def render_app_shell(user_name: str, version: str, error: str = "", linked_clien
         if linked_client_name else
         '<div class="hint" style="margin-bottom:8px">Se sua conta ainda nao estiver vinculada, o modo online vai abrir a ativacao automaticamente.</div>'
     )
+    sales_card = (
+        '<a class="secondary" href="/inteligencia-vendas">Abrir Inteligencia de Vendas</a>'
+        if sales_enabled
+        else '<span class="hint">Inteligencia de Vendas bloqueada para este cliente no admin.</span>'
+    )
     beta_warning = """
     <div class="alert err" style="margin-top:10px">
       <b>Modo online em fase de testes.</b> Os dados ainda podem apresentar divergencias e nao devem ser tratados como 100% confiaveis sem validacao manual.
@@ -154,6 +159,11 @@ def render_app_shell(user_name: str, version: str, error: str = "", linked_clien
     {linked_html}
     {beta_warning}
     <div class="modebar">
+      <div class="mode-card">
+        <h3>Inteligencia de Vendas</h3>
+        <p>Abre o modulo de leitura comercial por SKU e MLB usando a mesma conta, o mesmo login e o mesmo vinculo Mercado Livre.</p>
+        {sales_card}
+      </div>
       <div class="mode-card">
         <h3>Modo online beta</h3>
         <p>Abre o painel online usando a conta Mercado Livre vinculada. Se ainda nao existir vinculo, a ativacao com OAuth comeca automaticamente. Antes de seguir, o sistema exibe um alerta de beta e de possivel divergencia.</p>
@@ -241,6 +251,19 @@ def render_error_page(message: str, traceback_text: str = "") -> str:
     return _layout("Erro", body)
 
 
+def render_online_cache_pending(message: str, retry_seconds: int = 5) -> str:
+    delay_ms = max(1, int(retry_seconds)) * 1000
+    body = f"""
+    <h1>Preparando o periodo selecionado</h1>
+    <p>O dashboard esta coletando os dados desta janela em segundo plano.</p>
+    <div class="alert ok">{_html.escape(message)}</div>
+    <p>Esta pagina tentara novamente automaticamente.</p>
+    <p><a href="javascript:window.location.reload()">Verificar agora</a></p>
+    <script>window.setTimeout(function(){{window.location.reload();}}, {delay_ms});</script>
+    """
+    return _layout("Preparando dashboard", body)
+
+
 def render_admin_login(error: str = "") -> str:
     err_html = f'<div class="alert err">{_html.escape(error)}</div>' if error else ""
     body = f"""
@@ -284,6 +307,33 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
         else:
             origin_label = '<span class="pill active">Eduzz</span>'
             origin_note = '<div style="font-size:12px;color:#667085">Controle atual pela Eduzz</div>'
+        beta_enabled = u.get("beta_enabled")
+        if beta_enabled is None:
+            beta_label = '<span class="pill pending">Beta: regra padrao</span>'
+            beta_value = "1"
+            beta_button = "Liberar beta"
+            beta_class = ""
+        elif beta_enabled:
+            beta_label = '<span class="pill active">Beta liberado</span>'
+            beta_value = "0"
+            beta_button = "Bloquear beta"
+            beta_class = "danger"
+        else:
+            beta_label = '<span class="pill suspended">Beta bloqueado</span>'
+            beta_value = "1"
+            beta_button = "Liberar beta"
+            beta_class = ""
+        sales_enabled = int(u.get("sales_enabled", 1) or 0) == 1
+        if sales_enabled:
+            sales_label = '<span class="pill active">Vendas liberada</span>'
+            sales_value = "0"
+            sales_button = "Bloquear vendas"
+            sales_class = "danger"
+        else:
+            sales_label = '<span class="pill suspended">Vendas bloqueada</span>'
+            sales_value = "1"
+            sales_button = "Liberar vendas"
+            sales_class = ""
         ml_link_html = ""
         if u.get("ml_link_label"):
             ml_link_html = (
@@ -300,7 +350,7 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
         rows.append(f"""
         <tr>
           <td>{_html.escape(u['email'] or '')}<div style="font-size:12px;color:#667085">{_html.escape(u['name'] or '')}</div>{ml_link_html}</td>
-          <td>{origin_label}{origin_note}</td>
+          <td>{origin_label}{origin_note}<div style="margin-top:6px">{beta_label}</div><div style="margin-top:6px">{sales_label}</div></td>
           <td><span class="pill {status}">{status}</span></td>
           <td>{_html.escape(plan)}</td>
           <td>{fmt_ts(u['expires_at'])}</td>
@@ -321,6 +371,14 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
             <form method="post" action="/admin/users/{u['id']}/set_status">
               <input type="hidden" name="status" value="suspended">
               <button type="submit" class="danger">Suspender</button>
+            </form>
+            <form method="post" action="/admin/users/{u['id']}/set_beta_access">
+              <input type="hidden" name="enabled" value="{beta_value}">
+              <button type="submit" class="{beta_class}">{beta_button}</button>
+            </form>
+            <form method="post" action="/admin/users/{u['id']}/set_sales_access">
+              <input type="hidden" name="enabled" value="{sales_value}">
+              <button type="submit" class="{sales_class}">{sales_button}</button>
             </form>
           </td>
         </tr>""")

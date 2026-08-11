@@ -384,159 +384,12 @@ def confidence_label(item):
     return "hipotese", reasons or ["sinais inconclusivos"], validations
 
 
-def priority_level_from_score(score):
-    if score >= 4:
-        return "Critica"
-    if score >= 3:
-        return "Alta"
-    if score >= 2:
-        return "Media"
-    return "Baixa"
-
-
-def financial_priority(item):
-    score = 0
-    reasons = []
-    investment = item.get("investment", 0) or 0
-    total_revenue = item.get("totalRevenue", 0) or 0
-    tacos = item.get("tacos", 0) or 0
-    if investment >= 2000 or total_revenue >= 20000:
-        score += 2
-        reasons.append("volume financeiro relevante no periodo")
-    elif investment >= 400 or total_revenue >= 5000:
-        score += 1
-        reasons.append("impacto financeiro perceptivel")
-    if investment > 0 and (item.get("adsRevenue", 0) or 0) <= 0:
-        score += 2
-        reasons.append("houve verba sem retorno ADS atribuivel")
-    elif tacos > 0.05:
-        score += 2
-        reasons.append("TACOS muito acima da meta")
-    elif tacos > TACOS_TARGET:
-        score += 1
-        reasons.append("TACOS acima da meta")
-    if total_revenue > 0 and (item.get("adsDependencyRatio", 0) or 0) >= ADS_DEPENDENCY_HIGH:
-        score += 1
-        reasons.append("dependencia alta de ADS")
-    return {
-        "name": "Prioridade financeira",
-        "level": priority_level_from_score(score),
-        "score": score,
-        "reason": reasons[0] if reasons else "sem risco financeiro dominante no periodo",
-    }
-
-
-def urgency_priority(item):
-    score = 0
-    reasons = []
-    investment = item.get("investment", 0) or 0
-    if investment > 0 and (item.get("adsRevenue", 0) or 0) <= 0:
-        score += 4
-        reasons.append("gasto ativo sem retorno ADS")
-    if item.get("salesPaceAlert"):
-        score += 1
-        reasons.append("ritmo recente de venda piorou")
-    if item.get("variationBudgetDrainRisk"):
-        score += 2
-        reasons.append("campanha pode estar drenando verba entre variacoes")
-    if (item.get("tacos", 0) or 0) > 0.05:
-        score += 2
-        reasons.append("TACOS pede intervencao no curto prazo")
-    return {
-        "name": "Prioridade de urgencia",
-        "level": priority_level_from_score(score),
-        "score": score,
-        "reason": reasons[0] if reasons else "sem gatilho de urgencia imediata",
-    }
-
-
-def confidence_priority(item):
-    confidence = str(item.get("confidence") or "").lower()
-    level = "Alta" if confidence == "forte" else "Media" if confidence == "provavel" else "Baixa"
-    return {
-        "name": "Prioridade de confianca",
-        "level": level,
-        "score": 3 if level == "Alta" else 2 if level == "Media" else 1,
-        "reason": "ha evidencia suficiente para leitura orientativa" if level == "Alta" else "a leitura ainda pede validacao adicional",
-    }
-
-
-def movement_safety_priority(item):
-    score = 1
-    reasons = []
-    if item.get("possibleCatalog"):
-        score += 2
-        reasons.append("catalogo ou sincronizacao pedem leitura individual e agregada")
-    if item.get("variationBudgetDrainRisk"):
-        score += 2
-        reasons.append("variacoes exigem teste isolado")
-    if (item.get("adCount", 0) or 0) > 1:
-        score += 1
-        reasons.append("ha mais de um anuncio na leitura")
-    return {
-        "name": "Seguranca do movimento",
-        "level": "Alta" if score >= 4 else "Media" if score >= 2 else "Baixa",
-        "score": score,
-        "reason": reasons[0] if reasons else "baixo risco de teste operacional isolado",
-    }
-
-
-def enrich_priority_methodology(item):
-    finance = financial_priority(item)
-    urgency = urgency_priority(item)
-    confidence = confidence_priority(item)
-    safety = movement_safety_priority(item)
-    if urgency["score"] >= 4:
-        label, reason = "Urgente", "ha vazamento atual ou risco operacional imediato"
-    elif finance["score"] >= 4 or urgency["score"] >= 3:
-        label, reason = "Prioritario", "o item tem impacto relevante e merece entrar na frente"
-    elif finance["score"] >= 3 or urgency["score"] >= 2 or len(item.get("alerts") or []) >= 2:
-        label, reason = "Necessario", "vale tratar no ciclo atual"
-    else:
-        label, reason = "Monitorar", "o item nao pede mudanca agressiva agora"
-    item["priorityPillars"] = [finance, urgency, confidence, safety]
-    item["priorityLabel"] = label
-    item["priorityReason"] = reason
-
-
-def variation_label(item):
-    return f"{item.get('sku') or '(sem SKU)'} - {item.get('code') or ''}".strip(" -")
-
-
-def detect_variation_budget_drain(children):
-    active = [row for row in children if (row.get("investment", 0) or 0) > 0 and (row.get("clicks", 0) or 0) >= 20]
-    if len(active) < 2:
-        return None
-    leader = max(active, key=lambda row: (row.get("cvr", 0) or 0, row.get("adsSales", 0) or 0, row.get("adsRevenue", 0) or 0))
-    if (leader.get("cvr", 0) or 0) < 0.05 or (leader.get("adsSales", 0) or 0) < 2:
-        return None
-    total_investment = sum((row.get("investment", 0) or 0) for row in active)
-    weak = [row for row in active if row.get("code") != leader.get("code") and (row.get("clicks", 0) or 0) >= 40 and ((row.get("investment", 0) or 0) / total_investment if total_investment else 0) >= 0.2 and ((row.get("cvr", 0) or 0) <= (leader.get("cvr", 0) or 0) * 0.5 or (row.get("adsSales", 0) or 0) <= 1)]
-    if not weak:
-        return None
-    weak = max(weak, key=lambda row: (row.get("investment", 0) or 0, -(row.get("cvr", 0) or 0)))
-    return {
-        "leaderCode": leader.get("code") or "",
-        "leaderSku": leader.get("sku") or "",
-        "leaderLabel": variation_label(leader),
-        "leaderCvr": leader.get("cvr", 0) or 0,
-        "weakCode": weak.get("code") or "",
-        "weakSku": weak.get("sku") or "",
-        "weakLabel": variation_label(weak),
-        "weakCvr": weak.get("cvr", 0) or 0,
-        "weakInvestmentShare": (weak.get("investment", 0) or 0) / total_investment if total_investment else 0,
-    }
-
-
 def diagnosis_hypotheses(item):
     hypotheses = []
     investment = item.get("investment", 0) or 0
     ads_revenue = item.get("adsRevenue", 0) or 0
     ctr_label = item.get("ctrClass", "")
     cvr_label = item.get("cvrClass", "")
-    if item.get("variationBudgetDrainRisk"):
-        hypotheses.append("a verba pode estar indo para uma variacao mais fraca dentro da mesma campanha")
-        hypotheses.append("a variacao lider pode servir como referencia de foto, oferta e estrutura")
     if investment > 0 and ads_revenue <= 0:
         hypotheses.append("o gasto nao mostrou retorno atribuivel; revisar campanha, termos e anuncio")
     if ctr_label == "Baixo" and (item.get("impressions", 0) or 0) >= 1000:
@@ -556,11 +409,6 @@ def suggested_test_order(item):
     steps = []
     ctr_label = item.get("ctrClass", "")
     cvr_label = item.get("cvrClass", "")
-    if item.get("variationBudgetDrainRisk"):
-        steps.extend([
-            "comparar a variacao lider com a variacao fraca em foto, preco, oferta e descricao",
-            "testar a variacao mais fraca sem alterar todas as variacoes ao mesmo tempo",
-        ])
     if ctr_label == "Baixo" and (item.get("impressions", 0) or 0) >= 1000:
         steps.extend(["testar primeiro a imagem principal", "depois testar o titulo", "em seguida validar preco e oferta"])
         if (item.get("investment", 0) or 0) > 0:
@@ -579,12 +427,6 @@ def suggested_test_order(item):
 def reading_summary(item):
     if item.get("salesCoverageComplete") is False:
         return "leitura parcial: Ads esta atualizado, mas o faturamento ainda nao terminou de ser coletado"
-    if item.get("variationBudgetDrainRisk"):
-        if item.get("variationRole") == "drain":
-            return "esta variacao pode estar consumindo verba acima do retorno dentro da propria campanha"
-        if item.get("variationRole") == "leader":
-            return "esta variacao parece ser a referencia de conversao dentro da campanha"
-        return "campanha com variacoes desiguais; a verba pode estar concentrada na variacao menos eficiente"
     investment = item.get("investment", 0) or 0
     ads_revenue = item.get("adsRevenue", 0) or 0
     if investment > 0 and (item.get("totalRevenue", 0) or 0) <= 0:
@@ -686,9 +528,6 @@ def apply_alerts(item):
     if item.get("possibleCatalog"):
         alerts.append("Possivel catalogo/sincronizado")
         recommendations.append("SKU aparece ligado a mais de um MLB; validar catalogo, buy box ou anuncios sincronizados no Mercado Livre.")
-    if item.get("variationBudgetDrainRisk"):
-        alerts.append("Possivel drenagem por variacao fraca")
-        recommendations.append("Comparar preco, foto, oferta e descricao com a variacao lider antes de alterar toda a campanha.")
 
     if not alerts:
         if investment > 0 and ads_revenue > 0 and 0 < tacos <= 0.03:
@@ -708,7 +547,6 @@ def apply_alerts(item):
     item["diagnosticSummary"] = reading_summary(item)
     item["diagnosisHypotheses"] = diagnosis_hypotheses(item)
     item["testOrder"] = suggested_test_order(item)
-    enrich_priority_methodology(item)
 
 
 def mark_possible_catalog(items):
@@ -1027,8 +865,6 @@ def aggregate_by_sku(items):
         item["code"] = ", ".join(codes[:4]) + ("..." if len(codes) > 4 else "")
         item["adCount"] = len(codes)
         item["campaign"] = ", ".join(campaigns[:3]) + ("..." if len(campaigns) > 3 else "")
-        item["organicRevenue"] = max(0, item["totalRevenue"] - item["adsRevenue"])
-        item["tacosBaseRevenue"] = item["totalRevenue"]
         item["tacos"] = item["investment"] / item["tacosBaseRevenue"] if item["tacosBaseRevenue"] else 0
         item["roas"] = item["adsRevenue"] / item["investment"] if item["investment"] else 0
         item["adsDependencyRatio"] = item["adsDirectRevenue"] / item["totalRevenue"] if item["totalRevenue"] else 0
@@ -1114,8 +950,6 @@ def aggregate_by_campaign(items):
         item["allCodes"] = ", ".join(item["codes"])
         item["allSkus"] = ", ".join(item["skus"])
         item["title"] = f"{item['skuCount']} SKU(s), {item['adCount']} anuncio(s)"
-        item["organicRevenue"] = max(0, item["totalRevenue"] - item["adsRevenue"])
-        item["tacosBaseRevenue"] = item["totalRevenue"]
         item["tacos"] = item["investment"] / item["tacosBaseRevenue"] if item["tacosBaseRevenue"] else 0
         item["roas"] = item["adsRevenue"] / item["investment"] if item["investment"] else 0
         item["adsDependencyRatio"] = item["adsDirectRevenue"] / item["totalRevenue"] if item["totalRevenue"] else 0
@@ -1133,16 +967,6 @@ def aggregate_by_campaign(items):
             row for row in item["children"]
             if (row.get("investment", 0) or 0) > 0 and (row.get("adsRevenue", 0) or 0) <= 0
         ])
-        variation = detect_variation_budget_drain(item["children"])
-        item["variationBudgetDrainRisk"] = bool(variation)
-        if variation:
-            item["variationLeaderCode"] = variation["leaderCode"]
-            item["variationLeaderSku"] = variation["leaderSku"]
-            item["variationLeaderCvr"] = variation["leaderCvr"]
-            item["variationWeakCode"] = variation["weakCode"]
-            item["variationWeakSku"] = variation["weakSku"]
-            item["variationWeakCvr"] = variation["weakCvr"]
-            item["variationWeakInvestmentShare"] = variation["weakInvestmentShare"]
         apply_alerts(item)
         if item["campaignRevenueAmbiguous"]:
             item["confidence"] = "hipotese"
@@ -1153,32 +977,6 @@ def aggregate_by_campaign(items):
         item["action"], item["reason"] = decision(item)
         result.append(item)
     return result
-
-
-def apply_campaign_variation_context(items, campaign_ads):
-    contexts = {
-        item.get("campaignKey") or item.get("campaign"): item
-        for item in campaign_ads
-        if item.get("variationBudgetDrainRisk")
-    }
-    for item in items:
-        context = contexts.get(item.get("campaign") or item.get("adsCampaigns"))
-        if not context:
-            continue
-        item["variationBudgetDrainRisk"] = True
-        item["variationLeaderCode"] = context.get("variationLeaderCode") or ""
-        item["variationLeaderSku"] = context.get("variationLeaderSku") or ""
-        item["variationLeaderCvr"] = context.get("variationLeaderCvr", 0) or 0
-        item["variationWeakCode"] = context.get("variationWeakCode") or ""
-        item["variationWeakSku"] = context.get("variationWeakSku") or ""
-        item["variationWeakCvr"] = context.get("variationWeakCvr", 0) or 0
-        item["variationWeakInvestmentShare"] = context.get("variationWeakInvestmentShare", 0) or 0
-        if item.get("code") == item["variationWeakCode"]:
-            item["variationRole"] = "drain"
-        elif item.get("code") == item["variationLeaderCode"]:
-            item["variationRole"] = "leader"
-        else:
-            item["variationRole"] = "peer"
 
 
 def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
@@ -1335,11 +1133,6 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
         action, reason = decision(item)
         item["action"] = action
         item["reason"] = reason
-    campaign_ads = aggregate_by_campaign(all_decision_items)
-    apply_campaign_variation_context(all_decision_items, campaign_ads)
-    for item in all_decision_items:
-        apply_alerts(item)
-        item["action"], item["reason"] = decision(item)
     sku_ads = aggregate_by_sku(all_decision_items)
     campaign_ads = aggregate_by_campaign(all_decision_items)
     apply_abc(all_decision_items, "totalRevenue", "abcCode")
@@ -1560,7 +1353,6 @@ def render_dashboard(data):
     }})();
     </script>
     """
-    online_beta_tab = '<button class="page-tab" data-view="online-beta" type="button">Online Beta</button>' if (data.get("onlineBeta") or {}).get("enabled") else ""
     return f"""<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -1722,7 +1514,7 @@ def render_dashboard(data):
     <nav class="page-nav" aria-label="Visoes do dashboard">
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
       <button class="page-tab" data-view="abc" type="button">Curva ABC</button>
-      {online_beta_tab}
+      <button class="page-tab" data-view="online-beta" type="button">Online Beta</button>
     </nav>
     <section class="view active" id="view-operational">
       <section class="grid">
@@ -2352,26 +2144,15 @@ def render_dashboard(data):
       </table></div>`;
     }}
     function detailBlocks(item) {{
-      const validation = (item.validationPoints || []).map(value => `Validar: ${{value}}`);
-      if (item.campaignRevenueAmbiguous) validation.unshift('TACOS da campanha e orientativo: o mesmo MLB aparece em mais de uma campanha.');
-      const summary = [
-        item.diagnosticSummary || item.reason || item.recommendation || 'Sem leitura adicional.',
-        `Acao sugerida agora: ${{item.action || 'Monitorar'}}`,
-        `Prioridade: ${{item.priorityLabel || 'Monitorar'}}. ${{item.priorityReason || ''}}`
+      const evidence = [
+        `Confianca: ${{item.confidence || 'hipotese'}}`,
+        ...((item.confidenceReasons || []).map(value => `Evidencia: ${{value}}`)),
+        ...((item.validationPoints || []).map(value => `Validar: ${{value}}`))
       ];
-      const revenue = [
-        `Receita do produto: ${{brl(item.totalRevenue || 0)}}`,
-        `Receita ADS total: ${{brl(item.adsRevenue || 0)}}`,
-        `Receita organica estimada: ${{brl(item.organicRevenue || item.revenueOutsideAds || 0)}}`,
-        `Base TACOS: ${{brl(item.tacosBaseRevenue || item.totalRevenue || 0)}}`
-      ];
-      const priorities = (item.priorityPillars || []).map(pillar => `${{pillar.name}}: ${{pillar.level}}. ${{pillar.reason}}`);
-      return listBlock('O que esta acontecendo', summary)
+      if (item.campaignRevenueAmbiguous) evidence.unshift('TACOS da campanha e orientativo: o mesmo MLB aparece em mais de uma campanha.');
+      return listBlock('Leitura e confianca', evidence)
         + listBlock('Causas mais provaveis', item.diagnosisHypotheses)
         + listBlock('O que fazer agora', item.testOrder)
-        + (validation.length ? listBlock('Conferir antes de mudar', validation) : '')
-        + listBlock('Receita e representatividade', revenue)
-        + listBlock('Pilares de prioridade', priorities)
         + campaignChildren(item);
     }}
     function row(item) {{
@@ -2393,7 +2174,7 @@ def render_dashboard(data):
       </tr>
       <tr class="decision-row"><td colspan="14"><div class="decision-wrap">
         <div class="decision-summary-main"><span class="pill ${{actionClass(item.action)}}">${{safe(item.action)}}</span><div class="decision-teaser"><b>Diagnostico:</b> ${{safe(item.diagnosticSummary || item.recommendation || item.reason || 'Sem leitura adicional.')}}</div></div>
-        <div class="decision-summary-side"><span class="summary-chip">${{safe(item.priorityLabel || 'Monitorar')}}</span><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">${{expanded ? 'Ocultar leitura' : 'Ver leitura'}}</button></div>
+        <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">${{expanded ? 'Ocultar leitura' : 'Ver leitura'}}</button></div>
       </div></td></tr>
       <tr class="detail-row" style="display:${{expanded ? 'table-row' : 'none'}}"><td colspan="14"><div class="detail-grid">${{detailBlocks(item)}}</div></td></tr>`;
     }}
