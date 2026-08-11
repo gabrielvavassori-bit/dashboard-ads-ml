@@ -1155,8 +1155,9 @@ def _inject_sales_intelligence_memory_data(html_text: str, payload: dict) -> str
   }}
 }})();
 </script>"""
-    if "</body>" in html_text:
-        return html_text.replace("</body>", loader + "\n</body>")
+    head, sep, tail = html_text.rpartition("</body>")
+    if sep:
+        return head + loader + "\n</body>" + tail
     return html_text + loader
 
 

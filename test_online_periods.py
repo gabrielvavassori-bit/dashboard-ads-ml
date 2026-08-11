@@ -181,6 +181,22 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("Preparando o periodo selecionado", html)
         self.assertIn("window.location.reload", html)
 
+    def test_sales_intelligence_injection_uses_real_final_body_tag(self):
+        html = "<html><body><script>var sample = '</body>';</script><div>ok</div></body></html>"
+        injected = app._inject_sales_intelligence_memory_data(html, {
+            "clientName": "Cliente teste",
+            "sales": [],
+            "imports": [],
+            "events": [],
+        })
+        self.assertEqual(injected.count('<script id="salesIntelligenceBootstrap"'), 1)
+        self.assertIn("var sample = '</body>';", injected)
+        self.assertTrue(injected.endswith("</body></html>"))
+        self.assertGreater(
+            injected.rfind("salesIntelligenceBootstrap"),
+            injected.rfind("<div>ok</div>"),
+        )
+
     def test_online_builder_uses_requested_period_when_explicit_dates_are_empty(self):
         payload = {
             "ok": True,
