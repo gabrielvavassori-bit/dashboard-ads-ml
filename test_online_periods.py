@@ -13,6 +13,90 @@ NOW = datetime(2026, 7, 31, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
 class OnlinePeriodTests(unittest.TestCase):
+    def test_online_builder_keeps_campaign_condition_and_catalog_links_separate(self):
+        payload = {
+            "ok": True,
+            "latest": {
+                "date_from": "2026-08-04",
+                "date_to": "2026-08-10",
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": "2026-08-04",
+                "date_to": "2026-08-10",
+                "items_total": 2,
+                "items": [
+                    {
+                        "item_id": "MLB5399002228",
+                        "campaign_id": "CAMP-1",
+                        "campaign_name": "Campanha principal",
+                        "user_product_id": "MLBU-7X4",
+                        "catalog_product_id": "CAT-7X4",
+                        "catalog_listing": True,
+                        "sku": "LAZ-7X4",
+                        "title": "Condicao A",
+                        "cost": 10,
+                        "total_amount": 100,
+                        "direct_amount": 80,
+                        "prints": 1000,
+                        "clicks": 20,
+                        "units_quantity": 5,
+                        "price": 114.90,
+                    },
+                    {
+                        "item_id": "MLB6689184622",
+                        "campaign_id": "CAMP-2",
+                        "campaign_name": "Campanha secundaria",
+                        "user_product_id": "MLBU-7X4",
+                        "catalog_product_id": "CAT-7X4",
+                        "catalog_listing": True,
+                        "sku": "LAZ-7X4",
+                        "title": "Condicao B",
+                        "cost": 5,
+                        "total_amount": 40,
+                        "direct_amount": 30,
+                        "prints": 500,
+                        "clicks": 10,
+                        "units_quantity": 2,
+                        "price": 78.98,
+                    },
+                ],
+            },
+            "sales": {
+                "items": {
+                    "MLB5399002228": {"revenue_total": 500, "orders_count": 4, "units_total": 5},
+                    "MLB6689184622": {"revenue_total": 631.84, "orders_count": 1, "units_total": 8},
+                },
+            },
+        }
+
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            data, error = app._build_online_dashboard_data(
+                "conta-ativa",
+                "adv-1",
+                "2026-08-04",
+                "2026-08-10",
+                {"dateFrom": "2026-08-04", "dateTo": "2026-08-10"},
+            )
+
+        self.assertEqual(error, "")
+        self.assertEqual({item["campaignId"] for item in data["items"]}, {"CAMP-1", "CAMP-2"})
+        self.assertTrue(all(item["userProductId"] == "MLBU-7X4" for item in data["items"]))
+        self.assertTrue(all(item["conditionCount"] == 2 for item in data["items"]))
+        self.assertTrue(all(item["catalogProductId"] == "CAT-7X4" for item in data["items"]))
+        self.assertEqual({item["campaign"] for item in data["items"]}, {"Campanha principal", "Campanha secundaria"})
+        condition_b = next(item for item in data["items"] if item["code"] == "MLB6689184622")
+        self.assertEqual(condition_b["orders"], 1)
+        self.assertEqual(condition_b["units"], 8)
+
+        html = render_dashboard(data)
+        self.assertIn("Campanha Ads", html)
+        self.assertIn("Condicao/opcao de venda", html)
+        self.assertIn("Pedidos", html)
+        self.assertIn("Unidades", html)
+        self.assertIn("MLBU-7X4", html)
+        self.assertIn("Catalogo CAT-7X4", html)
+
     def test_governance_summary_reads_authenticated_central_bundle(self):
         bundle = {
             "version": "2026-08-10",

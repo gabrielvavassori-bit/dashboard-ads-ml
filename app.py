@@ -75,6 +75,7 @@ from gerar_dashboard_ads_ml import (
     build_data,
     cvr_class,
     decision,
+    mark_condition_context,
     mark_possible_catalog,
     render_dashboard,
 )
@@ -607,6 +608,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         sale_already_counted = code in sales_codes_seen
         sales_codes_seen.add(code)
         total_revenue = 0.0 if sale_already_counted else _number(sale.get("revenue_total"))
+        orders = 0.0 if sale_already_counted else _number(sale.get("orders_count"))
         units = 0.0 if sale_already_counted else _number(sale.get("units_total"))
         ads_sales = _number(raw.get("units_quantity"))
         impressions = _number(raw.get("prints"))
@@ -638,6 +640,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "lastSaleSort": 0,
             "lastPrice": last_price,
             "avgSalePrice": (total_revenue / units) if units else last_price,
+            "orders": orders,
             "units": units,
             "productRevenue": total_revenue,
             "indirectRevenue": ads_indirect_revenue,
@@ -657,6 +660,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "campaignName": campaign_name,
             "adsCampaigns": f"Campanha {campaign_id}" if campaign_id else "",
             "campaignStatus": campaign_status,
+            "userProductId": str(raw.get("user_product_id") or raw.get("userProductId") or "").strip(),
+            "catalogProductId": str(raw.get("catalog_product_id") or raw.get("catalogProductId") or "").strip(),
+            "catalogListing": bool(raw.get("catalog_listing") or raw.get("catalogListing")),
             "impressions": impressions,
             "clicks": clicks,
             "adsSales": ads_sales,
@@ -679,6 +685,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     if not items:
         return None, "O cache online nao trouxe anuncios validos para esta conta."
     mark_possible_catalog(items)
+    mark_condition_context(items)
     for item in items:
         apply_alerts(item)
         item["action"], item["reason"] = decision(item)

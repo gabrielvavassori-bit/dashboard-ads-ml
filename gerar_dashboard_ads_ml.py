@@ -561,6 +561,35 @@ def mark_possible_catalog(items):
         item["possibleCatalog"] = bool(item.get("sku") in possible_skus)
 
 
+def mark_condition_context(items):
+    condition_codes = {}
+    for item in items:
+        user_product_id = str(item.get("userProductId") or item.get("user_product_id") or "").strip()
+        code = str(item.get("code") or "").strip()
+        if user_product_id and code:
+            condition_codes.setdefault(user_product_id, set()).add(code)
+
+    for item in items:
+        user_product_id = str(item.get("userProductId") or item.get("user_product_id") or "").strip()
+        catalog_product_id = str(item.get("catalogProductId") or item.get("catalog_product_id") or "").strip()
+        codes = sorted(condition_codes.get(user_product_id, set())) if user_product_id else []
+        item["userProductId"] = user_product_id
+        item["catalogProductId"] = catalog_product_id
+        item["catalogListing"] = bool(item.get("catalogListing") or item.get("catalog_listing"))
+        item["conditionCodes"] = codes
+        item["conditionCount"] = len(codes)
+        item["conditionLabel"] = (
+            f"{user_product_id} · {len(codes)} opcao(oes)"
+            if user_product_id
+            else "Sem vinculo MLBU"
+        )
+        item["catalogLabel"] = (
+            f"Catalogo {catalog_product_id}"
+            if catalog_product_id
+            else ("Catalogo sincronizado" if item["catalogListing"] else "Fora do catalogo")
+        )
+
+
 def apply_sku_campaign_context(items):
     sku_active_campaigns = {}
     for item in items:
@@ -775,6 +804,8 @@ def aggregate_by_sku(items):
             "title": "",
             "campaign": "",
             "campaigns": set(),
+            "condition_keys": set(),
+            "catalog_product_ids": set(),
             "lastSaleDate": "",
             "lastSaleSort": 0,
             "lastSaleDay": 0,
@@ -791,6 +822,7 @@ def aggregate_by_sku(items):
             "priceAboveAverage": False,
             "salesPaceAlert": False,
             "possibleCatalog": False,
+            "orders": 0,
             "units": 0,
             "productRevenue": 0,
             "totalRevenue": 0,
@@ -821,6 +853,10 @@ def aggregate_by_sku(items):
             target["campaigns"].add(item["campaign"])
         if item.get("adsCampaigns") and item["adsCampaigns"] != item.get("campaign"):
             target["campaigns"].add(item["adsCampaigns"])
+        if item.get("userProductId"):
+            target["condition_keys"].add(item["userProductId"])
+        if item.get("catalogProductId"):
+            target["catalog_product_ids"].add(item["catalogProductId"])
         if not target["title"] and item.get("title"):
             target["title"] = item["title"]
         if item.get("lastPrice"):
@@ -841,6 +877,7 @@ def aggregate_by_sku(items):
         target["priceAboveAverage"] = target["priceAboveAverage"] or item.get("priceAboveAverage", False)
         target["salesPaceAlert"] = target["salesPaceAlert"] or item.get("salesPaceAlert", False)
         target["possibleCatalog"] = target["possibleCatalog"] or item.get("possibleCatalog", False)
+        target["orders"] += item.get("orders", 0) or 0
         target["units"] += item.get("units", 0) or 0
         target["productRevenue"] += item.get("productRevenue", 0) or 0
         target["totalRevenue"] += item.get("totalRevenue", 0) or 0
@@ -859,12 +896,16 @@ def aggregate_by_sku(items):
     for item in grouped.values():
         codes = sorted(item.pop("codes"))
         campaigns = sorted(item.pop("campaigns"))
+        condition_keys = sorted(item.pop("condition_keys"))
+        catalog_product_ids = sorted(item.pop("catalog_product_ids"))
         item["allCodes"] = ", ".join(codes)
         item["possibleCatalog"] = item.get("possibleCatalog", False) or len(codes) > 1
         item["allCampaigns"] = ", ".join(campaigns)
         item["code"] = ", ".join(codes[:4]) + ("..." if len(codes) > 4 else "")
         item["adCount"] = len(codes)
         item["campaign"] = ", ".join(campaigns[:3]) + ("..." if len(campaigns) > 3 else "")
+        item["conditionLabel"] = ", ".join(condition_keys[:2]) + ("..." if len(condition_keys) > 2 else "") if condition_keys else "Sem vinculo MLBU"
+        item["catalogLabel"] = ", ".join(catalog_product_ids[:2]) + ("..." if len(catalog_product_ids) > 2 else "") if catalog_product_ids else "Sem catalogo identificado"
         item["tacos"] = item["investment"] / item["tacosBaseRevenue"] if item["tacosBaseRevenue"] else 0
         item["roas"] = item["adsRevenue"] / item["investment"] if item["investment"] else 0
         item["adsDependencyRatio"] = item["adsDirectRevenue"] / item["totalRevenue"] if item["totalRevenue"] else 0
@@ -903,7 +944,10 @@ def aggregate_by_campaign(items):
             "code": "",
             "skus": set(),
             "codes": set(),
+            "condition_keys": set(),
+            "catalog_product_ids": set(),
             "children": [],
+            "orders": 0,
             "units": 0,
             "productRevenue": 0,
             "totalRevenue": 0,
@@ -927,12 +971,16 @@ def aggregate_by_campaign(items):
             target["codes"].add(item["code"])
             if len(campaigns_by_code.get(item["code"], set())) > 1:
                 target["campaignRevenueAmbiguous"] = True
+        if item.get("userProductId"):
+            target["condition_keys"].add(item["userProductId"])
+        if item.get("catalogProductId"):
+            target["catalog_product_ids"].add(item["catalogProductId"])
         if item.get("campaignStatus") == "Ativa":
             target["campaignStatus"] = "Ativa"
         target["possibleCatalog"] = target["possibleCatalog"] or bool(item.get("possibleCatalog"))
         target["salesCoverageComplete"] = target["salesCoverageComplete"] and item.get("salesCoverageComplete") is not False
         for field in (
-            "units", "productRevenue", "totalRevenue", "adsRevenue", "adsDirectRevenue",
+            "orders", "units", "productRevenue", "totalRevenue", "adsRevenue", "adsDirectRevenue",
             "adsIndirectRevenue", "organicRevenue", "tacosBaseRevenue", "investment",
             "impressions", "clicks", "adsSales",
         ):
@@ -943,12 +991,16 @@ def aggregate_by_campaign(items):
         item["children"].sort(key=lambda row: (-(row.get("investment", 0) or 0), -(row.get("totalRevenue", 0) or 0)))
         item["skus"] = sorted(item["skus"])
         item["codes"] = sorted(item["codes"])
+        condition_keys = sorted(item.pop("condition_keys"))
+        catalog_product_ids = sorted(item.pop("catalog_product_ids"))
         item["skuCount"] = len(item["skus"])
         item["adCount"] = len(item["codes"])
         item["sku"] = ", ".join(item["skus"][:3]) + ("..." if len(item["skus"]) > 3 else "") if item["skus"] else "(sem SKU)"
         item["code"] = ", ".join(item["codes"][:4]) + ("..." if len(item["codes"]) > 4 else "")
         item["allCodes"] = ", ".join(item["codes"])
         item["allSkus"] = ", ".join(item["skus"])
+        item["conditionLabel"] = ", ".join(condition_keys[:2]) + ("..." if len(condition_keys) > 2 else "") if condition_keys else "Sem vinculo MLBU"
+        item["catalogLabel"] = ", ".join(catalog_product_ids[:2]) + ("..." if len(catalog_product_ids) > 2 else "") if catalog_product_ids else "Sem catalogo identificado"
         item["title"] = f"{item['skuCount']} SKU(s), {item['adCount']} anuncio(s)"
         item["tacos"] = item["investment"] / item["tacosBaseRevenue"] if item["tacosBaseRevenue"] else 0
         item["roas"] = item["adsRevenue"] / item["investment"] if item["investment"] else 0
@@ -1127,6 +1179,7 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
 
     all_decision_items = items + ads_only
     mark_possible_catalog(all_decision_items)
+    mark_condition_context(all_decision_items)
     apply_sku_campaign_context(all_decision_items)
     for item in all_decision_items:
         apply_alerts(item)
@@ -1653,6 +1706,7 @@ def render_dashboard(data):
       sku: item => item.sku || '',
       code: item => item.code || '',
       price: item => item.lastPrice || 0,
+      orders: item => item.orders || 0,
       units: item => item.units || 0,
       revenue: item => item.totalRevenue || 0,
       adsRevenue: item => item.adsRevenue || 0,
@@ -1689,6 +1743,10 @@ def render_dashboard(data):
         item.allCampaigns,
         item.adsCampaigns,
         item.campaignStatus,
+        item.userProductId,
+        item.catalogProductId,
+        item.conditionLabel,
+        item.catalogLabel,
         item.action,
         item.alertText
       ].filter(Boolean).join(' ').toLowerCase();
@@ -2139,8 +2197,8 @@ def render_dashboard(data):
       const children = item.children || [];
       if (!children.length) return '';
       return `<div class="detail-block" style="grid-column:1/-1"><h3>Itens da campanha</h3><table class="child-table">
-        <thead><tr><th>SKU</th><th>Anuncio</th><th>Titulo</th><th class="num">Receita</th><th class="num">Receita ADS</th><th class="num">Invest.</th><th class="num">CTR</th><th class="num">CVR</th><th class="num">TACOS</th><th>Alerta</th></tr></thead>
-        <tbody>${{children.map(child => `<tr><td>${{safe(child.sku || '(sem SKU)')}}</td><td>${{safe(child.code || '')}}</td><td>${{safe(child.title || '')}}</td><td class="num">${{brl(child.totalRevenue || 0)}}</td><td class="num">${{brl(child.adsRevenue || 0)}}</td><td class="num">${{brl(child.investment || 0)}}</td><td class="num">${{pct(child.ctr || 0)}}</td><td class="num">${{pct(child.cvr || 0)}}</td><td class="num">${{pct(child.tacos || 0)}}</td><td>${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
+        <thead><tr><th>SKU</th><th>Anuncio</th><th>Condicao/opcao</th><th>Titulo</th><th class="num">Pedidos</th><th class="num">Unidades</th><th class="num">Receita</th><th class="num">Receita ADS</th><th class="num">Invest.</th><th class="num">CTR</th><th class="num">CVR</th><th class="num">TACOS</th><th>Alerta</th></tr></thead>
+        <tbody>${{children.map(child => `<tr><td>${{safe(child.sku || '(sem SKU)')}}</td><td>${{safe(child.code || '')}}</td><td>${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td>${{safe(child.title || '')}}</td><td class="num">${{num(child.orders || 0)}}</td><td class="num">${{num(child.units || 0)}}</td><td class="num">${{brl(child.totalRevenue || 0)}}</td><td class="num">${{brl(child.adsRevenue || 0)}}</td><td class="num">${{brl(child.investment || 0)}}</td><td class="num">${{pct(child.ctr || 0)}}</td><td class="num">${{pct(child.cvr || 0)}}</td><td class="num">${{pct(child.tacos || 0)}}</td><td>${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
       </table></div>`;
     }}
     function detailBlocks(item) {{
@@ -2166,17 +2224,18 @@ def render_dashboard(data):
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.allCodes || item.code || '')}}</span>${{copyButton(item.allCodes || item.code, 'MLB')}}</div><div class="title">${{safe(campaignMode ? (item.topInvestmentLabel || item.title || '') : (item.title || ''))}}</div></td>
         <td><span class="${{abcClass(abcValue)}}">${{campaignMode ? 'CAMP' : currentViewMode.toUpperCase()}} ${{abcValue || 'C'}}</span></td>
         <td class="text-cell">${{safe(item.campaign || item.adsCampaigns || 'Sem campanha')}}<div class="muted">${{safe(item.campaignStatus || '')}}</div></td>
+        <td class="text-cell">${{safe(item.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(item.catalogLabel || '')}}</div></td>
         <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}<div class="muted">${{item.avgSalePrice ? 'media: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? 'ultima venda: ' + safe(item.lastSaleDate) : ''}}</div></td>
-        <td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td>
         <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{safe(item.ctrClass || '')}}</div></td><td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{safe(item.cvrClass || '')}}</div></td>
         <td class="num">${{pct(item.tacos || 0)}}<div class="muted">${{safe(tacosNote)}}</div></td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>
-      <tr class="decision-row"><td colspan="14"><div class="decision-wrap">
+      <tr class="decision-row"><td colspan="16"><div class="decision-wrap">
         <div class="decision-summary-main"><span class="pill ${{actionClass(item.action)}}">${{safe(item.action)}}</span><div class="decision-teaser"><b>Diagnostico:</b> ${{safe(item.diagnosticSummary || item.recommendation || item.reason || 'Sem leitura adicional.')}}</div></div>
         <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">${{expanded ? 'Ocultar leitura' : 'Ver leitura'}}</button></div>
       </div></td></tr>
-      <tr class="detail-row" style="display:${{expanded ? 'table-row' : 'none'}}"><td colspan="14"><div class="detail-grid">${{detailBlocks(item)}}</div></td></tr>`;
+      <tr class="detail-row" style="display:${{expanded ? 'table-row' : 'none'}}"><td colspan="16"><div class="detail-grid">${{detailBlocks(item)}}</div></td></tr>`;
     }}
     function renderTable() {{
       renderAlerts();
@@ -2192,8 +2251,8 @@ def render_dashboard(data):
       }}
       document.getElementById('tableTitle').textContent = `${{contextLabels[currentContext]}} - ${{viewLabels[currentViewMode]}} (${{rows.length}})`;
       document.getElementById('table').innerHTML = `<table class="ops-table">
-        <colgroup><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:120px"><col style="width:64px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
-        <thead><tr><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha</th><th class="num">${{sortable('Ult. preco','price')}}</th><th class="num">${{sortable('Unid.','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
+        <colgroup><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
+        <thead><tr><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Ult. preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
         <tbody>${{rows.map(row).join('')}}</tbody></table>`;
       document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {{
         const value = button.dataset.copy;
