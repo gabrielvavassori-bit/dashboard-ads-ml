@@ -105,9 +105,39 @@ CREATE TABLE IF NOT EXISTS user_ml_links (
 CREATE INDEX IF NOT EXISTS idx_user_ml_links_client  ON user_ml_links(client_id);
 CREATE INDEX IF NOT EXISTS idx_user_ml_links_status  ON user_ml_links(status);
 
+CREATE TABLE IF NOT EXISTS user_ml_accounts (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id                  INTEGER NOT NULL,
+    slot_number              INTEGER NOT NULL,
+    client_id                TEXT NOT NULL,
+    ml_user_id               TEXT,
+    nickname                 TEXT,
+    official_store           TEXT,
+    advertiser_id            TEXT,
+    seller_id                TEXT,
+    site_id                  TEXT,
+    status                   TEXT NOT NULL DEFAULT 'active',
+    admin_granted            INTEGER NOT NULL DEFAULT 0,
+    bound_at                 INTEGER NOT NULL,
+    last_replaced_at         INTEGER,
+    replacement_locked_until INTEGER,
+    created_at               INTEGER NOT NULL,
+    updated_at               INTEGER NOT NULL,
+    last_verified_at         INTEGER,
+    UNIQUE(user_id, slot_number),
+    UNIQUE(user_id, client_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_ml_accounts_user_status
+    ON user_ml_accounts(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_user_ml_accounts_client
+    ON user_ml_accounts(client_id);
+
 CREATE TABLE IF NOT EXISTS ml_link_states (
     state_hash  TEXT PRIMARY KEY,
     user_id     INTEGER NOT NULL,
+    slot_number INTEGER NOT NULL DEFAULT 1,
     return_to   TEXT NOT NULL,
     expires_at  INTEGER NOT NULL,
     created_at  INTEGER NOT NULL,
@@ -188,6 +218,8 @@ def init_db():
                 conn.execute("ALTER TABLE users ADD COLUMN beta_enabled INTEGER DEFAULT NULL")
             if "sales_enabled" not in user_columns:
                 conn.execute("ALTER TABLE users ADD COLUMN sales_enabled INTEGER NOT NULL DEFAULT 1")
+            if "ml_slot_limit" not in user_columns:
+                conn.execute("ALTER TABLE users ADD COLUMN ml_slot_limit INTEGER NOT NULL DEFAULT 1")
             conn.execute(
                 """UPDATE users
                    SET sales_enabled=1
@@ -216,6 +248,23 @@ def init_db():
             }
             if "attached_at" not in ml_state_columns:
                 conn.execute("ALTER TABLE ml_link_states ADD COLUMN attached_at INTEGER")
+            if "slot_number" not in ml_state_columns:
+                conn.execute("ALTER TABLE ml_link_states ADD COLUMN slot_number INTEGER NOT NULL DEFAULT 1")
+            session_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(sessions)")
+            }
+            if "selected_ml_account_id" not in session_columns:
+                conn.execute("ALTER TABLE sessions ADD COLUMN selected_ml_account_id INTEGER")
+            conn.execute(
+                """INSERT OR IGNORE INTO user_ml_accounts
+                   (user_id, slot_number, client_id, ml_user_id, nickname,
+                    official_store, advertiser_id, seller_id, site_id, status,
+                    admin_granted, bound_at, created_at, updated_at, last_verified_at)
+                   SELECT user_id, 1, client_id, ml_user_id, nickname,
+                          official_store, advertiser_id, seller_id, site_id, status,
+                          0, created_at, created_at, updated_at, last_verified_at
+                   FROM user_ml_links"""
+            )
         finally:
             conn.close()
 
@@ -354,18 +403,48 @@ def get_user_by_id(user_id: int):
         conn.close()
 
 
-def get_active_ml_link_for_user(user_id: int):
+def list_active_ml_links_for_user(user_id: int):
     conn = get_conn()
     try:
-        cur = conn.execute(
-            """SELECT * FROM user_ml_links
+        return conn.execute(
+            """SELECT * FROM user_ml_accounts
                WHERE user_id=? AND status='active'
-               ORDER BY updated_at DESC LIMIT 1""",
+               ORDER BY slot_number, id""",
             (user_id,),
-        )
-        return cur.fetchone()
+        ).fetchall()
     finally:
         conn.close()
+
+
+def get_ml_account_for_user(user_id: int, account_id: int):
+    conn = get_conn()
+    try:
+        return conn.execute(
+            """SELECT * FROM user_ml_accounts
+               WHERE id=? AND user_id=? AND status='active'""",
+            (account_id, user_id),
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+def get_ml_account_by_slot(user_id: int, slot_number: int):
+    conn = get_conn()
+    try:
+        return conn.execute(
+            """SELECT * FROM user_ml_accounts
+               WHERE user_id=? AND slot_number=? AND status='active'""",
+            (user_id, int(slot_number)),
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+def get_active_ml_link_for_user(user_id: int, selected_account_id=None):
+    if selected_account_id is not None:
+        return get_ml_account_for_user(user_id, int(selected_account_id))
+    links = list_active_ml_links_for_user(user_id)
+    return links[0] if len(links) == 1 else None
 
 
 def claim_beta_handoff(nonce: str, expires_at: int) -> bool:
@@ -444,17 +523,44 @@ def upsert_user_ml_link(
     seller_id: str = "",
     site_id: str = "",
     status: str = "active",
+    slot_number: int = 1,
+    admin_granted: bool = False,
+    allow_replacement: bool = False,
 ):
+    slot_number = int(slot_number or 1)
+    if slot_number < 1 or slot_number > 5:
+        raise ValueError("slot_number deve ficar entre 1 e 5")
+    client_id = (client_id or "").strip()
+    if not client_id:
+        raise ValueError("client_id obrigatorio")
     conn = get_conn()
     try:
         ts = now()
-        existing = conn.execute(
-            "SELECT id FROM user_ml_links WHERE user_id=? ORDER BY updated_at DESC LIMIT 1",
+        user = conn.execute(
+            "SELECT ml_slot_limit FROM users WHERE id=?",
             (user_id,),
         ).fetchone()
+        if not user:
+            raise ValueError("usuario nao encontrado")
+        if slot_number > int(user["ml_slot_limit"] or 1):
+            raise ValueError("slot nao liberado para este usuario")
+        existing = conn.execute(
+            "SELECT * FROM user_ml_accounts WHERE user_id=? AND slot_number=?",
+            (user_id, slot_number),
+        ).fetchone()
+        duplicate = conn.execute(
+            "SELECT id, slot_number FROM user_ml_accounts WHERE user_id=? AND client_id=?",
+            (user_id, client_id),
+        ).fetchone()
+        if duplicate and (not existing or duplicate["id"] != existing["id"]):
+            raise ValueError(f"esta conta Mercado Livre ja ocupa o slot {duplicate['slot_number']}")
         if existing:
+            replacing = existing["client_id"] != client_id
+            locked_until = int(existing["replacement_locked_until"] or 0)
+            if replacing and locked_until > ts and not allow_replacement:
+                raise ValueError("este slot so podera trocar de conta apos o fim do ciclo de 30 dias")
             conn.execute(
-                """UPDATE user_ml_links
+                """UPDATE user_ml_accounts
                    SET client_id=?,
                        ml_user_id=?,
                        nickname=?,
@@ -463,6 +569,10 @@ def upsert_user_ml_link(
                        seller_id=?,
                        site_id=?,
                        status=?,
+                       admin_granted=?,
+                       bound_at=CASE WHEN client_id<>? THEN ? ELSE bound_at END,
+                       last_replaced_at=CASE WHEN client_id<>? THEN ? ELSE last_replaced_at END,
+                       replacement_locked_until=CASE WHEN client_id<>? THEN ? ELSE replacement_locked_until END,
                        updated_at=?,
                        last_verified_at=?
                    WHERE id=?""",
@@ -475,19 +585,29 @@ def upsert_user_ml_link(
                     seller_id,
                     site_id,
                     status,
+                    1 if admin_granted else int(existing["admin_granted"] or 0),
+                    client_id,
+                    ts,
+                    client_id,
+                    ts,
+                    client_id,
+                    ts + (30 * 86400),
                     ts,
                     ts,
                     existing["id"],
                 ),
             )
+            account_id = int(existing["id"])
         else:
-            conn.execute(
-                """INSERT INTO user_ml_links
-                   (user_id, client_id, ml_user_id, nickname, official_store,
-                    advertiser_id, seller_id, site_id, status, created_at, updated_at, last_verified_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            cur = conn.execute(
+                """INSERT INTO user_ml_accounts
+                   (user_id, slot_number, client_id, ml_user_id, nickname, official_store,
+                    advertiser_id, seller_id, site_id, status, admin_granted, bound_at,
+                    created_at, updated_at, last_verified_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     user_id,
+                    slot_number,
                     client_id,
                     ml_user_id,
                     nickname,
@@ -496,22 +616,59 @@ def upsert_user_ml_link(
                     seller_id,
                     site_id,
                     status,
+                    1 if admin_granted else 0,
+                    ts,
                     ts,
                     ts,
                     ts,
                 ),
             )
+            account_id = int(cur.lastrowid)
+        if slot_number == 1:
+            legacy = conn.execute(
+                "SELECT id FROM user_ml_links WHERE user_id=?",
+                (user_id,),
+            ).fetchone()
+            values = (
+                client_id, ml_user_id, nickname, official_store, advertiser_id,
+                seller_id, site_id, status, ts, ts,
+            )
+            if legacy:
+                conn.execute(
+                    """UPDATE user_ml_links SET client_id=?, ml_user_id=?, nickname=?,
+                       official_store=?, advertiser_id=?, seller_id=?, site_id=?, status=?,
+                       updated_at=?, last_verified_at=? WHERE id=?""",
+                    (*values, legacy["id"]),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO user_ml_links
+                       (user_id, client_id, ml_user_id, nickname, official_store,
+                        advertiser_id, seller_id, site_id, status, created_at,
+                        updated_at, last_verified_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (user_id, client_id, ml_user_id, nickname, official_store,
+                     advertiser_id, seller_id, site_id, status, ts, ts, ts),
+                )
+        return account_id
     finally:
         conn.close()
 
 
-def mark_user_ml_link_disconnected(user_id: int):
+def mark_user_ml_link_disconnected(user_id: int, account_id=None):
     conn = get_conn()
     try:
-        conn.execute(
-            "UPDATE user_ml_links SET status='disconnected', updated_at=? WHERE user_id=?",
-            (now(), user_id),
-        )
+        if account_id is None:
+            conn.execute(
+                "UPDATE user_ml_accounts SET status='disconnected', updated_at=? WHERE user_id=?",
+                (now(), user_id),
+            )
+        else:
+            conn.execute(
+                """UPDATE user_ml_accounts SET status='disconnected', updated_at=?
+                   WHERE user_id=? AND id=?""",
+                (now(), user_id, int(account_id)),
+            )
     finally:
         conn.close()
 
@@ -585,6 +742,27 @@ def set_user_sales_access(user_id: int, enabled: bool) -> None:
         conn.close()
 
 
+def set_user_ml_slot_limit(user_id: int, slot_limit: int) -> None:
+    slot_limit = int(slot_limit)
+    if slot_limit < 1 or slot_limit > 5:
+        raise ValueError("o limite de contas deve ficar entre 1 e 5")
+    conn = get_conn()
+    try:
+        highest = conn.execute(
+            """SELECT COALESCE(MAX(slot_number), 0) AS highest
+               FROM user_ml_accounts WHERE user_id=? AND status='active'""",
+            (user_id,),
+        ).fetchone()["highest"]
+        if int(highest or 0) > slot_limit:
+            raise ValueError("remova ou bloqueie as contas excedentes antes de reduzir o limite")
+        conn.execute(
+            "UPDATE users SET ml_slot_limit=?, updated_at=? WHERE id=?",
+            (slot_limit, now(), user_id),
+        )
+    finally:
+        conn.close()
+
+
 def delete_user_sessions(user_id: int) -> None:
     conn = get_conn()
     try:
@@ -617,6 +795,22 @@ def create_session(user_id: int, token: str, ip: str, user_agent: str):
                VALUES (?,?,?,?,?,?)""",
             (token, user_id, now(), now(), ip, user_agent),
         )
+    finally:
+        conn.close()
+
+
+def set_session_selected_ml_account(token: str, user_id: int, account_id: int) -> bool:
+    account = get_ml_account_for_user(user_id, account_id)
+    if not account:
+        return False
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """UPDATE sessions SET selected_ml_account_id=?, last_seen=?
+               WHERE token=? AND user_id=?""",
+            (account_id, now(), token, user_id),
+        )
+        return cur.rowcount == 1
     finally:
         conn.close()
 
@@ -786,7 +980,13 @@ def save_oauth_state(state: str, ttl_seconds: int = 600):
         conn.close()
 
 
-def save_ml_link_state(state: str, user_id: int, return_to: str = "/online", ttl_seconds: int = 900):
+def save_ml_link_state(
+    state: str,
+    user_id: int,
+    return_to: str = "/online",
+    ttl_seconds: int = 900,
+    slot_number: int = 1,
+):
     state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
     conn = get_conn()
     try:
@@ -794,9 +994,9 @@ def save_ml_link_state(state: str, user_id: int, return_to: str = "/online", ttl
         conn.execute("DELETE FROM ml_link_states WHERE expires_at < ?", (ts,))
         conn.execute(
             """INSERT OR REPLACE INTO ml_link_states
-               (state_hash, user_id, return_to, expires_at, created_at, attached_at, used_at)
-               VALUES (?,?,?,?,?,NULL,NULL)""",
-            (state_hash, user_id, return_to or "/online", ts + ttl_seconds, ts),
+               (state_hash, user_id, slot_number, return_to, expires_at, created_at, attached_at, used_at)
+               VALUES (?,?,?,?,?,?,NULL,NULL)""",
+            (state_hash, user_id, int(slot_number), return_to or "/online", ts + ttl_seconds, ts),
         )
     finally:
         conn.close()

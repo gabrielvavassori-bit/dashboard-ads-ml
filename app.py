@@ -934,6 +934,21 @@ def _current_user(handler):
     return user, token
 
 
+def _current_ml_account(user, token):
+    links = db.list_active_ml_links_for_user(user["id"])
+    session = db.get_session(token) if token else None
+    selected_id = session["selected_ml_account_id"] if session else None
+    link = db.get_active_ml_link_for_user(user["id"], selected_id)
+    return link, links, selected_id
+
+
+def _safe_return_to(value: str, fallback: str = "/") -> str:
+    value = (value or "").strip()
+    if not value.startswith("/") or value.startswith("//"):
+        return fallback
+    return value
+
+
 def _current_admin(handler):
     cookies = _get_cookies(handler)
     token = cookies.get(auth.ADMIN_COOKIE)
@@ -1410,14 +1425,16 @@ class Handler(BaseHTTPRequestHandler):
                 users = []
                 for raw_user in db.list_users(q):
                     user = dict(raw_user)
-                    link = db.get_active_ml_link_for_user(user["id"])
-                    if link:
+                    links = db.list_active_ml_links_for_user(user["id"])
+                    if links:
+                        link = links[0]
                         user["ml_link_label"] = (
                             link["official_store"]
                             or link["nickname"]
                             or link["client_id"]
                             or ""
                         )
+                        user["ml_link_count"] = len(links)
                         user["ml_link_detail"] = " | ".join(
                             part for part in [
                                 link["client_id"] or "",
@@ -1433,14 +1450,14 @@ class Handler(BaseHTTPRequestHandler):
                 _send_html(self, templates.render_admin_users(users, q, info))
                 return
             if path == "/":
-                user, _ = _current_user(self)
+                user, token = _current_user(self)
                 if not user:
                     _redirect(self, "/login")
                     return
                 if beta_config.BETA_MODE and not _beta_access_allowed(user):
                     _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
                     return
-                link = db.get_active_ml_link_for_user(user["id"])
+                link, links, _ = _current_ml_account(user, token)
                 linked_name = ""
                 if link:
                     linked_name = link["official_store"] or link["nickname"] or link["client_id"] or ""
@@ -1451,19 +1468,36 @@ class Handler(BaseHTTPRequestHandler):
                         APP_VERSION,
                         linked_client_name=linked_name,
                         sales_enabled=_sales_access_allowed(user),
+                        account_count=len(links),
                     ),
                 )
                 return
+            if path == "/contas":
+                user, token = _current_user(self)
+                if not user:
+                    _redirect(self, "/login?return_to=/contas")
+                    return
+                qs = parse_qs(url.query or "")
+                return_to = _safe_return_to(qs.get("return_to", ["/"])[0], "/")
+                _, links, selected_id = _current_ml_account(user, token)
+                _send_html(self, templates.render_ml_account_selector(
+                    user["name"] or user["email"], links, selected_id, return_to,
+                    int(user["ml_slot_limit"] or 1),
+                ))
+                return
             if path in ("/inteligencia-vendas", "/inteligencia-vendas/"):
-                user, _ = _current_user(self)
+                user, token = _current_user(self)
                 if not user:
                     _redirect(self, "/login?return_to=/inteligencia-vendas")
                     return
                 if not _sales_access_allowed(user):
                     _send_html(self, templates.render_error_page("A Inteligencia de Vendas esta bloqueada para este cliente no painel admin."), 403)
                     return
+                link, links, _ = _current_ml_account(user, token)
+                if links and not link:
+                    _redirect(self, "/contas?return_to=/inteligencia-vendas")
+                    return
                 html = _render_sales_intelligence()
-                link = db.get_active_ml_link_for_user(user["id"])
                 if link:
                     payload, message = _build_sales_intelligence_memory_data(user, link)
                     if payload:
@@ -1480,7 +1514,7 @@ class Handler(BaseHTTPRequestHandler):
                 _send_html(self, html)
                 return
             if path == "/online":
-                user, _ = _current_user(self)
+                user, token = _current_user(self)
                 if not user:
                     _redirect(self, "/login")
                     return
@@ -1499,7 +1533,10 @@ class Handler(BaseHTTPRequestHandler):
                 if period["error"]:
                     _send_html(self, templates.render_error_page(period["error"]), 400)
                     return
-                link = db.get_active_ml_link_for_user(user["id"])
+                link, links, _ = _current_ml_account(user, token)
+                if links and not link:
+                    _redirect(self, "/contas?" + urlencode({"return_to": self.path}))
+                    return
                 linked_name = ""
                 if link:
                     linked_name = link["official_store"] or link["nickname"] or link["client_id"] or ""
@@ -1511,7 +1548,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 client_id = (link["client_id"] or "").strip()
                 if not client_id:
-                    db.mark_user_ml_link_disconnected(user["id"])
+                    db.mark_user_ml_link_disconnected(user["id"], link["id"])
                     _redirect(self, "/ml-link/start?return_to=/online?confirmed=1")
                     return
                 dashboard_data, message = _build_online_dashboard_data(
@@ -1544,11 +1581,19 @@ class Handler(BaseHTTPRequestHandler):
                     _redirect(self, "/login")
                     return
                 qs = parse_qs(url.query or "")
-                return_to = (qs.get("return_to", ["/online"])[0] or "/online").strip()
-                if not return_to.startswith("/"):
-                    return_to = "/online"
+                return_to = _safe_return_to(qs.get("return_to", ["/online"])[0], "/online")
+                try:
+                    slot_number = int(qs.get("slot", ["1"])[0] or 1)
+                except ValueError:
+                    _send_html(self, templates.render_error_page("Slot de conta invalido."), 400)
+                    return
+                if slot_number < 1 or slot_number > int(user["ml_slot_limit"] or 1):
+                    _send_html(self, templates.render_error_page("Este slot ainda nao foi liberado pelo administrador."), 403)
+                    return
                 bridge_state = f"mlink-{secrets.token_hex(16)}"
-                db.save_ml_link_state(bridge_state, user["id"], return_to=return_to)
+                db.save_ml_link_state(
+                    bridge_state, user["id"], return_to=return_to, slot_number=slot_number,
+                )
                 connect_url = (
                     f"{AGENTE_ML_BASE_URL}/conectar-conta?"
                     f"{urlencode({'bridge_state': bridge_state, 'return_to': _absolute_app_url('/ml-link/finish')})}"
@@ -1556,7 +1601,7 @@ class Handler(BaseHTTPRequestHandler):
                 _redirect(self, connect_url)
                 return
             if path == "/ml-link/finish":
-                user, _ = _current_user(self)
+                user, token = _current_user(self)
                 if not user:
                     _redirect(self, "/login")
                     return
@@ -1572,6 +1617,9 @@ class Handler(BaseHTTPRequestHandler):
                 if state_row["user_id"] != user["id"]:
                     _send_html(self, templates.render_error_page("A vinculacao desta conta nao pertence a sua sessao atual."), 403)
                     return
+                account = db.get_ml_account_by_slot(user["id"], state_row["slot_number"])
+                if account:
+                    db.set_session_selected_ml_account(token, user["id"], account["id"])
                 _redirect(self, state_row["return_to"] or "/online")
                 return
 
@@ -1617,6 +1665,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/internal/beta/access-sync":
                 self._post_internal_beta_access_sync()
                 return
+            if path == "/contas/select":
+                self._post_select_ml_account()
+                return
             if path.endswith("/set_sales_access"):
                 self._post_admin_set_sales_access(path)
                 return
@@ -1644,6 +1695,9 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/admin/users/") and path.endswith("/set_beta_access"):
                 self._post_admin_set_beta_access(path)
                 return
+            if path.startswith("/admin/users/") and path.endswith("/set_ml_slot_limit"):
+                self._post_admin_set_ml_slot_limit(path)
+                return
 
             _send_html(self, templates.render_error_page("Rota nao encontrada."), 404)
         except Exception as exc:
@@ -1651,6 +1705,23 @@ class Handler(BaseHTTPRequestHandler):
             _send_html(self, templates.render_error_page(str(exc), tb), 500)
 
     # ----------- Handlers especificos -----------
+
+    def _post_select_ml_account(self):
+        user, token = _current_user(self)
+        if not user:
+            _redirect(self, "/login?return_to=/contas")
+            return
+        form = _parse_form(self)
+        try:
+            account_id = int((form.get("account_id", "") or "").strip())
+        except ValueError:
+            _send_html(self, templates.render_error_page("Conta Mercado Livre invalida."), 400)
+            return
+        if not db.set_session_selected_ml_account(token, user["id"], account_id):
+            _send_html(self, templates.render_error_page("Esta conta nao pertence ao usuario autenticado."), 403)
+            return
+        db.log_audit(user["id"], "ml_account.select", str(account_id), _client_ip(self))
+        _redirect(self, _safe_return_to(form.get("return_to", "/"), "/"))
 
     def _post_login(self):
         form = _parse_form(self)
@@ -1814,7 +1885,7 @@ class Handler(BaseHTTPRequestHandler):
         if not state_row or state_row["expires_at"] < db.now():
             _send_json(self, {"ok": False, "message": "bridge_state expirado ou inexistente"}, 400)
             return
-        db.upsert_user_ml_link(
+        account_id = db.upsert_user_ml_link(
             state_row["user_id"],
             client_id=str(payload.get("client_id") or "").strip(),
             ml_user_id=str(payload.get("ml_user_id") or "").strip(),
@@ -1824,10 +1895,11 @@ class Handler(BaseHTTPRequestHandler):
             seller_id=str(payload.get("seller_id") or "").strip(),
             site_id=str(payload.get("site_id") or "").strip(),
             status="active",
+            slot_number=state_row["slot_number"],
         )
         db.mark_ml_link_state_attached(bridge_state)
         db.log_audit(state_row["user_id"], "ml_link.ok", str(payload.get("client_id") or ""), _client_ip(self))
-        _send_json(self, {"ok": True}, 200)
+        _send_json(self, {"ok": True, "account_id": account_id, "slot": state_row["slot_number"]}, 200)
 
     def _post_webhook(self):
         if beta_config.BETA_MODE and beta_config.BETA_REJECT_BILLING_WEBHOOKS:
@@ -2130,6 +2202,11 @@ class Handler(BaseHTTPRequestHandler):
         advertiser_id = (form.get("advertiser_id", "") or "").strip()
         seller_id = (form.get("seller_id", "") or "").strip()
         site_id = ((form.get("site_id", "") or "MLB").strip() or "MLB").upper()
+        try:
+            slot_number = int((form.get("slot_number", "1") or "1").strip())
+        except ValueError:
+            _send_html(self, templates.render_error_page("Slot invalido."), 400)
+            return
         if not email or not client_id:
             _send_html(self, templates.render_error_page("Informe o email e o client_id da conta ML."), 400)
             return
@@ -2147,9 +2224,32 @@ class Handler(BaseHTTPRequestHandler):
             seller_id=seller_id,
             site_id=site_id,
             status="active",
+            slot_number=slot_number,
+            admin_granted=True,
+            allow_replacement=True,
         )
         db.log_audit(user["id"], f"admin.bind_ml_link:{client_id}", admin["email"], _client_ip(self))
         _redirect(self, f"/admin?info=Conta%20ML%20vinculada%20com%20sucesso%20para%20{quote(email)}")
+
+    def _post_admin_set_ml_slot_limit(self, path: str):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        try:
+            user_id = int(path.split("/")[3])
+        except (ValueError, IndexError):
+            _send_html(self, templates.render_error_page("ID invalido."), 400)
+            return
+        form = _parse_form(self)
+        try:
+            slot_limit = int((form.get("slot_limit", "") or "").strip())
+            db.set_user_ml_slot_limit(user_id, slot_limit)
+        except ValueError as exc:
+            _send_html(self, templates.render_error_page(str(exc)), 400)
+            return
+        db.log_audit(user_id, f"admin.ml_slot_limit:{slot_limit}", admin["email"], _client_ip(self))
+        _redirect(self, f"/admin?info=Limite%20de%20contas%20alterado%20para%20{slot_limit}")
 
     def _post_admin_grant_access(self, path: str):
         admin, _ = _current_admin(self)

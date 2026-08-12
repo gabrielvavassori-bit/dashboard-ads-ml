@@ -108,7 +108,49 @@ def render_register(error: str = "", email: str = "") -> str:
     return _layout("Cadastrar", body)
 
 
-def render_app_shell(user_name: str, version: str, error: str = "", linked_client_name: str = "", sales_enabled: bool = True) -> str:
+def render_ml_account_selector(user_name: str, accounts, selected_account_id=None, return_to: str = "/", slot_limit: int = 1) -> str:
+    import time
+    by_slot = {int(account["slot_number"]): account for account in accounts}
+    cards = []
+    for slot_number in range(1, int(slot_limit or 1) + 1):
+        account = by_slot.get(slot_number)
+        if not account:
+            cards.append(f"""
+            <div style="border:1px dashed #98a2b3;border-radius:12px;padding:16px;margin-top:12px">
+              <div style="font-weight:800">Slot {slot_number}: livre</div>
+              <div class="hint">Vincule uma conta Mercado Livre por OAuth.</div>
+              <a href="/ml-link/start?slot={slot_number}&amp;return_to={_html.escape(return_to, quote=True)}"
+                 style="display:inline-block;margin-top:12px;padding:11px 14px;border-radius:10px;background:#102033;color:#fff;font-weight:800">Vincular conta</a>
+            </div>""")
+            continue
+        label = account["official_store"] or account["nickname"] or account["client_id"]
+        selected = int(selected_account_id or 0) == int(account["id"])
+        locked_until = int(account["replacement_locked_until"] or 0)
+        replacement_html = (
+            f'<div class="hint">Substituicao bloqueada ate {time.strftime("%d/%m/%Y", time.localtime(locked_until))}.</div>'
+            if locked_until > int(time.time()) else
+            f'<a href="/ml-link/start?slot={slot_number}&amp;return_to={_html.escape(return_to, quote=True)}" style="font-size:13px">Substituir conta via OAuth</a>'
+        )
+        cards.append(f"""
+        <form method="post" action="/contas/select" style="border:1px solid {'#1e5fbf' if selected else '#d9e1ec'};border-radius:12px;padding:16px;margin-top:12px">
+          <input type="hidden" name="account_id" value="{int(account['id'])}">
+          <input type="hidden" name="return_to" value="{_html.escape(return_to)}">
+          <div style="font-weight:800">Slot {int(account['slot_number'])}: {_html.escape(label)}</div>
+          <div class="hint">Conta: {_html.escape(account['client_id'])}</div>
+          <button type="submit">{'Conta selecionada' if selected else 'Usar esta conta'}</button>
+        </form>""")
+        cards.append(replacement_html)
+    body = f"""
+    <h1>Escolha a conta Mercado Livre</h1>
+    <p>O Dashboard Ads e a Inteligencia de Vendas usam somente a conta selecionada nesta sessao.</p>
+    <div class="hint">Usuario: {_html.escape(user_name)}</div>
+    {''.join(cards)}
+    <p style="margin-top:18px"><a href="/">Voltar ao painel</a></p>
+    """
+    return _layout("Selecionar conta", body)
+
+
+def render_app_shell(user_name: str, version: str, error: str = "", linked_client_name: str = "", sales_enabled: bool = True, account_count: int = 0) -> str:
     """Tela principal apos login - formulario de upload dos arquivos."""
     err_html = f'<div class="alert err">{_html.escape(error)}</div>' if error else ""
     extra_css = """
@@ -128,9 +170,12 @@ def render_app_shell(user_name: str, version: str, error: str = "", linked_clien
     extra_head = f"<style>{extra_css}</style>"
     linked_html = (
         f'<div class="alert ok">Conta Mercado Livre vinculada: <b>{_html.escape(linked_client_name)}</b>. '
-        f'Voce ja pode abrir o modo online.</div>'
+        f'Voce ja pode abrir o modo online. '
+        f'<a href="/contas">Trocar conta</a></div>'
         if linked_client_name else
-        '<div class="hint" style="margin-bottom:8px">Se sua conta ainda nao estiver vinculada, o modo online vai abrir a ativacao automaticamente.</div>'
+        ('<div class="alert err">Escolha uma das contas vinculadas antes de abrir os relatorios. <a href="/contas">Selecionar conta</a></div>'
+         if account_count else
+         '<div class="hint" style="margin-bottom:8px">Se sua conta ainda nao estiver vinculada, o modo online vai abrir a ativacao automaticamente.</div>')
     )
     sales_card = (
         '<a class="secondary" href="/inteligencia-vendas">Abrir Inteligencia de Vendas</a>'
@@ -347,6 +392,11 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
                     f'{_html.escape(u.get("ml_link_detail") or "")}'
                     f'</div>'
                 )
+            ml_link_html += (
+                f'<div style="font-size:11px;color:#667085">'
+                f'{int(u.get("ml_link_count") or 1)} conta(s) vinculada(s) de '
+                f'{int(u.get("ml_slot_limit") or 1)} slot(s) liberado(s)</div>'
+            )
         rows.append(f"""
         <tr>
           <td>{_html.escape(u['email'] or '')}<div style="font-size:12px;color:#667085">{_html.escape(u['name'] or '')}</div>{ml_link_html}</td>
@@ -379,6 +429,10 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
             <form method="post" action="/admin/users/{u['id']}/set_sales_access">
               <input type="hidden" name="enabled" value="{sales_value}">
               <button type="submit" class="{sales_class}">{sales_button}</button>
+            </form>
+            <form method="post" action="/admin/users/{u['id']}/set_ml_slot_limit" style="display:inline-flex;align-items:center;gap:6px">
+              <input type="number" name="slot_limit" value="{int(u.get('ml_slot_limit') or 1)}" min="1" max="5" style="width:58px;padding:6px 8px;border:1px solid #cfd6e4;border-radius:8px">
+              <button type="submit">Slots ML</button>
             </form>
           </td>
         </tr>""")
@@ -458,6 +512,10 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
         <div>
           <label style="margin:0 0 6px">Site ID</label>
           <input type="text" name="site_id" value="MLB" placeholder="MLB">
+        </div>
+        <div>
+          <label style="margin:0 0 6px">Slot (1 a 5)</label>
+          <input type="number" name="slot_number" value="1" min="1" max="5">
         </div>
         <div style="grid-column:1 / -1">
           <button type="submit" style="margin-top:0;width:auto;white-space:nowrap">Vincular conta ML</button>
