@@ -2386,6 +2386,7 @@ def render_dashboard(data):
       if (!value) return '';
       try {{
         const parsed = new URL(String(value), window.location.href);
+        if (parsed.protocol === 'http:') parsed.protocol = 'https:';
         return parsed.protocol === 'https:' ? parsed.href : '';
       }} catch (error) {{
         return '';
