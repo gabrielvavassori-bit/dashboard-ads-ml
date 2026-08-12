@@ -60,7 +60,7 @@ class OnlinePeriodTests(unittest.TestCase):
                         "user_product_id": "MLBU-7X4",
                         "catalog_product_id": "CAT-7X4",
                         "catalog_listing": True,
-                        "thumbnail_url": "https://http2.mlstatic.com/condition-a.jpg",
+                        "thumbnail_url": "http://http2.mlstatic.com/condition-a.jpg",
                         "sku": "LAZ-7X4",
                         "title": "Condicao A",
                         "cost": 10,
@@ -112,7 +112,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertTrue(all(item["userProductId"] == "MLBU-7X4" for item in data["items"]))
         self.assertTrue(all(item["conditionCount"] == 2 for item in data["items"]))
         self.assertTrue(all(item["catalogProductId"] == "CAT-7X4" for item in data["items"]))
-        self.assertEqual(data["items"][0]["thumbnailUrl"], "https://http2.mlstatic.com/condition-a.jpg")
+        self.assertEqual(data["items"][0]["thumbnailUrl"], "http://http2.mlstatic.com/condition-a.jpg")
         self.assertEqual({item["campaign"] for item in data["items"]}, {"Campanha principal", "Campanha secundaria"})
         condition_b = next(item for item in data["items"] if item["code"] == "MLB6689184622")
         self.assertEqual(condition_b["orders"], 1)
@@ -126,6 +126,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("MLBU-7X4", html)
         self.assertIn("Catalogo CAT-7X4", html)
         self.assertIn("product-thumbnail", html)
+        self.assertIn("if (parsed.protocol === 'http:') parsed.protocol = 'https:';", html)
 
     def test_governance_summary_reads_authenticated_central_bundle(self):
         bundle = {
