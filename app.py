@@ -1541,7 +1541,11 @@ class Handler(BaseHTTPRequestHandler):
                 if link:
                     linked_name = link["official_store"] or link["nickname"] or link["client_id"] or ""
                 if not confirmed:
-                    _send_html(self, templates.render_online_beta_warning(linked_name))
+                    _send_html(self, templates.render_online_beta_warning(
+                        linked_name,
+                        account_count=len(links),
+                        slot_limit=int(user["ml_slot_limit"] or 1),
+                    ))
                     return
                 if not link:
                     _redirect(self, "/ml-link/start?return_to=/online?confirmed=1")
