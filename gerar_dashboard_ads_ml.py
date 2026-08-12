@@ -804,6 +804,7 @@ def aggregate_by_sku(items):
             "title": "",
             "campaign": "",
             "campaigns": set(),
+            "children": [],
             "condition_keys": set(),
             "catalog_product_ids": set(),
             "lastSaleDate": "",
@@ -849,6 +850,7 @@ def aggregate_by_sku(items):
         })
         if item.get("code"):
             target["codes"].add(item["code"])
+        target["children"].append(item)
         if item.get("campaign") and item["campaign"] != "Inativo":
             target["campaigns"].add(item["campaign"])
         if item.get("adsCampaigns") and item["adsCampaigns"] != item.get("campaign"):
@@ -1442,10 +1444,16 @@ def render_dashboard(data):
     tbody tr.main-row td {{ border-top:1px solid var(--line); background:#fff; }}
     tbody tr.main-row td:first-child {{ border-left:1px solid var(--line); border-top-left-radius:10px; }}
     tbody tr.main-row td:last-child {{ border-right:1px solid var(--line); border-top-right-radius:10px; }}
-    tbody tr.product-parent-row td {{ background:#eef4ff; border-top:2px solid #84adff; font-weight:700; }}
-    tbody tr.product-parent-row td:first-child {{ border-left:1px solid #84adff; }}
-    tbody tr.product-parent-row td:last-child {{ border-right:1px solid #84adff; }}
-    .product-parent-note td {{ background:#f5f8ff; border:1px solid #84adff; border-top:0; color:#344054; }}
+    tbody.product-group {{ outline:2px solid #84adff; outline-offset:-2px; background:#f8fbff; }}
+    tbody.product-group tr td:first-child {{ border-left:1px solid #84adff; }}
+    tbody.product-group tr td:last-child {{ border-right:1px solid #84adff; }}
+    tbody.product-group tr.product-parent-row td {{ background:#eaf2ff; border-top:2px solid #5b8def; font-weight:700; }}
+    tbody.product-group tr.product-child-row td {{ background:#fff; }}
+    tbody.product-group tr.product-group-note td {{ background:#f5f8ff; border-bottom:2px solid #84adff; color:#344054; }}
+    tbody.product-group tr.product-parent-row td:first-child {{ border-top-left-radius:8px; }}
+    tbody.product-group tr.product-parent-row td:last-child {{ border-top-right-radius:8px; }}
+    tbody.product-group tr.product-group-note td:first-child {{ border-bottom-left-radius:8px; }}
+    tbody.product-group tr.product-group-note td:last-child {{ border-bottom-right-radius:8px; }}
     td.num, th.num {{ text-align:right; white-space:nowrap; }}
     .code {{ font-weight:700; }}
     .title {{ color:#344054; max-width:100%; }}
@@ -1479,6 +1487,18 @@ def render_dashboard(data):
     .bar span {{ display:block; height:100%; background:var(--blue); border-radius:999px; }}
     .version-tag {{ color:#667085; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; margin-top:2px; }}
     .table-card {{ margin-top:0; overflow:hidden; }}
+    .table-card-head {{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }}
+    .table-card-head h2 {{ margin:0; }}
+    .table-display-controls {{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }}
+    .table-display-controls .muted {{ font-weight:700; }}
+    .table-zoom-value {{ min-width:48px; text-align:center; font-weight:800; color:#344054; }}
+    .table-help {{ display:flex; justify-content:space-between; gap:18px; align-items:flex-start; margin-top:14px; padding:14px; border:1px solid #d7e3f7; border-radius:10px; background:#f8fbff; }}
+    .table-help strong {{ display:block; margin-bottom:4px; }}
+    .table-help p {{ margin:0; color:#52637a; }}
+    .table-help-side {{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; text-align:right; }}
+    .whatsapp-support {{ position:fixed; right:22px; bottom:22px; z-index:40; display:flex; align-items:center; gap:9px; padding:11px 14px; border-radius:999px; background:#25d366; color:#fff; font-weight:800; text-decoration:none; box-shadow:0 8px 24px rgba(16,24,40,.22); }}
+    .whatsapp-support:hover {{ background:#1fb95a; transform:translateY(-1px); }}
+    .whatsapp-support svg {{ width:24px; height:24px; flex:0 0 auto; fill:currentColor; }}
     .scroll-frame {{ height:56vh; min-height:330px; max-height:560px; width:100%; max-width:100%; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#fff; overscroll-behavior:contain; }}
     .scroll-frame table {{ border:0; border-radius:0; margin:0; }}
     .ops-table {{ width:1420px; table-layout:fixed; }}
@@ -1543,7 +1563,7 @@ def render_dashboard(data):
       .period-form .field-group[hidden] {{ display:none; }}
       .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
-    @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} }}
+    @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
   </style>
 </head>
 <body>
@@ -1623,8 +1643,28 @@ def render_dashboard(data):
         <input id="search" placeholder="Buscar SKU, MLB, titulo ou campanha">
       </div>
       <section class="card table-card">
-        <h2 id="tableTitle">Todos com decisao</h2>
+        <div class="table-card-head">
+          <h2 id="tableTitle">Todos com decisao</h2>
+          <div class="table-display-controls" aria-label="Tamanho da tabela">
+            <span class="muted">Tamanho da tabela</span>
+            <button id="tableZoomOut" type="button" title="Diminuir tabela">-</button>
+            <span class="table-zoom-value" id="tableZoomValue">100%</span>
+            <button id="tableZoomIn" type="button" title="Aumentar tabela">+</button>
+            <button id="tableZoomFit" type="button">Ajustar a largura</button>
+            <button id="tableZoomReset" type="button">Restaurar</button>
+          </div>
+        </div>
         <div class="scroll-frame" id="table"></div>
+        <div class="table-help">
+          <div>
+            <strong>Como interpretar esta tabela</strong>
+            <p id="tableHelpText">O produto pai consolida valores absolutos e recalcula as taxas. Cada filho preserva os dados do anuncio e da condicao de venda.</p>
+          </div>
+          <div class="table-help-side">
+            <span class="muted" id="tableHelpMeta"></span>
+            <button class="secondary-action" id="tableTop" type="button">Voltar ao topo</button>
+          </div>
+        </div>
       </section>
     </section>
     <section class="view" id="view-abc">
@@ -1669,6 +1709,10 @@ def render_dashboard(data):
       </section>
     </section>
   </main>
+  <a class="whatsapp-support" href="https://wa.me/5511998397385?text=Oi%2C%20estou%20precisando%20de%20suporte%20no%20Dash%20Ads." target="_blank" rel="noopener noreferrer" aria-label="Pedir suporte pelo WhatsApp">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M19.11 17.21c-.26-.13-1.54-.76-1.78-.85-.24-.09-.41-.13-.59.13-.17.26-.67.85-.82 1.02-.15.17-.3.2-.56.07-.26-.13-1.09-.4-2.08-1.28-.77-.68-1.29-1.53-1.44-1.79-.15-.26-.02-.4.11-.53.12-.12.26-.3.39-.46.13-.15.17-.26.26-.43.09-.17.04-.33-.02-.46-.07-.13-.59-1.41-.8-1.93-.21-.51-.43-.44-.59-.45h-.5c-.17 0-.46.07-.7.33-.24.26-.91.89-.91 2.17s.93 2.52 1.06 2.69c.13.17 1.83 2.8 4.44 3.93.62.27 1.1.43 1.48.55.62.2 1.19.17 1.64.1.5-.07 1.54-.63 1.76-1.24.22-.61.22-1.13.15-1.24-.06-.12-.23-.18-.49-.31zM16.04 3.2A12.73 12.73 0 0 0 5.2 22.6L3.4 29.2l6.76-1.77a12.72 12.72 0 1 0 5.88-24.23zm0 22.88c-2.03 0-4.02-.55-5.75-1.59l-.41-.24-4.01 1.05 1.07-3.91-.27-.4a10.16 10.16 0 1 1 9.37 5.09z"/></svg>
+    <span>Suporte pelo WhatsApp</span>
+  </a>
   <script>
     const DATA = {payload};
     const brl = value => value.toLocaleString('pt-BR', {{ style:'currency', currency:'BRL' }});
@@ -1700,6 +1744,9 @@ def render_dashboard(data):
     }}
     let currentContext = 'all';
     let currentViewMode = 'mlb';
+    let tableZoom = (() => {{
+      try {{ return Number(localStorage.getItem('dashboardAdsTableZoom')) || 1; }} catch (error) {{ return 1; }}
+    }})();
     const detailExpanded = new Set();
     let sortState = {{ key:'investment', direction:1 }};
     let abcMode = 'sku';
@@ -1761,7 +1808,7 @@ def render_dashboard(data):
         .replace(/"/g, '&quot;');
     }}
     function itemSearchText(item) {{
-      return [
+      const ownText = [
         item.sku,
         item.code,
         item.allCodes,
@@ -1776,7 +1823,37 @@ def render_dashboard(data):
         item.catalogLabel,
         item.action,
         item.alertText
-      ].filter(Boolean).join(' ').toLowerCase();
+      ].filter(Boolean).join(' ');
+      const childText = (item.children || []).map(child => [
+        child.sku, child.code, child.title, child.campaign, child.adsCampaigns,
+        child.userProductId, child.catalogProductId, child.conditionLabel, child.catalogLabel
+      ].filter(Boolean).join(' ')).join(' ');
+      return `${{ownText}} ${{childText}}`.toLowerCase();
+    }}
+    function applyTableZoom() {{
+      const table = document.querySelector('#table .ops-table');
+      if (table) table.style.zoom = String(tableZoom);
+      const label = document.getElementById('tableZoomValue');
+      if (label) label.textContent = `${{Math.round(tableZoom * 100)}}%`;
+    }}
+    function setTableZoom(value, persist = true) {{
+      tableZoom = Math.max(.65, Math.min(1.15, Number(value) || 1));
+      if (persist) {{
+        try {{ localStorage.setItem('dashboardAdsTableZoom', String(tableZoom)); }} catch (error) {{}}
+      }}
+      applyTableZoom();
+    }}
+    function stepTableZoom(direction) {{
+      const steps = [.65, .75, .85, 1, 1.15];
+      const currentIndex = steps.reduce((best, value, index) => Math.abs(value - tableZoom) < Math.abs(steps[best] - tableZoom) ? index : best, 0);
+      setTableZoom(steps[Math.max(0, Math.min(steps.length - 1, currentIndex + direction))]);
+    }}
+    function fitTableToWidth() {{
+      const frame = document.getElementById('table');
+      const table = frame ? frame.querySelector('.ops-table') : null;
+      if (!frame || !table) return;
+      table.style.zoom = '1';
+      requestAnimationFrame(() => setTableZoom(Math.min(1, (frame.clientWidth - 4) / Math.max(table.scrollWidth, 1))));
     }}
     function crc32(text) {{
       let table = crc32.table;
@@ -2294,9 +2371,12 @@ def render_dashboard(data):
         <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}<div class="muted">${{item.avgSalePrice ? 'media: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? 'ultima venda: ' + safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
         <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
-      </tr><tr class="product-parent-note"><td colspan="16"><b>Resumo do produto pai:</b> valores absolutos somados e taxas recalculadas sobre os totais das opcoes.</td></tr>`;
+      </tr>`;
     }}
-    function groupedMlbRows(rows) {{
+    function productGroupNote(optionCount) {{
+      return `<tr class="product-group-note"><td colspan="16"><b>Mesmo produto:</b> pai e ${{num(optionCount)}} condicao(oes) de venda no mesmo quadro. Valores do pai sao consolidados e as taxas sao recalculadas sobre os totais.</td></tr>`;
+    }}
+    function splitByMlbu(rows) {{
       const groups = new Map();
       rows.forEach((item, index) => {{
         const parentId = item.userProductId || '';
@@ -2304,20 +2384,27 @@ def render_dashboard(data):
         if (!groups.has(key)) groups.set(key, {{ parentId, children:[] }});
         groups.get(key).children.push(item);
       }});
-      return [...groups.values()].map(group => {{
-        const childrenHtml = group.children.map(row).join('');
-        return childrenHtml + (group.parentId && group.children.length > 1
-          ? productParentRow(productParentSummary(group.children))
-          : '');
-      }}).join('');
+      return [...groups.values()];
     }}
-    function row(item) {{
+    function mlbuGroupBody(group) {{
+      if (group.parentId && group.children.length > 1) {{
+        return `<tbody class="product-group">${{productParentRow(productParentSummary(group.children))}}${{group.children.map(item => row(item, 'product-child-row')).join('')}}${{productGroupNote(group.children.length)}}</tbody>`;
+      }}
+      return `<tbody>${{group.children.map(item => row(item)).join('')}}</tbody>`;
+    }}
+    function groupedMlbBodies(rows) {{
+      return splitByMlbu(rows).map(mlbuGroupBody).join('');
+    }}
+    function groupedSkuBodies(rows) {{
+      return rows.map(sku => splitByMlbu(sku.children || []).map(mlbuGroupBody).join('') || `<tbody>${{row(sku)}}</tbody>`).join('');
+    }}
+    function row(item, extraClass = '') {{
       const key = detailKey(item);
       const expanded = detailExpanded.has(key);
       const campaignMode = currentViewMode === 'campaign';
       const abcValue = campaignMode ? item.abcCampaign : currentViewMode === 'sku' ? item.abcSku : item.abcCode;
       const tacosNote = item.salesCoverageComplete === false ? 'vendas parciais' : item.campaignRevenueAmbiguous ? 'atribuicao ambigua' : '';
-      return `<tr class="main-row">
+      return `<tr class="main-row ${{extraClass}}">
         <td><div class="copyline"><span class="code">${{safe(item.sku || '(sem SKU)')}}</span>${{copyButton(item.sku, 'SKU')}}</div><div class="muted">${{item.adCount ? item.adCount + ' anuncios' : ''}}</div></td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.allCodes || item.code || '')}}</span>${{copyButton(item.allCodes || item.code, 'MLB')}}</div><div class="title">${{safe(campaignMode ? (item.topInvestmentLabel || item.title || '') : (item.title || ''))}}</div></td>
         <td><span class="${{abcClass(abcValue)}}">${{campaignMode ? 'CAMP' : currentViewMode.toUpperCase()}} ${{abcValue || 'C'}}</span></td>
@@ -2348,11 +2435,26 @@ def render_dashboard(data):
         }});
       }}
       document.getElementById('tableTitle').textContent = `${{contextLabels[currentContext]}} - ${{viewLabels[currentViewMode]}} (${{rows.length}})`;
-      const renderedRows = currentViewMode === 'mlb' ? groupedMlbRows(rows) : rows.map(row).join('');
+      const renderedBodies = currentViewMode === 'mlb'
+        ? groupedMlbBodies(rows)
+        : currentViewMode === 'sku'
+          ? groupedSkuBodies(rows)
+          : `<tbody>${{rows.map(item => row(item)).join('')}}</tbody>`;
       document.getElementById('table').innerHTML = `<table class="ops-table">
         <colgroup><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
         <thead><tr><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Ult. preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
-        <tbody>${{renderedRows}}</tbody></table>`;
+        ${{renderedBodies}}</table>`;
+      const helpText = document.getElementById('tableHelpText');
+      const helpMeta = document.getElementById('tableHelpMeta');
+      if (currentViewMode === 'campaign') {{
+        helpText.textContent = 'A visao de campanha preserva o agrupamento e os calculos proprios de cada campanha; o agrupamento visual por produto nao altera esta camada.';
+      }} else if (currentViewMode === 'sku') {{
+        helpText.textContent = 'A aba SKU mantem cada SKU como contexto. Dentro dele, cada MLBU tem seu proprio quadro com o pai acima das condicoes; outro MLBU ou anuncio tradicional permanece separado.';
+      }} else {{
+        helpText.textContent = 'Cada MLBU aparece como um quadro: produto pai acima e condicoes de venda abaixo. O pai soma valores absolutos e recalcula TACOS, ROAS, CTR e CVR sobre os totais.';
+      }}
+      helpMeta.textContent = `${{num(rows.length)}} registro(s) no filtro atual`;
+      applyTableZoom();
       document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {{
         const value = button.dataset.copy;
         try {{ await navigator.clipboard.writeText(value); }} catch (error) {{ const input = document.createElement('textarea'); input.value = value; document.body.appendChild(input); input.select(); document.execCommand('copy'); input.remove(); }}
@@ -2495,6 +2597,11 @@ def render_dashboard(data):
     }});
     document.getElementById('exportSales').addEventListener('click', exportSalesExcel);
     document.getElementById('downloadHtml').addEventListener('click', downloadDashboardHtml);
+    document.getElementById('tableZoomOut').addEventListener('click', () => stepTableZoom(-1));
+    document.getElementById('tableZoomIn').addEventListener('click', () => stepTableZoom(1));
+    document.getElementById('tableZoomFit').addEventListener('click', fitTableToWidth);
+    document.getElementById('tableZoomReset').addEventListener('click', () => setTableZoom(1));
+    document.getElementById('tableTop').addEventListener('click', () => window.scrollTo({{ top:0, behavior:'smooth' }}));
     document.getElementById('search').addEventListener('input', renderTable);
     document.getElementById('abcSearch').addEventListener('input', renderAbc);
     renderKpis(); renderAbc(); renderAlerts(); renderTable(); renderOnlineBeta();
