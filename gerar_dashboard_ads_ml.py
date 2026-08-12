@@ -807,6 +807,9 @@ def aggregate_by_sku(items):
             "children": [],
             "condition_keys": set(),
             "catalog_product_ids": set(),
+            "thumbnailUrl": "",
+            "thumbnailCount": 0,
+            "thumbnailRevenue": -1,
             "lastSaleDate": "",
             "lastSaleSort": 0,
             "lastSaleDay": 0,
@@ -859,6 +862,11 @@ def aggregate_by_sku(items):
             target["condition_keys"].add(item["userProductId"])
         if item.get("catalogProductId"):
             target["catalog_product_ids"].add(item["catalogProductId"])
+        if item.get("thumbnailUrl"):
+            target["thumbnailCount"] += 1
+            if (item.get("totalRevenue", 0) or 0) > target["thumbnailRevenue"]:
+                target["thumbnailUrl"] = item["thumbnailUrl"]
+                target["thumbnailRevenue"] = item.get("totalRevenue", 0) or 0
         if not target["title"] and item.get("title"):
             target["title"] = item["title"]
         if item.get("lastPrice"):
@@ -900,6 +908,7 @@ def aggregate_by_sku(items):
         campaigns = sorted(item.pop("campaigns"))
         condition_keys = sorted(item.pop("condition_keys"))
         catalog_product_ids = sorted(item.pop("catalog_product_ids"))
+        item.pop("thumbnailRevenue", None)
         item["allCodes"] = ", ".join(codes)
         item["possibleCatalog"] = item.get("possibleCatalog", False) or len(codes) > 1
         item["allCampaigns"] = ", ".join(campaigns)
@@ -948,6 +957,8 @@ def aggregate_by_campaign(items):
             "codes": set(),
             "condition_keys": set(),
             "catalog_product_ids": set(),
+            "thumbnailUrl": "",
+            "thumbnailCount": 0,
             "children": [],
             "orders": 0,
             "units": 0,
@@ -977,6 +988,8 @@ def aggregate_by_campaign(items):
             target["condition_keys"].add(item["userProductId"])
         if item.get("catalogProductId"):
             target["catalog_product_ids"].add(item["catalogProductId"])
+        if item.get("thumbnailUrl"):
+            target["thumbnailCount"] += 1
         if item.get("campaignStatus") == "Ativa":
             target["campaignStatus"] = "Ativa"
         target["possibleCatalog"] = target["possibleCatalog"] or bool(item.get("possibleCatalog"))
@@ -1017,6 +1030,7 @@ def aggregate_by_campaign(items):
         top = max(item["children"], key=lambda row: row.get("investment", 0) or 0, default=None)
         if top:
             item["topInvestmentLabel"] = f"{top.get('sku') or '(sem SKU)'} - {top.get('code') or ''}".strip(" -")
+            item["thumbnailUrl"] = top.get("thumbnailUrl") or ""
         item["adsNoSalesCount"] = len([
             row for row in item["children"]
             if (row.get("investment", 0) or 0) > 0 and (row.get("adsRevenue", 0) or 0) <= 0
@@ -1539,6 +1553,9 @@ def render_dashboard(data):
     .decision-summary-main, .decision-summary-side {{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }}
     .decision-teaser {{ color:var(--muted); }}
     .summary-chip {{ display:inline-block; padding:4px 8px; border-radius:999px; background:#f2f4f7; color:#344054; font-size:12px; font-weight:800; }}
+    .product-thumbnail {{ position:relative; width:52px; height:52px; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#f8fafc; display:flex; align-items:center; justify-content:center; color:#98a2b3; font-size:9px; font-weight:800; text-align:center; line-height:1.1; }}
+    .product-thumbnail img {{ width:100%; height:100%; display:block; object-fit:contain; background:#fff; }}
+    .product-thumbnail-count {{ position:absolute; right:2px; bottom:2px; min-width:20px; padding:2px 4px; border-radius:999px; background:rgba(16,32,51,.9); color:#fff; font-size:9px; line-height:1.2; }}
     .detail-row td {{ background:#fbfcfe; border:1px solid var(--line); border-top:0; }}
     .detail-grid {{ display:grid; grid-template-columns:repeat(3,minmax(260px,1fr)); gap:12px; }}
     .detail-block {{ border:1px solid var(--line); border-radius:8px; padding:12px; background:#fff; }}
@@ -2341,6 +2358,8 @@ def render_dashboard(data):
       const campaigns = new Set(children.map(item => item.campaign || item.adsCampaigns).filter(Boolean));
       const catalogs = new Set(children.map(item => item.catalogProductId).filter(Boolean));
       const skus = new Set(children.map(item => item.sku).filter(Boolean));
+      const picturedChildren = children.filter(item => imageUrl(item.thumbnailUrl));
+      const thumbnailSource = [...picturedChildren].sort((a, b) => (b.totalRevenue || 0) - (a.totalRevenue || 0))[0];
       const cvr = clicks ? adsSales / clicks : 0;
       const avgAdsOrder = adsSales ? adsRevenue / adsSales : (units ? totalRevenue / units : 0);
       return {{
@@ -2349,6 +2368,8 @@ def render_dashboard(data):
         optionCount: children.length,
         campaignCount: campaigns.size,
         catalogLabel: [...catalogs].join(', '),
+        thumbnailUrl: thumbnailSource ? thumbnailSource.thumbnailUrl : '',
+        thumbnailCount: picturedChildren.length,
         orders: sum('orders'), units, totalRevenue, adsRevenue, investment, impressions, clicks, adsSales,
         lastSaleDate: latest ? latest.lastSaleDate : '',
         lastPrice: latest ? Number(latest.lastPrice || 0) : 0,
@@ -2361,8 +2382,25 @@ def render_dashboard(data):
         maxCpc: avgAdsOrder && cvr ? avgAdsOrder * .03 * cvr : 0
       }};
     }}
+    function imageUrl(value) {{
+      if (!value) return '';
+      try {{
+        const parsed = new URL(String(value), window.location.href);
+        return parsed.protocol === 'https:' ? parsed.href : '';
+      }} catch (error) {{
+        return '';
+      }}
+    }}
+    function productImage(item) {{
+      const url = imageUrl(item.thumbnailUrl);
+      const count = Math.max(0, Number(item.thumbnailCount || 0));
+      const badge = count > 1 ? `<span class="product-thumbnail-count">+${{count - 1}}</span>` : '';
+      if (!url) return `<div class="product-thumbnail" aria-label="Imagem indisponivel">SEM<br>FOTO</div>`;
+      return `<div class="product-thumbnail"><img src="${{safe(url)}}" alt="${{safe(item.title || item.sku || 'Produto')}}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.parentElement.textContent='SEM FOTO'">${{badge}}</div>`;
+    }}
     function productParentRow(item) {{
       return `<tr class="product-parent-row">
+        <td>${{productImage(item)}}</td>
         <td><span class="code">${{safe(item.sku || '(sem SKU)')}}</span><div class="muted">Produto pai</div></td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.parentId)}}</span>${{copyButton(item.parentId, 'MLBU')}}</div><div class="title">Resumo consolidado de ${{num(item.optionCount)}} opcoes</div></td>
         <td><span class="summary-chip">PAI</span></td>
@@ -2374,7 +2412,7 @@ def render_dashboard(data):
       </tr>`;
     }}
     function productGroupNote(optionCount) {{
-      return `<tr class="product-group-note"><td colspan="16"><b>Mesmo produto:</b> pai e ${{num(optionCount)}} condicao(oes) de venda no mesmo quadro. Valores do pai sao consolidados e as taxas sao recalculadas sobre os totais.</td></tr>`;
+      return `<tr class="product-group-note"><td colspan="17"><b>Mesmo produto:</b> pai e ${{num(optionCount)}} condicao(oes) de venda no mesmo quadro. Valores do pai sao consolidados e as taxas sao recalculadas sobre os totais.</td></tr>`;
     }}
     function splitByMlbu(rows) {{
       const groups = new Map();
@@ -2405,6 +2443,7 @@ def render_dashboard(data):
       const abcValue = campaignMode ? item.abcCampaign : currentViewMode === 'sku' ? item.abcSku : item.abcCode;
       const tacosNote = item.salesCoverageComplete === false ? 'vendas parciais' : item.campaignRevenueAmbiguous ? 'atribuicao ambigua' : '';
       return `<tr class="main-row ${{extraClass}}">
+        <td>${{productImage(item)}}</td>
         <td><div class="copyline"><span class="code">${{safe(item.sku || '(sem SKU)')}}</span>${{copyButton(item.sku, 'SKU')}}</div><div class="muted">${{item.adCount ? item.adCount + ' anuncios' : ''}}</div></td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.allCodes || item.code || '')}}</span>${{copyButton(item.allCodes || item.code, 'MLB')}}</div><div class="title">${{safe(campaignMode ? (item.topInvestmentLabel || item.title || '') : (item.title || ''))}}</div></td>
         <td><span class="${{abcClass(abcValue)}}">${{campaignMode ? 'CAMP' : currentViewMode.toUpperCase()}} ${{abcValue || 'C'}}</span></td>
@@ -2416,11 +2455,11 @@ def render_dashboard(data):
         <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{safe(item.ctrClass || '')}}</div></td><td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{safe(item.cvrClass || '')}}</div></td>
         <td class="num">${{pct(item.tacos || 0)}}<div class="muted">${{safe(tacosNote)}}</div></td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>
-      <tr class="decision-row"><td colspan="16"><div class="decision-wrap">
+      <tr class="decision-row"><td colspan="17"><div class="decision-wrap">
         <div class="decision-summary-main"><span class="pill ${{actionClass(item.action)}}">${{safe(item.action)}}</span><div class="decision-teaser"><b>Diagnostico:</b> ${{safe(item.diagnosticSummary || item.recommendation || item.reason || 'Sem leitura adicional.')}}</div></div>
         <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">${{expanded ? 'Ocultar leitura' : 'Ver leitura'}}</button></div>
       </div></td></tr>
-      <tr class="detail-row" style="display:${{expanded ? 'table-row' : 'none'}}"><td colspan="16"><div class="detail-grid">${{detailBlocks(item)}}</div></td></tr>`;
+      <tr class="detail-row" style="display:${{expanded ? 'table-row' : 'none'}}"><td colspan="17"><div class="detail-grid">${{detailBlocks(item)}}</div></td></tr>`;
     }}
     function renderTable() {{
       renderAlerts();
@@ -2441,8 +2480,8 @@ def render_dashboard(data):
           ? groupedSkuBodies(rows)
           : `<tbody>${{rows.map(item => row(item)).join('')}}</tbody>`;
       document.getElementById('table').innerHTML = `<table class="ops-table">
-        <colgroup><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
-        <thead><tr><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Ult. preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
+        <colgroup><col style="width:72px"><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
+        <thead><tr><th>Imagem</th><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Ult. preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
         ${{renderedBodies}}</table>`;
       const helpText = document.getElementById('tableHelpText');
       const helpMeta = document.getElementById('tableHelpMeta');

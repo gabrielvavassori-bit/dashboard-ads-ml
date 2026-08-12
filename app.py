@@ -663,6 +663,12 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "userProductId": str(raw.get("user_product_id") or raw.get("userProductId") or "").strip(),
             "catalogProductId": str(raw.get("catalog_product_id") or raw.get("catalogProductId") or "").strip(),
             "catalogListing": bool(raw.get("catalog_listing") or raw.get("catalogListing")),
+            "thumbnailUrl": str(
+                raw.get("thumbnail_url")
+                or raw.get("secure_thumbnail")
+                or raw.get("thumbnail")
+                or ""
+            ).strip(),
             "impressions": impressions,
             "clicks": clicks,
             "adsSales": ads_sales,
