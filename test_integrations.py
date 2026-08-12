@@ -256,11 +256,17 @@ class IntegrationTests(unittest.TestCase):
                 "'PRAGMA table_info(user_ml_links)')}; "
                 "ml_state_cols={r['name'] for r in c.execute("
                 "'PRAGMA table_info(ml_link_states)')}; "
+                "session_cols={r['name'] for r in c.execute("
+                "'PRAGMA table_info(sessions)')}; "
+                "account_cols={r['name'] for r in c.execute("
+                "'PRAGMA table_info(user_ml_accounts)')}; "
                 "row=c.execute(\"SELECT status FROM webhook_events "
                 "WHERE event_id='old-event'\").fetchone(); "
                 "assert {'payload_hash','status','processed_at','error'} <= cols; "
                 "assert {'ml_user_id','nickname','official_store','advertiser_id','seller_id','site_id','last_verified_at'} <= ml_cols; "
-                "assert {'attached_at'} <= ml_state_cols; "
+                "assert {'attached_at','slot_number'} <= ml_state_cols; "
+                "assert {'selected_ml_account_id'} <= session_cols; "
+                "assert {'slot_number','client_id','replacement_locked_until'} <= account_cols; "
                 "assert row['status']=='processed'; c.close()"
             )
             result = subprocess.run(
@@ -280,6 +286,81 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(query["client_id"][0], "test-client")
         self.assertTrue(db.consume_oauth_state(state))
         self.assertFalse(db.consume_oauth_state(state))
+
+    def test_multicontas_slots_keep_accounts_isolated_and_selected_per_session(self):
+        user_id = db.upsert_manual_user(
+            email="multi@example.com",
+            name="Multi",
+            plan="piloto-charme",
+            status="active",
+            expires_at=None,
+        )
+        db.set_user_ml_slot_limit(user_id, 3)
+        first_id = db.upsert_user_ml_link(
+            user_id,
+            client_id="charme-1",
+            seller_id="seller-1",
+            slot_number=1,
+            admin_granted=True,
+        )
+        second_id = db.upsert_user_ml_link(
+            user_id,
+            client_id="charme-2",
+            seller_id="seller-2",
+            slot_number=2,
+            admin_granted=True,
+        )
+        links = db.list_active_ml_links_for_user(user_id)
+        self.assertEqual([(row["slot_number"], row["client_id"]) for row in links], [
+            (1, "charme-1"),
+            (2, "charme-2"),
+        ])
+        self.assertIsNone(db.get_active_ml_link_for_user(user_id))
+        token = "multi-session"
+        db.create_session(user_id, token, "127.0.0.1", "tests")
+        self.assertTrue(db.set_session_selected_ml_account(token, user_id, second_id))
+        session = db.get_session(token)
+        self.assertEqual(session["selected_ml_account_id"], second_id)
+        self.assertEqual(
+            db.get_active_ml_link_for_user(user_id, session["selected_ml_account_id"])["seller_id"],
+            "seller-2",
+        )
+        db.mark_user_ml_link_disconnected(user_id, second_id)
+        self.assertIsNone(db.get_active_ml_link_for_user(user_id, second_id))
+        self.assertEqual(db.get_active_ml_link_for_user(user_id)["seller_id"], "seller-1")
+        self.assertNotEqual(first_id, second_id)
+
+    def test_multicontas_replacement_lock_starts_only_after_successful_replacement(self):
+        user_id = db.upsert_manual_user(
+            email="replace@example.com",
+            name="Replace",
+            plan="piloto-charme",
+            status="active",
+            expires_at=None,
+        )
+        db.set_user_ml_slot_limit(user_id, 2)
+        account_id = db.upsert_user_ml_link(
+            user_id,
+            client_id="charme-original",
+            slot_number=2,
+        )
+        original = db.get_ml_account_for_user(user_id, account_id)
+        self.assertIsNone(original["replacement_locked_until"])
+        db.upsert_user_ml_link(
+            user_id,
+            client_id="charme-substituta",
+            slot_number=2,
+        )
+        replaced = db.get_ml_account_for_user(user_id, account_id)
+        self.assertGreater(replaced["replacement_locked_until"], db.now())
+        with self.assertRaisesRegex(ValueError, "30 dias"):
+            db.upsert_user_ml_link(
+                user_id,
+                client_id="charme-terceira",
+                slot_number=2,
+            )
+        still_bound = db.get_ml_account_for_user(user_id, account_id)
+        self.assertEqual(still_bound["client_id"], "charme-substituta")
 
     def test_subscription_reconciliation_is_conservative(self):
         original = eduzz_api.request_json
@@ -452,6 +533,59 @@ class HTTPRouteTests(unittest.TestCase):
             beta_bridge.verify_assertion(tampered, "secret", "https://beta.example/beta/callback", now=101)
         with self.assertRaises(ValueError):
             beta_bridge.verify_assertion(token, "secret", "https://beta.example/beta/callback", now=221)
+
+    def test_multicontas_requires_explicit_selection_and_keeps_session_isolated(self):
+        user_id, cookie = self._login_cookie("charme@example.com")
+        db.set_user_ml_slot_limit(user_id, 5)
+        db.upsert_user_ml_link(user_id, client_id="charme-a", nickname="Charme A", slot_number=1)
+        second_id = db.upsert_user_ml_link(user_id, client_id="charme-b", nickname="Charme B", slot_number=2)
+        opener = self._no_redirect_opener()
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(Request(
+                f"{self.base_url}/online?confirmed=1",
+                headers={"Cookie": cookie},
+            ), timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        self.assertTrue(raised.exception.headers.get("Location", "").startswith("/contas?"))
+        raised.exception.close()
+        with urlopen(Request(f"{self.base_url}/contas", headers={"Cookie": cookie}), timeout=5) as response:
+            body = response.read().decode("utf-8")
+        self.assertIn("Charme A", body)
+        self.assertIn("Charme B", body)
+        self.assertIn("Slot 5: livre", body)
+        self.assertIn("/ml-link/start?slot=5", body)
+        select_request = Request(
+            f"{self.base_url}/contas/select",
+            data=urlencode({"account_id": second_id, "return_to": "/"}).encode("utf-8"),
+            headers={"Content-Type": "application/x-www-form-urlencoded", "Cookie": cookie},
+            method="POST",
+        )
+        with self.assertRaises(HTTPError) as selected:
+            opener.open(select_request, timeout=5)
+        self.assertEqual(selected.exception.code, 302)
+        selected.exception.close()
+        token = cookie.split("=", 1)[1]
+        self.assertEqual(db.get_session(token)["selected_ml_account_id"], second_id)
+
+    def test_multicontas_oauth_state_preserves_requested_slot(self):
+        user_id, cookie = self._login_cookie("charme-oauth@example.com")
+        db.set_user_ml_slot_limit(user_id, 5)
+        opener = self._no_redirect_opener()
+        request = Request(
+            f"{self.base_url}/ml-link/start?slot=4&return_to=/contas",
+            headers={"Cookie": cookie},
+        )
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        location = raised.exception.headers.get("Location", "")
+        raised.exception.close()
+        query = parse_qs(urlparse(location).query)
+        bridge_state = query["bridge_state"][0]
+        state_row = db.get_ml_link_state(bridge_state)
+        self.assertEqual(state_row["user_id"], user_id)
+        self.assertEqual(state_row["slot_number"], 4)
+        self.assertEqual(state_row["return_to"], "/contas")
 
     def test_sync_beta_access_posts_signed_assertion(self):
         user_id, _ = self._login_cookie("beta-sync@example.com")
