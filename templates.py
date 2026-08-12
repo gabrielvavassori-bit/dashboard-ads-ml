@@ -241,14 +241,71 @@ def render_app_shell(user_name: str, version: str, error: str = "", linked_clien
     return _layout("Painel", body, extra_head)
 
 
-def render_online_beta_warning(linked_client_name: str = "", account_count: int = 0, slot_limit: int = 1) -> str:
+def render_online_beta_warning(
+    linked_client_name: str = "",
+    account_count: int = 0,
+    slot_limit: int = 1,
+    accounts=(),
+    selected_account_id=None,
+) -> str:
     slot_limit = max(1, int(slot_limit or 1))
     account_count = max(0, int(account_count or 0))
-    linked_html = (
-        f'<div class="alert ok">Conta Mercado Livre vinculada: <b>{_html.escape(linked_client_name)}</b>.</div>'
-        if linked_client_name else
-        '<div class="hint">Se a conta ainda nao estiver vinculada, ao continuar o fluxo abrira a ativacao automaticamente.</div>'
-    )
+    account_options = []
+    for account in accounts or ():
+        account_id = int(account["id"])
+        label = account["official_store"] or account["nickname"] or account["client_id"]
+        selected = account_id == int(selected_account_id or 0)
+        account_options.append(f"""
+        <label class="account-option">
+          <input type="radio" name="account_id" value="{account_id}" {'checked' if selected else ''} required>
+          <span>
+            <b>{_html.escape(label)}</b>
+            <small>{_html.escape(account['client_id'])}</small>
+          </span>
+        </label>""")
+    if account_options:
+        account_selection_html = f"""
+        <div class="account-title">Selecione a conta que deseja utilizar:</div>
+        <div class="account-list">{''.join(account_options)}</div>
+        """
+    else:
+        account_selection_html = (
+            f'<div class="alert ok">Conta Mercado Livre vinculada: <b>{_html.escape(linked_client_name)}</b>.</div>'
+            if linked_client_name else
+            '<div class="hint">Se a conta ainda nao estiver vinculada, ao continuar o fluxo abrira a ativacao automaticamente.</div>'
+        )
+    if account_options:
+        continue_html = f"""
+        <form method="post" action="/contas/select">
+          <input type="hidden" name="return_to" value="/online?confirmed=1">
+          {account_selection_html}
+          <div class="account-actions">
+            <button type="submit">Continuar mesmo assim</button>
+            <a href="/" style="display:inline-block;padding:13px 18px;border-radius:10px;border:1px solid #cfd6e4;color:#102033;font-weight:800;text-decoration:none">Voltar ao painel</a>
+          </div>
+        </form>
+        """
+    else:
+        continue_html = f"""
+        {account_selection_html}
+        <div class="account-actions">
+          <a href="/online?confirmed=1" style="display:inline-block;padding:13px 18px;border-radius:10px;background:#102033;color:#fff;font-weight:800;text-decoration:none">Continuar mesmo assim</a>
+          <a href="/" style="display:inline-block;padding:13px 18px;border-radius:10px;border:1px solid #cfd6e4;color:#102033;font-weight:800;text-decoration:none">Voltar ao painel</a>
+        </div>
+        """
+    extra_head = """
+    <style>
+      .account-title { margin:16px 0 8px; font-weight:800; }
+      .account-list { display:grid; gap:10px; }
+      .account-option { display:flex; align-items:center; gap:12px; border:1px solid #d9e1ec; border-radius:10px; padding:12px 14px; cursor:pointer; }
+      .account-option:has(input:checked) { border-color:#1e5fbf; background:#eef5ff; }
+      .account-option input { width:auto; margin:0; accent-color:#1e5fbf; }
+      .account-option span { display:flex; flex-direction:column; gap:3px; }
+      .account-option small { color:#667085; }
+      .account-actions { display:flex; gap:12px; flex-wrap:wrap; margin-top:18px; }
+      .manage-link { display:inline-block; margin-top:16px; font-size:13px; color:#667085; }
+    </style>
+    """
     body = f"""
     <h1>Modo online beta</h1>
     <p>Voce esta entrando no fluxo online com dados reais.</p>
@@ -258,15 +315,13 @@ def render_online_beta_warning(linked_client_name: str = "", account_count: int 
     <div class="alert err">
       Use este modo para validacao assistida. Antes de tomar decisao comercial, confira as informacoes mais sensiveis no Mercado Livre ou no relatorio detalhado offline.
     </div>
-    {linked_html}
     <div class="alert ok"><b>{account_count} de {slot_limit} contas ativas</b></div>
-    <a href="/contas?return_to=/online" style="display:inline-block;padding:12px 16px;border-radius:10px;border:1px solid #1e5fbf;color:#1e5fbf;font-weight:800;text-decoration:none">Gerenciar contas vinculadas</a>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px">
-      <a href="/online?confirmed=1" style="display:inline-block;padding:13px 18px;border-radius:10px;background:#102033;color:#fff;font-weight:800;text-decoration:none">Continuar mesmo assim</a>
-      <a href="/" style="display:inline-block;padding:13px 18px;border-radius:10px;border:1px solid #cfd6e4;color:#102033;font-weight:800;text-decoration:none">Voltar ao painel</a>
+    {continue_html}
+    <div>
+      <a class="manage-link" href="/contas?return_to=/online">Gerenciar contas vinculadas</a>
     </div>
     """
-    return _layout("Modo online beta", body)
+    return _layout("Modo online beta", body, extra_head)
 
 
 def render_beta_entry(email: str, linked_client_name: str = "", bridge_ready: bool = False, ml_linked: bool = False) -> str:

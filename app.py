@@ -1533,7 +1533,7 @@ class Handler(BaseHTTPRequestHandler):
                 if period["error"]:
                     _send_html(self, templates.render_error_page(period["error"]), 400)
                     return
-                link, links, _ = _current_ml_account(user, token)
+                link, links, selected_account_id = _current_ml_account(user, token)
                 if links and not link:
                     _redirect(self, "/contas?" + urlencode({"return_to": self.path}))
                     return
@@ -1545,6 +1545,8 @@ class Handler(BaseHTTPRequestHandler):
                         linked_name,
                         account_count=len(links),
                         slot_limit=int(user["ml_slot_limit"] or 1),
+                        accounts=links,
+                        selected_account_id=selected_account_id or (link["id"] if link else None),
                     ))
                     return
                 if not link:
