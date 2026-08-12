@@ -111,6 +111,7 @@ def render_register(error: str = "", email: str = "") -> str:
 def render_ml_account_selector(user_name: str, accounts, selected_account_id=None, return_to: str = "/", slot_limit: int = 1) -> str:
     import time
     by_slot = {int(account["slot_number"]): account for account in accounts}
+    active_count = len(accounts)
     cards = []
     for slot_number in range(1, int(slot_limit or 1) + 1):
         account = by_slot.get(slot_number)
@@ -141,8 +142,10 @@ def render_ml_account_selector(user_name: str, accounts, selected_account_id=Non
         </form>""")
         cards.append(replacement_html)
     body = f"""
-    <h1>Escolha a conta Mercado Livre</h1>
-    <p>O Dashboard Ads e a Inteligencia de Vendas usam somente a conta selecionada nesta sessao.</p>
+    <h1>Gerenciar contas Mercado Livre</h1>
+    <div class="alert ok"><b>{active_count} de {int(slot_limit or 1)} contas ativas</b></div>
+    <p>Vincule e escolha a conta que sera usada pelo Dashboard Ads e pela Inteligencia de Vendas.</p>
+    <div class="hint">Cada slot pode ser substituido uma vez a cada 30 dias. A trava comeca somente depois que o novo OAuth for concluido com sucesso.</div>
     <div class="hint">Usuario: {_html.escape(user_name)}</div>
     {''.join(cards)}
     <p style="margin-top:18px"><a href="/">Voltar ao painel</a></p>
@@ -238,7 +241,9 @@ def render_app_shell(user_name: str, version: str, error: str = "", linked_clien
     return _layout("Painel", body, extra_head)
 
 
-def render_online_beta_warning(linked_client_name: str = "") -> str:
+def render_online_beta_warning(linked_client_name: str = "", account_count: int = 0, slot_limit: int = 1) -> str:
+    slot_limit = max(1, int(slot_limit or 1))
+    account_count = max(0, int(account_count or 0))
     linked_html = (
         f'<div class="alert ok">Conta Mercado Livre vinculada: <b>{_html.escape(linked_client_name)}</b>.</div>'
         if linked_client_name else
@@ -254,6 +259,8 @@ def render_online_beta_warning(linked_client_name: str = "") -> str:
       Use este modo para validacao assistida. Antes de tomar decisao comercial, confira as informacoes mais sensiveis no Mercado Livre ou no relatorio detalhado offline.
     </div>
     {linked_html}
+    <div class="alert ok"><b>{account_count} de {slot_limit} contas ativas</b></div>
+    <a href="/contas?return_to=/online" style="display:inline-block;padding:12px 16px;border-radius:10px;border:1px solid #1e5fbf;color:#1e5fbf;font-weight:800;text-decoration:none">Gerenciar contas vinculadas</a>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px">
       <a href="/online?confirmed=1" style="display:inline-block;padding:13px 18px;border-radius:10px;background:#102033;color:#fff;font-weight:800;text-decoration:none">Continuar mesmo assim</a>
       <a href="/" style="display:inline-block;padding:13px 18px;border-radius:10px;border:1px solid #cfd6e4;color:#102033;font-weight:800;text-decoration:none">Voltar ao painel</a>

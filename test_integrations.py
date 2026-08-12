@@ -1031,6 +1031,7 @@ class HTTPRouteTests(unittest.TestCase):
 
     def test_online_requires_beta_confirmation_before_redirect(self):
         user_id, cookie = self._login_cookie("warn@example.com")
+        db.set_user_ml_slot_limit(user_id, 2)
         db.upsert_user_ml_link(
             user_id,
             client_id="conta-aviso",
@@ -1045,6 +1046,9 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertIn("Modo online beta", body)
         self.assertIn("fase de testes", body)
         self.assertIn("/online?confirmed=1", body)
+        self.assertIn("1 de 2 contas ativas", body)
+        self.assertIn("Gerenciar contas vinculadas", body)
+        self.assertIn("/contas?return_to=/online", body)
 
     def test_internal_ml_link_attach_and_finish_flow(self):
         user_id, cookie = self._login_cookie("attach@example.com")
