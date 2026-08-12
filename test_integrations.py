@@ -1032,23 +1032,40 @@ class HTTPRouteTests(unittest.TestCase):
     def test_online_requires_beta_confirmation_before_redirect(self):
         user_id, cookie = self._login_cookie("warn@example.com")
         db.set_user_ml_slot_limit(user_id, 2)
-        db.upsert_user_ml_link(
+        first_id = db.upsert_user_ml_link(
             user_id,
             client_id="conta-aviso",
             ml_user_id="14252670",
             nickname="LONAS_ONLINE",
             advertiser_id="164424",
+            slot_number=1,
         )
+        second_id = db.upsert_user_ml_link(
+            user_id,
+            client_id="conta-aviso-2",
+            ml_user_id="2389041137",
+            nickname="ALTATEC INF",
+            advertiser_id="686713",
+            slot_number=2,
+        )
+        token = cookie.split("=", 1)[1]
+        self.assertTrue(db.set_session_selected_ml_account(token, user_id, second_id))
         request = Request(f"{self.base_url}/online", headers={"Cookie": cookie}, method="GET")
         with urlopen(request, timeout=5) as response:
             body = response.read().decode("utf-8", errors="replace")
         self.assertEqual(response.status, 200)
         self.assertIn("Modo online beta", body)
         self.assertIn("fase de testes", body)
-        self.assertIn("/online?confirmed=1", body)
-        self.assertIn("1 de 2 contas ativas", body)
+        self.assertIn('action="/contas/select"', body)
+        self.assertIn('name="return_to" value="/online?confirmed=1"', body)
+        self.assertIn(f'name="account_id" value="{first_id}"', body)
+        self.assertIn(f'name="account_id" value="{second_id}" checked', body)
+        self.assertIn("LONAS_ONLINE", body)
+        self.assertIn("ALTATEC INF", body)
+        self.assertIn("2 de 2 contas ativas", body)
+        self.assertIn("Continuar mesmo assim", body)
         self.assertIn("Gerenciar contas vinculadas", body)
-        self.assertIn("/contas?return_to=/online", body)
+        self.assertIn('class="manage-link" href="/contas?return_to=/online"', body)
 
     def test_internal_ml_link_attach_and_finish_flow(self):
         user_id, cookie = self._login_cookie("attach@example.com")
