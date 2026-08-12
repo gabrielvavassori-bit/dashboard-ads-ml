@@ -6,13 +6,40 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import app
-from gerar_dashboard_ads_ml import render_dashboard
+from gerar_dashboard_ads_ml import aggregate_by_sku, render_dashboard
 
 
 NOW = datetime(2026, 7, 31, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
 class OnlinePeriodTests(unittest.TestCase):
+    def test_sku_view_keeps_children_available_for_separate_mlbu_boxes(self):
+        base = {
+            "sku": "SKU-1", "title": "Produto", "campaign": "Campanha",
+            "orders": 1, "units": 1, "productRevenue": 10, "totalRevenue": 10,
+            "tacosBaseRevenue": 10, "adsRevenue": 5, "adsDirectRevenue": 5,
+            "organicRevenue": 5, "investment": 1, "impressions": 10,
+            "clicks": 2, "adsSales": 1, "lastPrice": 10, "avgSalePrice": 10,
+        }
+        rows = aggregate_by_sku([
+            {**base, "code": "MLB1", "userProductId": "MLBU-A"},
+            {**base, "code": "MLB2", "userProductId": "MLBU-A"},
+            {**base, "code": "MLB3", "userProductId": "MLBU-B"},
+        ])
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual([item["code"] for item in rows[0]["children"]], ["MLB1", "MLB2", "MLB3"])
+
+    def test_dashboard_has_grouped_layout_zoom_help_and_whatsapp_support(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        self.assertIn('function groupedSkuBodies(rows)', source)
+        self.assertIn('productParentRow(productParentSummary(group.children))', source)
+        self.assertIn('currentViewMode === \'sku\'\n          ? groupedSkuBodies(rows)', source)
+        self.assertIn('id="tableZoomFit"', source)
+        self.assertIn('id="tableHelpText"', source)
+        self.assertIn('https://wa.me/5511998397385?', source)
+        self.assertIn('Oi%2C%20estou%20precisando%20de%20suporte%20no%20Dash%20Ads.', source)
+
     def test_online_builder_keeps_campaign_condition_and_catalog_links_separate(self):
         payload = {
             "ok": True,
