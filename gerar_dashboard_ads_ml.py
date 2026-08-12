@@ -1442,6 +1442,10 @@ def render_dashboard(data):
     tbody tr.main-row td {{ border-top:1px solid var(--line); background:#fff; }}
     tbody tr.main-row td:first-child {{ border-left:1px solid var(--line); border-top-left-radius:10px; }}
     tbody tr.main-row td:last-child {{ border-right:1px solid var(--line); border-top-right-radius:10px; }}
+    tbody tr.product-parent-row td {{ background:#eef4ff; border-top:2px solid #84adff; font-weight:700; }}
+    tbody tr.product-parent-row td:first-child {{ border-left:1px solid #84adff; }}
+    tbody tr.product-parent-row td:last-child {{ border-right:1px solid #84adff; }}
+    .product-parent-note td {{ background:#f5f8ff; border:1px solid #84adff; border-top:0; color:#344054; }}
     td.num, th.num {{ text-align:right; white-space:nowrap; }}
     .code {{ font-weight:700; }}
     .title {{ color:#344054; max-width:100%; }}
@@ -1671,6 +1675,29 @@ def render_dashboard(data):
     const pct = value => (value * 100).toLocaleString('pt-BR', {{ minimumFractionDigits:2, maximumFractionDigits:2 }}) + '%';
     const num = value => value.toLocaleString('pt-BR', {{ maximumFractionDigits:0 }});
     const safe = value => String(value || '').replace(/[&<>"]/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[ch]));
+    function saoPauloDateParts(value) {{
+      const date = value instanceof Date ? value : new Date(value);
+      if (Number.isNaN(date.getTime())) return null;
+      const parts = new Intl.DateTimeFormat('pt-BR', {{
+        timeZone:'America/Sao_Paulo', year:'numeric', month:'2-digit', day:'2-digit'
+      }}).formatToParts(date);
+      return Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+    }}
+    function formatLastSaleDate(value, nowValue = new Date()) {{
+      if (!value) return '';
+      const date = new Date(value);
+      const sale = saoPauloDateParts(date);
+      const today = saoPauloDateParts(nowValue);
+      if (!sale || !today) return String(value);
+      const saleDay = Date.UTC(Number(sale.year), Number(sale.month) - 1, Number(sale.day));
+      const todayDay = Date.UTC(Number(today.year), Number(today.month) - 1, Number(today.day));
+      const elapsedDays = Math.round((todayDay - saleDay) / 86400000);
+      if (elapsedDays === 0) return 'hoje';
+      if (elapsedDays === 1) return 'ontem';
+      const weekday = new Intl.DateTimeFormat('pt-BR', {{ timeZone:'America/Sao_Paulo', weekday:'long' }}).format(date);
+      const month = new Intl.DateTimeFormat('pt-BR', {{ timeZone:'America/Sao_Paulo', month:'long' }}).format(date);
+      return `${{weekday.charAt(0).toUpperCase() + weekday.slice(1)}}, ${{sale.day}} de ${{month}} de ${{sale.year}}`;
+    }}
     let currentContext = 'all';
     let currentViewMode = 'mlb';
     const detailExpanded = new Set();
@@ -2213,6 +2240,77 @@ def render_dashboard(data):
         + listBlock('O que fazer agora', item.testOrder)
         + campaignChildren(item);
     }}
+    function productParentSummary(children) {{
+      const sum = key => children.reduce((total, item) => total + Number(item[key] || 0), 0);
+      const totalRevenue = sum('totalRevenue');
+      const units = sum('units');
+      const investment = sum('investment');
+      const adsRevenue = sum('adsRevenue');
+      const impressions = sum('impressions');
+      const clicks = sum('clicks');
+      const adsSales = sum('adsSales');
+      const tacosBaseRevenue = children.reduce(
+        (total, item) => total + Number(item.tacosBaseRevenue ?? item.totalRevenue ?? 0), 0
+      );
+      const latest = children.reduce((current, item) => {{
+        if (!item.lastSaleDate) return current;
+        if (!current) return item;
+        const itemTime = Date.parse(item.lastSaleDate);
+        const currentTime = Date.parse(current.lastSaleDate);
+        if (Number.isNaN(itemTime)) return current;
+        if (Number.isNaN(currentTime)) return item;
+        return itemTime > currentTime ? item : current;
+      }}, null);
+      const campaigns = new Set(children.map(item => item.campaign || item.adsCampaigns).filter(Boolean));
+      const catalogs = new Set(children.map(item => item.catalogProductId).filter(Boolean));
+      const skus = new Set(children.map(item => item.sku).filter(Boolean));
+      const cvr = clicks ? adsSales / clicks : 0;
+      const avgAdsOrder = adsSales ? adsRevenue / adsSales : (units ? totalRevenue / units : 0);
+      return {{
+        parentId: children[0].userProductId,
+        sku: skus.size === 1 ? [...skus][0] : `${{skus.size}} SKUs`,
+        optionCount: children.length,
+        campaignCount: campaigns.size,
+        catalogLabel: [...catalogs].join(', '),
+        orders: sum('orders'), units, totalRevenue, adsRevenue, investment, impressions, clicks, adsSales,
+        lastSaleDate: latest ? latest.lastSaleDate : '',
+        lastPrice: latest ? Number(latest.lastPrice || 0) : 0,
+        avgSalePrice: units ? totalRevenue / units : 0,
+        cpc: clicks ? investment / clicks : 0,
+        ctr: impressions ? clicks / impressions : 0,
+        cvr,
+        tacos: tacosBaseRevenue ? investment / tacosBaseRevenue : 0,
+        roas: investment ? adsRevenue / investment : 0,
+        maxCpc: avgAdsOrder && cvr ? avgAdsOrder * .03 * cvr : 0
+      }};
+    }}
+    function productParentRow(item) {{
+      return `<tr class="product-parent-row">
+        <td><span class="code">${{safe(item.sku || '(sem SKU)')}}</span><div class="muted">Produto pai</div></td>
+        <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.parentId)}}</span>${{copyButton(item.parentId, 'MLBU')}}</div><div class="title">Resumo consolidado de ${{num(item.optionCount)}} opcoes</div></td>
+        <td><span class="summary-chip">PAI</span></td>
+        <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
+        <td class="text-cell">${{safe(item.parentId)}} · ${{num(item.optionCount)}} opcao(oes)<div class="muted">${{safe(item.catalogLabel)}}</div></td>
+        <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}<div class="muted">${{item.avgSalePrice ? 'media: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? 'ultima venda: ' + safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
+      </tr><tr class="product-parent-note"><td colspan="16"><b>Resumo do produto pai:</b> valores absolutos somados e taxas recalculadas sobre os totais das opcoes.</td></tr>`;
+    }}
+    function groupedMlbRows(rows) {{
+      const groups = new Map();
+      rows.forEach((item, index) => {{
+        const parentId = item.userProductId || '';
+        const key = parentId ? `parent:${{parentId}}` : `item:${{item.code || index}}`;
+        if (!groups.has(key)) groups.set(key, {{ parentId, children:[] }});
+        groups.get(key).children.push(item);
+      }});
+      return [...groups.values()].map(group => {{
+        const childrenHtml = group.children.map(row).join('');
+        return childrenHtml + (group.parentId && group.children.length > 1
+          ? productParentRow(productParentSummary(group.children))
+          : '');
+      }}).join('');
+    }}
     function row(item) {{
       const key = detailKey(item);
       const expanded = detailExpanded.has(key);
@@ -2225,7 +2323,7 @@ def render_dashboard(data):
         <td><span class="${{abcClass(abcValue)}}">${{campaignMode ? 'CAMP' : currentViewMode.toUpperCase()}} ${{abcValue || 'C'}}</span></td>
         <td class="text-cell">${{safe(item.campaign || item.adsCampaigns || 'Sem campanha')}}<div class="muted">${{safe(item.campaignStatus || '')}}</div></td>
         <td class="text-cell">${{safe(item.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(item.catalogLabel || '')}}</div></td>
-        <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}<div class="muted">${{item.avgSalePrice ? 'media: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? 'ultima venda: ' + safe(item.lastSaleDate) : ''}}</div></td>
+        <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}<div class="muted">${{item.avgSalePrice ? 'media: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? 'ultima venda: ' + safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
         <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td>
         <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{safe(item.ctrClass || '')}}</div></td><td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{safe(item.cvrClass || '')}}</div></td>
@@ -2250,10 +2348,11 @@ def render_dashboard(data):
         }});
       }}
       document.getElementById('tableTitle').textContent = `${{contextLabels[currentContext]}} - ${{viewLabels[currentViewMode]}} (${{rows.length}})`;
+      const renderedRows = currentViewMode === 'mlb' ? groupedMlbRows(rows) : rows.map(row).join('');
       document.getElementById('table').innerHTML = `<table class="ops-table">
         <colgroup><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
         <thead><tr><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Ult. preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
-        <tbody>${{rows.map(row).join('')}}</tbody></table>`;
+        <tbody>${{renderedRows}}</tbody></table>`;
       document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {{
         const value = button.dataset.copy;
         try {{ await navigator.clipboard.writeText(value); }} catch (error) {{ const input = document.createElement('textarea'); input.value = value; document.body.appendChild(input); input.select(); document.execCommand('copy'); input.remove(); }}
