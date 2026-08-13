@@ -609,8 +609,11 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("Frete gratis e rapido", html)
         self.assertIn("Frete por conta do comprador", html)
         self.assertIn("Condicao comercial do anuncio", html)
-        self.assertIn("PREVIA SOMENTE LEITURA", html)
-        self.assertIn("Esta etapa nao cria promocao, nao altera preco e nao envia comandos", html)
+        self.assertIn("BETA TRANSACIONAL COM CONFIRMACAO", html)
+        self.assertIn("Promocoes do Mercado Livre", html)
+        self.assertIn("Gerar previa", html)
+        self.assertIn("Confirmar e aplicar no Mercado Livre", html)
+        self.assertIn("Aplicar esta promocao real no anuncio", html)
 
     def test_account_daily_chart_does_not_invent_missing_snapshot_dates(self):
         latest_payload = {
