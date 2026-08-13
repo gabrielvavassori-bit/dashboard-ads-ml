@@ -128,6 +128,76 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("product-thumbnail", html)
         self.assertIn("if (parsed.protocol === 'http:') parsed.protocol = 'https:';", html)
 
+    def test_beta_product_diagnostics_keeps_prices_daily_history_and_read_only_preview(self):
+        latest_payload = {
+            "ok": True,
+            "latest": {
+                "date_from": "2026-08-07",
+                "date_to": "2026-08-13",
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": "2026-08-07",
+                "date_to": "2026-08-13",
+                "items": [{
+                    "item_id": "MLB5364060738",
+                    "sku": "BA00463",
+                    "title": "Kit Espatulas",
+                    "price": 34.90,
+                    "listing_type_id": "gold_pro",
+                    "logistic_type": "fulfillment",
+                    "free_shipping": True,
+                    "cost": 12,
+                    "total_amount": 100,
+                    "direct_amount": 80,
+                    "prints": 1000,
+                    "clicks": 50,
+                    "units_quantity": 5,
+                }],
+            },
+            "sales": {"items": {"MLB5364060738": {
+                "revenue_total": 388.70,
+                "orders_count": 13,
+                "units_total": 13,
+                "last_sale_date": "2026-08-11T12:00:00-03:00",
+                "last_price": 29.90,
+            }}},
+        }
+        daily_payload = {
+            "ok": True,
+            "rows": [
+                {"item_id": "MLB5364060738", "snapshot_date": "2026-08-11", "orders_count": 1, "units_total": 1, "revenue_total": 29.90, "last_price": 29.90},
+                {"item_id": "MLB5364060738", "snapshot_date": "2026-08-12", "orders_count": 0, "units_total": 0, "revenue_total": 0},
+                {"item_id": "MLB5364060738", "snapshot_date": "2026-08-13", "orders_count": 0, "units_total": 0, "revenue_total": 0},
+            ],
+        }
+
+        def fetch(path, params=None):
+            return daily_payload if path == "/internal/dash-ads/sales-daily" else latest_payload
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
+            data, error = app._build_online_dashboard_data(
+                "conta-ativa", "adv-1", "2026-08-07", "2026-08-13",
+                {"dateFrom": "2026-08-07", "dateTo": "2026-08-13"},
+            )
+
+        self.assertEqual(error, "")
+        item = data["items"][0]
+        self.assertEqual(item["currentPrice"], 34.90)
+        self.assertEqual(item["lastSalePrice"], 29.90)
+        self.assertAlmostEqual(item["priceChangePct"], (34.90 - 29.90) / 29.90)
+        self.assertEqual(item["suggestedTestPrice"], 32.90)
+        self.assertEqual(item["listingTypeId"], "gold_pro")
+        self.assertEqual(item["logisticType"], "fulfillment")
+        self.assertTrue(item["freeShipping"])
+        self.assertEqual([row["date"] for row in item["dailySeries"]], ["2026-08-11", "2026-08-12", "2026-08-13"])
+
+        html = render_dashboard(data)
+        self.assertIn("Vendas diarias do periodo", html)
+        self.assertIn("Condicao comercial do anuncio", html)
+        self.assertIn("PREVIA SOMENTE LEITURA", html)
+        self.assertIn("Esta etapa nao cria promocao, nao altera preco e nao envia comandos", html)
+
     def test_governance_summary_reads_authenticated_central_bundle(self):
         bundle = {
             "version": "2026-08-10",
