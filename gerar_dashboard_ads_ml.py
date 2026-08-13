@@ -1568,9 +1568,34 @@ def render_dashboard(data):
     .listing-fact b {{ display:block; margin-top:3px; color:var(--ink); }}
     .readonly-badge {{ display:inline-block; margin-bottom:8px; padding:4px 8px; border-radius:999px; background:#eef4ff; color:#1849a9; font-size:12px; font-weight:800; }}
     .price-signal {{ border-left:4px solid var(--orange); }}
-    .daily-chart {{ width:100%; min-height:190px; display:block; }}
-    .chart-legend {{ display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:12px; margin-top:6px; }}
-    .chart-dot {{ display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }}
+    .daily-chart-card {{ position:relative; overflow:hidden; padding:16px; background:linear-gradient(180deg,#fff 0%,#fbfdff 100%); }}
+    .chart-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:14px; flex-wrap:wrap; }}
+    .chart-head h3 {{ margin-bottom:4px; font-size:16px; }}
+    .chart-summary {{ color:var(--muted); font-size:12px; }}
+    .chart-metric-tabs {{ display:flex; gap:6px; padding:4px; border:1px solid var(--line); border-radius:11px; background:#f8fafc; flex-wrap:wrap; }}
+    .chart-metric-button {{ border:0; padding:7px 11px; border-radius:8px; background:transparent; color:#475467; font-size:12px; }}
+    .chart-metric-button:hover {{ background:#eef4ff; color:#1849a9; }}
+    .chart-metric-button.active {{ background:#102033; color:#fff; box-shadow:0 3px 8px rgba(16,32,51,.16); }}
+    .chart-stage {{ position:relative; min-height:270px; border:1px solid #e4e7ec; border-radius:12px; background:#fff; overflow:hidden; }}
+    .chart-canvas {{ width:100%; min-height:270px; }}
+    .daily-chart {{ width:100%; min-height:270px; display:block; overflow:visible; }}
+    .chart-grid {{ stroke:#e4e7ec; stroke-width:1; stroke-dasharray:4 5; }}
+    .chart-axis {{ fill:#667085; font-size:11px; }}
+    .chart-bar {{ transition:opacity .15s ease; }}
+    .chart-hit {{ fill:transparent; cursor:crosshair; }}
+    .chart-hit:hover + .chart-hover-line {{ opacity:1; }}
+    .chart-hover-line {{ opacity:0; stroke:#98a2b3; stroke-width:1; stroke-dasharray:3 3; pointer-events:none; }}
+    .chart-tooltip {{ position:absolute; z-index:4; min-width:170px; max-width:220px; padding:10px 12px; border:1px solid #d0d5dd; border-radius:10px; background:rgba(255,255,255,.98); box-shadow:0 12px 26px rgba(16,24,40,.18); color:#101828; font-size:12px; line-height:1.45; pointer-events:none; opacity:0; transform:translate(-50%,-108%); transition:opacity .12s ease; }}
+    .chart-tooltip.visible {{ opacity:1; }}
+    .chart-tooltip b {{ display:block; margin-bottom:4px; font-size:13px; }}
+    .chart-tooltip-row {{ display:flex; justify-content:space-between; gap:14px; }}
+    .chart-tooltip-row.active {{ color:#175cd3; font-weight:800; }}
+    .listing-badges {{ display:flex; gap:4px; flex-wrap:wrap; margin-top:5px; }}
+    .listing-mini-badge {{ display:inline-flex; align-items:center; padding:3px 6px; border-radius:999px; background:#f2f4f7; color:#475467; font-size:10px; line-height:1.2; font-weight:800; }}
+    .listing-mini-badge.premium {{ background:#fff4e5; color:#b54708; }}
+    .listing-mini-badge.classic {{ background:#eef4ff; color:#1849a9; }}
+    .listing-mini-badge.shipping-on {{ background:#ecfdf3; color:#027a48; }}
+    .listing-mini-badge.shipping-off {{ background:#fef3f2; color:#b42318; }}
     .child-table {{ margin-top:10px; border-spacing:0; }}
     .child-table th, .child-table td {{ font-size:12px; }}
       .period-picker {{ position:relative; z-index:30; margin:0 0 12px; overflow:visible; }}
@@ -1589,7 +1614,7 @@ def render_dashboard(data):
       .period-form .field-group[hidden] {{ display:none; }}
       .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
-    @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
+    @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .chart-head {{ align-items:stretch; }} .chart-metric-tabs {{ width:100%; }} .chart-metric-button {{ flex:1 1 auto; }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
   </style>
 </head>
 <body>
@@ -1774,6 +1799,7 @@ def render_dashboard(data):
       try {{ return Number(localStorage.getItem('dashboardAdsTableZoom')) || 1; }} catch (error) {{ return 1; }}
     }})();
     const detailExpanded = new Set();
+    const dailyChartMetric = new Map();
     let sortState = {{ key:'investment', direction:1 }};
     let abcMode = 'sku';
     let abcMetric = 'totalRevenue';
@@ -2345,40 +2371,175 @@ def render_dashboard(data):
       sources.forEach(source => (source.dailySeries || []).forEach(row => {{
         const date = String(row.date || '');
         if (!date) return;
-        const current = byDate.get(date) || {{date, orders:0, units:0, revenue:0}};
+        const current = byDate.get(date) || {{date, orders:0, units:0, revenue:0, priceFallback:0}};
         current.orders += Number(row.orders || 0);
         current.units += Number(row.units || 0);
         current.revenue += Number(row.revenue || 0);
+        if (Number(row.lastSalePrice || 0) > 0) current.priceFallback = Number(row.lastSalePrice);
         byDate.set(date, current);
       }}));
-      return [...byDate.values()].sort((a,b) => a.date.localeCompare(b.date));
+      return [...byDate.values()]
+        .map(row => ({{...row, price:row.units > 0 ? row.revenue / row.units : row.priceFallback}}))
+        .sort((a,b) => a.date.localeCompare(b.date));
+    }}
+    function chartDateLabel(value) {{
+      const parsed = new Date(`${{value}}T12:00:00`);
+      if (Number.isNaN(parsed.getTime())) return value;
+      return new Intl.DateTimeFormat('pt-BR', {{day:'numeric', month:'short'}}).format(parsed).replace(/\\s+de\\s+/g, ' ');
+    }}
+    function chartLongDate(value) {{
+      const parsed = new Date(`${{value}}T12:00:00`);
+      if (Number.isNaN(parsed.getTime())) return value;
+      return new Intl.DateTimeFormat('pt-BR', {{weekday:'short', day:'2-digit', month:'short', year:'numeric'}}).format(parsed);
+    }}
+    function chartMetricConfig(metric) {{
+      const configs = {{
+        revenue:{{label:'Faturamento bruto', color:'#7f56d9', format:brl}},
+        units:{{label:'Unidades vendidas', color:'#1570ef', format:value => num(value)}},
+        orders:{{label:'Pedidos', color:'#12b76a', format:value => num(value)}},
+        price:{{label:'Preco medio vendido', color:'#f79009', format:brl}},
+      }};
+      return configs[metric] || configs.revenue;
+    }}
+    function smoothChartPath(points) {{
+      if (!points.length) return '';
+      if (points.length === 1) return `M ${{points[0][0]}} ${{points[0][1]}}`;
+      let path = `M ${{points[0][0]}} ${{points[0][1]}}`;
+      for (let index = 0; index < points.length - 1; index += 1) {{
+        const p0 = points[Math.max(0, index - 1)];
+        const p1 = points[index];
+        const p2 = points[index + 1];
+        const p3 = points[Math.min(points.length - 1, index + 2)];
+        const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+        const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+        const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+        const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+        path += ` C ${{c1x.toFixed(1)}} ${{c1y.toFixed(1)}}, ${{c2x.toFixed(1)}} ${{c2y.toFixed(1)}}, ${{p2[0].toFixed(1)}} ${{p2[1].toFixed(1)}}`;
+      }}
+      return path;
+    }}
+    function movingAverage(values) {{
+      return values.map((value, index) => {{
+        const start = Math.max(0, index - 1);
+        const end = Math.min(values.length - 1, index + 1);
+        const slice = values.slice(start, end + 1);
+        return slice.reduce((total, current) => total + current, 0) / slice.length;
+      }});
+    }}
+    function chartScale(values, metric) {{
+      const finite = values.filter(value => Number.isFinite(value));
+      if (!finite.length) return {{min:0, max:1}};
+      const rawMin = Math.min(...finite);
+      const rawMax = Math.max(...finite);
+      if (metric !== 'price') return {{min:0, max:Math.max(1, rawMax * 1.12)}};
+      if (rawMax === rawMin) {{
+        const padding = Math.max(1, rawMax * .06);
+        return {{min:Math.max(0, rawMin - padding), max:rawMax + padding}};
+      }}
+      const padding = (rawMax - rawMin) * .18;
+      return {{min:Math.max(0, rawMin - padding), max:rawMax + padding}};
+    }}
+    function renderDailyMetric(root, metric) {{
+      const sourceRows = JSON.parse(decodeURIComponent(root.dataset.chartSeries || '%5B%5D'));
+      const rows = metric === 'price' ? sourceRows.filter(row => Number(row.price || 0) > 0) : sourceRows;
+      const config = chartMetricConfig(metric);
+      const values = rows.map(row => Number(row[metric] || 0));
+      const canvas = root.querySelector('.chart-canvas');
+      root.dataset.activeMetric = metric;
+      root.querySelectorAll('[data-chart-metric]').forEach(button => button.classList.toggle('active', button.dataset.chartMetric === metric));
+      root.querySelector('.chart-summary').textContent = `${{config.label}} por dia; passe o mouse para ver faturamento, unidades, pedidos e preco.`;
+      if (!rows.length || (metric === 'price' && !values.some(value => value > 0))) {{
+        canvas.innerHTML = '<div class="muted" style="padding:28px">O snapshot ainda nao possui preco diario suficiente para esta visualizacao.</div>';
+        return;
+      }}
+      const width = 1040, height = 280, left = 76, right = 28, top = 22, bottom = 52;
+      const chartW = width - left - right, chartH = height - top - bottom;
+      const scale = chartScale(values, metric);
+      const range = Math.max(.0001, scale.max - scale.min);
+      const step = chartW / Math.max(rows.length, 1);
+      const x = index => left + step * index + step / 2;
+      const y = value => top + chartH - ((Number(value) - scale.min) / range * chartH);
+      const ticks = Array.from({{length:5}}, (_, index) => scale.min + ((scale.max - scale.min) * index / 4));
+      const grid = ticks.map(value => `<g><line class="chart-grid" x1="${{left}}" y1="${{y(value).toFixed(1)}}" x2="${{width-right}}" y2="${{y(value).toFixed(1)}}"/><text class="chart-axis" x="${{left-12}}" y="${{(y(value)+4).toFixed(1)}}" text-anchor="end">${{safe(metric === 'revenue' || metric === 'price' ? brl(value) : num(Math.round(value)))}}</text></g>`).join('');
+      const labelEvery = Math.max(1, Math.ceil(rows.length / 9));
+      const xLabels = rows.map((row,index) => (index % labelEvery === 0 || index === rows.length - 1) ? `<text class="chart-axis" x="${{x(index).toFixed(1)}}" y="${{height-18}}" text-anchor="middle">${{safe(chartDateLabel(row.date))}}</text>` : '').join('');
+      const barWidth = Math.max(8, Math.min(34, step * .62));
+      const bars = metric === 'price' ? '' : rows.map((row,index) => {{
+        const barY = y(values[index]);
+        return `<rect class="chart-bar" x="${{(x(index)-barWidth/2).toFixed(1)}}" y="${{barY.toFixed(1)}}" width="${{barWidth.toFixed(1)}}" height="${{Math.max(0, top+chartH-barY).toFixed(1)}}" rx="${{Math.min(7,barWidth/3).toFixed(1)}}" fill="${{config.color}}" fill-opacity=".46"/>`;
+      }}).join('');
+      const trendValues = metric === 'price' ? values : movingAverage(values);
+      const points = trendValues.map((value,index) => [x(index), y(value)]);
+      const path = smoothChartPath(points);
+      const area = metric === 'price' && path ? `${{path}} L ${{x(rows.length-1).toFixed(1)}} ${{(top+chartH).toFixed(1)}} L ${{x(0).toFixed(1)}} ${{(top+chartH).toFixed(1)}} Z` : '';
+      const dots = metric === 'price' ? points.map(point => `<circle cx="${{point[0].toFixed(1)}}" cy="${{point[1].toFixed(1)}}" r="4" fill="#fff" stroke="${{config.color}}" stroke-width="2"/>`).join('') : '';
+      const hitWidth = Math.max(12, step);
+      const hits = rows.map((row,index) => `<g><rect class="chart-hit" data-chart-index="${{index}}" x="${{(x(index)-hitWidth/2).toFixed(1)}}" y="${{top}}" width="${{hitWidth.toFixed(1)}}" height="${{chartH}}"/><line class="chart-hover-line" x1="${{x(index).toFixed(1)}}" y1="${{top}}" x2="${{x(index).toFixed(1)}}" y2="${{top+chartH}}"/></g>`).join('');
+      canvas.innerHTML = `<svg class="daily-chart" viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="${{safe(config.label)}} por dia">
+        ${{grid}}${{area ? `<path d="${{area}}" fill="${{config.color}}" fill-opacity=".10"/>` : ''}}${{bars}}<path d="${{path}}" fill="none" stroke="${{config.color}}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>${{dots}}${{hits}}${{xLabels}}
+      </svg>`;
+      const tooltip = root.querySelector('.chart-tooltip');
+      root.querySelectorAll('[data-chart-index]').forEach(hit => {{
+        hit.addEventListener('pointerenter', () => showDailyTooltip(root, tooltip, rows[Number(hit.dataset.chartIndex)], metric, hit));
+        hit.addEventListener('pointermove', () => showDailyTooltip(root, tooltip, rows[Number(hit.dataset.chartIndex)], metric, hit));
+        hit.addEventListener('pointerleave', () => tooltip.classList.remove('visible'));
+      }});
+    }}
+    function showDailyTooltip(root, tooltip, row, metric, hit) {{
+      const stage = root.querySelector('.chart-stage');
+      const stageRect = stage.getBoundingClientRect();
+      const hitRect = hit.getBoundingClientRect();
+      const priceText = Number(row.price || 0) > 0 ? brl(Number(row.price)) : 'Sem venda';
+      tooltip.innerHTML = `<b>${{safe(chartLongDate(row.date))}}</b>
+        <div class="chart-tooltip-row ${{metric === 'revenue' ? 'active' : ''}}"><span>Faturamento</span><span>${{safe(brl(Number(row.revenue || 0)))}}</span></div>
+        <div class="chart-tooltip-row ${{metric === 'units' ? 'active' : ''}}"><span>Unidades</span><span>${{num(Number(row.units || 0))}}</span></div>
+        <div class="chart-tooltip-row ${{metric === 'orders' ? 'active' : ''}}"><span>Pedidos</span><span>${{num(Number(row.orders || 0))}}</span></div>
+        <div class="chart-tooltip-row ${{metric === 'price' ? 'active' : ''}}"><span>Preco medio</span><span>${{safe(priceText)}}</span></div>`;
+      const relativeX = hitRect.left - stageRect.left + hitRect.width / 2;
+      tooltip.style.left = `${{Math.max(92, Math.min(stageRect.width - 92, relativeX))}}px`;
+      tooltip.style.top = `${{Math.max(88, hitRect.top - stageRect.top + 8)}}px`;
+      tooltip.classList.add('visible');
+    }}
+    function activateDailyCharts() {{
+      document.querySelectorAll('[data-daily-chart]').forEach(root => {{
+        const key = root.dataset.chartKey || '';
+        const metric = dailyChartMetric.get(key) || 'revenue';
+        root.querySelectorAll('[data-chart-metric]').forEach(button => button.addEventListener('click', () => {{
+          dailyChartMetric.set(key, button.dataset.chartMetric);
+          renderDailyMetric(root, button.dataset.chartMetric);
+        }}));
+        renderDailyMetric(root, metric);
+      }});
     }}
     function dailyChartBlock(item) {{
       const rows = dailySeriesFor(item);
       if (!rows.length) return `<div class="detail-block detail-block-wide"><h3>Vendas diarias do periodo</h3><div class="muted">A serie diaria ainda nao foi entregue pelo snapshot desta conta. Nenhum zero foi inventado.</div></div>`;
-      const width = 920, height = 190, left = 42, right = 18, top = 18, bottom = 34;
-      const chartW = width - left - right, chartH = height - top - bottom;
-      const maxRevenue = Math.max(1, ...rows.map(row => Number(row.revenue || 0)));
-      const maxUnits = Math.max(1, ...rows.map(row => Number(row.units || 0)));
-      const step = rows.length > 1 ? chartW / (rows.length - 1) : chartW;
-      const barWidth = Math.max(4, Math.min(18, chartW / Math.max(rows.length, 1) * .55));
-      const x = index => left + (rows.length > 1 ? index * step : chartW / 2);
-      const revenueY = value => top + chartH - (Number(value || 0) / maxRevenue * chartH);
-      const unitY = value => top + chartH - (Number(value || 0) / maxUnits * chartH);
-      const bars = rows.map((row,index) => `<rect x="${{(x(index) - barWidth / 2).toFixed(1)}}" y="${{unitY(row.units).toFixed(1)}}" width="${{barWidth.toFixed(1)}}" height="${{Math.max(0, top + chartH - unitY(row.units)).toFixed(1)}}" rx="2" fill="#b2ddff"><title>${{safe(row.date)}}: ${{num(row.units)}} unidade(s), ${{num(row.orders)}} pedido(s)</title></rect>`).join('');
-      const points = rows.map((row,index) => `${{x(index).toFixed(1)}},${{revenueY(row.revenue).toFixed(1)}}`).join(' ');
-      const first = rows[0].date, last = rows[rows.length - 1].date;
-      return `<div class="detail-block detail-block-wide"><h3>Vendas diarias do periodo</h3>
-        <svg class="daily-chart" viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="Grafico diario de faturamento e unidades">
-          <line x1="${{left}}" y1="${{top + chartH}}" x2="${{width-right}}" y2="${{top + chartH}}" stroke="#d0d5dd" />
-          ${{bars}}<polyline fill="none" stroke="#7f56d9" stroke-width="3" points="${{points}}" />
-          <text x="${{left}}" y="${{height-8}}" fill="#667085" font-size="11">${{safe(first)}}</text>
-          <text x="${{width-right}}" y="${{height-8}}" text-anchor="end" fill="#667085" font-size="11">${{safe(last)}}</text>
-          <text x="${{left}}" y="12" fill="#667085" font-size="11">max receita ${{safe(brl(maxRevenue))}}</text>
-        </svg><div class="chart-legend"><span><i class="chart-dot" style="background:#7f56d9"></i>Faturamento bruto</span><span><i class="chart-dot" style="background:#b2ddff"></i>Unidades</span><span>Pedidos preservados separadamente</span></div></div>`;
+      const key = detailKey(item);
+      const encoded = encodeURIComponent(JSON.stringify(rows));
+      return `<div class="detail-block detail-block-wide daily-chart-card" data-daily-chart data-chart-key="${{safe(key)}}" data-chart-series="${{safe(encoded)}}"><div class="chart-head"><div><h3>Desempenho diario do produto</h3><div class="chart-summary">Selecione uma metrica para visualizar.</div></div><div class="chart-metric-tabs" role="group" aria-label="Metrica do grafico"><button class="chart-metric-button" type="button" data-chart-metric="revenue">Faturamento</button><button class="chart-metric-button" type="button" data-chart-metric="units">Unidades</button><button class="chart-metric-button" type="button" data-chart-metric="orders">Pedidos</button><button class="chart-metric-button" type="button" data-chart-metric="price">Preco medio</button></div></div><div class="chart-stage"><div class="chart-canvas"></div><div class="chart-tooltip"></div></div></div>`;
+    }}
+    function shippingBadgeText(item) {{
+      const price = Number(item.currentPrice || item.lastPrice || 0);
+      if (item.freeShipping === true) {{
+        if (price > 0 && price < 79) {{
+          if (item.fastShipping === true) return 'Frete gratis e rapido';
+          if (item.fastShipping === false) return 'Frete gratis';
+          return 'Frete gratis; rapidez nao informada';
+        }}
+        return price >= 79 ? 'Frete gratis obrigatorio' : 'Frete gratis';
+      }}
+      if (item.freeShipping === false) return price > 0 && price < 79 ? 'Sem frete gratis opcional' : 'Sem frete gratis no cache';
+      return 'Frete nao informado';
+    }}
+    function listingBadges(item) {{
+      const listing = listingTypeLabel(item.listingTypeId);
+      const shipping = shippingBadgeText(item);
+      const listingClass = listing === 'Premium' ? 'premium' : listing === 'Classico' ? 'classic' : '';
+      const shippingClass = item.freeShipping === true ? 'shipping-on' : item.freeShipping === false ? 'shipping-off' : '';
+      return `<div class="listing-badges"><span class="listing-mini-badge ${{listingClass}}">${{safe(listing)}}</span><span class="listing-mini-badge ${{shippingClass}}">${{safe(shipping)}}</span></div>`;
     }}
     function listingFactsBlock(item) {{
-      const freeShipping = item.freeShipping === true ? 'Sim' : item.freeShipping === false ? 'Nao' : 'Nao informado pelo cache';
+      const freeShipping = shippingBadgeText(item);
       const shippingCost = Number(item.shippingCost || 0) > 0 ? brl(item.shippingCost) : 'Nao fornecido pelo cache';
       return `<div class="detail-block detail-block-wide"><h3>Condicao comercial do anuncio</h3><div class="listing-facts">
         <div class="listing-fact"><span class="muted">Classificacao</span><b>${{safe(listingTypeLabel(item.listingTypeId))}}</b></div>
@@ -2528,7 +2689,7 @@ def render_dashboard(data):
       const tacosNote = item.salesCoverageComplete === false ? 'vendas parciais' : item.campaignRevenueAmbiguous ? 'atribuicao ambigua' : '';
       return `<tr class="main-row ${{extraClass}}">
         <td>${{productImage(item)}}</td>
-        <td><div class="copyline"><span class="code">${{safe(item.sku || '(sem SKU)')}}</span>${{copyButton(item.sku, 'SKU')}}</div><div class="muted">${{item.adCount ? item.adCount + ' anuncios' : ''}}</div></td>
+        <td><div class="copyline"><span class="code">${{safe(item.sku || '(sem SKU)')}}</span>${{copyButton(item.sku, 'SKU')}}</div><div class="muted">${{item.adCount ? item.adCount + ' anuncios' : ''}}</div>${{campaignMode ? '' : listingBadges(item)}}</td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.allCodes || item.code || '')}}</span>${{copyButton(item.allCodes || item.code, 'MLB')}}</div><div class="title">${{safe(campaignMode ? (item.topInvestmentLabel || item.title || '') : (item.title || ''))}}</div></td>
         <td><span class="${{abcClass(abcValue)}}">${{campaignMode ? 'CAMP' : currentViewMode.toUpperCase()}} ${{abcValue || 'C'}}</span></td>
         <td class="text-cell">${{safe(item.campaign || item.adsCampaigns || 'Sem campanha')}}<div class="muted">${{safe(item.campaignStatus || '')}}</div></td>
@@ -2578,6 +2739,7 @@ def render_dashboard(data):
       }}
       helpMeta.textContent = `${{num(rows.length)}} registro(s) no filtro atual`;
       applyTableZoom();
+      activateDailyCharts();
       document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {{
         const value = button.dataset.copy;
         try {{ await navigator.clipboard.writeText(value); }} catch (error) {{ const input = document.createElement('textarea'); input.value = value; document.body.appendChild(input); input.select(); document.execCommand('copy'); input.remove(); }}

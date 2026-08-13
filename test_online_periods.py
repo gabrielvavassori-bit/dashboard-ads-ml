@@ -147,6 +147,7 @@ class OnlinePeriodTests(unittest.TestCase):
                     "listing_type_id": "gold_pro",
                     "logistic_type": "fulfillment",
                     "free_shipping": True,
+                    "fast_shipping": True,
                     "cost": 12,
                     "total_amount": 100,
                     "direct_amount": 80,
@@ -190,10 +191,16 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(item["listingTypeId"], "gold_pro")
         self.assertEqual(item["logisticType"], "fulfillment")
         self.assertTrue(item["freeShipping"])
+        self.assertTrue(item["fastShipping"])
         self.assertEqual([row["date"] for row in item["dailySeries"]], ["2026-08-11", "2026-08-12", "2026-08-13"])
 
         html = render_dashboard(data)
         self.assertIn("Vendas diarias do periodo", html)
+        self.assertIn('data-chart-metric="revenue"', html)
+        self.assertIn('data-chart-metric="units"', html)
+        self.assertIn('data-chart-metric="orders"', html)
+        self.assertIn('data-chart-metric="price"', html)
+        self.assertIn("Frete gratis e rapido", html)
         self.assertIn("Condicao comercial do anuncio", html)
         self.assertIn("PREVIA SOMENTE LEITURA", html)
         self.assertIn("Esta etapa nao cria promocao, nao altera preco e nao envia comandos", html)

@@ -665,6 +665,13 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             pricing_signal = "indicio_alta_preco_com_interrupcao"
         shipping = raw.get("shipping") if isinstance(raw.get("shipping"), dict) else {}
         free_shipping = raw.get("free_shipping") if "free_shipping" in raw else shipping.get("free_shipping")
+        fast_shipping = raw.get("fast_shipping")
+        if fast_shipping is None:
+            fast_shipping = raw.get("fastShipping")
+        if fast_shipping is None:
+            fast_shipping = shipping.get("fast_shipping")
+        if fast_shipping is None:
+            fast_shipping = shipping.get("is_fast")
         item = {
             "sku": str(raw.get("sku") or "").strip() or sale_sku,
             "code": code,
@@ -683,6 +690,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "listingTypeId": str(raw.get("listing_type_id") or raw.get("listingTypeId") or "").strip(),
             "logisticType": str(raw.get("logistic_type") or shipping.get("logistic_type") or "").strip(),
             "freeShipping": bool(free_shipping) if free_shipping is not None else None,
+            "fastShipping": bool(fast_shipping) if fast_shipping is not None else None,
             "shippingCost": _number(
                 raw.get("shipping_cost")
                 or raw.get("estimated_shipping_cost")
