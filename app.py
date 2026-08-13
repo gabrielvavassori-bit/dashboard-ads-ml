@@ -720,7 +720,13 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             if active
             else ("Anuncio inativo na campanha" if status else "Status do anuncio nao informado")
         )
-        current_price = _number(raw.get("price") or raw.get("current_price"))
+        current_price = _number(
+            raw.get("price_effective")
+            or raw.get("preco_efetivo")
+            or raw.get("sale_price")
+            or raw.get("price")
+            or raw.get("current_price")
+        )
         last_sale_price = _number(sale.get("last_price") or sale.get("lastPrice"))
         last_price = last_sale_price or current_price
         avg_sale_price = (total_revenue / units) if units else last_sale_price
