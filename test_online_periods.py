@@ -69,7 +69,9 @@ class OnlinePeriodTests(unittest.TestCase):
                         "prints": 1000,
                         "clicks": 20,
                         "units_quantity": 5,
-                        "price": 114.90,
+                        "price": 269.99,
+                        "price_effective": 229.97,
+                        "regular_price": 269.99,
                     },
                     {
                         "item_id": "MLB6689184622",
@@ -114,6 +116,8 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertTrue(all(item["catalogProductId"] == "CAT-7X4" for item in data["items"]))
         self.assertEqual(data["items"][0]["thumbnailUrl"], "http://http2.mlstatic.com/condition-a.jpg")
         self.assertEqual({item["campaign"] for item in data["items"]}, {"Campanha principal", "Campanha secundaria"})
+        condition_a = next(item for item in data["items"] if item["code"] == "MLB5399002228")
+        self.assertEqual(condition_a["currentPrice"], 229.97)
         condition_b = next(item for item in data["items"] if item["code"] == "MLB6689184622")
         self.assertEqual(condition_b["orders"], 1)
         self.assertEqual(condition_b["units"], 8)
