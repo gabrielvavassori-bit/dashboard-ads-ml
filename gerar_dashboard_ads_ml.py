@@ -1580,6 +1580,8 @@ def render_dashboard(data):
     .chart-canvas {{ width:100%; min-height:270px; }}
     .daily-chart {{ width:100%; min-height:270px; display:block; overflow:visible; }}
     .chart-grid {{ stroke:#e4e7ec; stroke-width:1; stroke-dasharray:4 5; }}
+    .chart-average-line {{ stroke:#f79009; stroke-width:2; stroke-dasharray:7 6; }}
+    .chart-average-label {{ fill:#b54708; font-size:11px; font-weight:800; }}
     .chart-axis {{ fill:#667085; font-size:11px; }}
     .chart-bar {{ transition:opacity .15s ease; }}
     .chart-hit {{ fill:transparent; cursor:crosshair; }}
@@ -2378,9 +2380,23 @@ def render_dashboard(data):
         if (Number(row.lastSalePrice || 0) > 0) current.priceFallback = Number(row.lastSalePrice);
         byDate.set(date, current);
       }}));
-      return [...byDate.values()]
+      const rows = [...byDate.values()]
         .map(row => ({{...row, price:row.units > 0 ? row.revenue / row.units : row.priceFallback}}))
         .sort((a,b) => a.date.localeCompare(b.date));
+      const period = DATA.meta?.onlineMode?.onlinePeriod || DATA.meta?.period || DATA.onlineBeta?.requestedPeriod || {{}};
+      const dateFrom = String(period.dateFrom || period.date_from || '');
+      const dateTo = String(period.dateTo || period.date_to || '');
+      if (!/^\d{{4}}-\d{{2}}-\d{{2}}$/.test(dateFrom) || !/^\d{{4}}-\d{{2}}-\d{{2}}$/.test(dateTo)) return rows;
+      const indexed = new Map(rows.map(row => [row.date, row]));
+      const complete = [];
+      const cursor = new Date(`${{dateFrom}}T12:00:00`);
+      const end = new Date(`${{dateTo}}T12:00:00`);
+      while (cursor <= end) {{
+        const date = cursor.toISOString().slice(0, 10);
+        complete.push(indexed.get(date) || {{date, orders:0, units:0, revenue:0, price:0, priceFallback:0}});
+        cursor.setDate(cursor.getDate() + 1);
+      }}
+      return complete;
     }}
     function chartDateLabel(value) {{
       const parsed = new Date(`${{value}}T12:00:00`);
@@ -2444,10 +2460,11 @@ def render_dashboard(data):
       const rows = metric === 'price' ? sourceRows.filter(row => Number(row.price || 0) > 0) : sourceRows;
       const config = chartMetricConfig(metric);
       const values = rows.map(row => Number(row[metric] || 0));
+      const average = values.reduce((total, value) => total + value, 0) / Math.max(values.length, 1);
       const canvas = root.querySelector('.chart-canvas');
       root.dataset.activeMetric = metric;
       root.querySelectorAll('[data-chart-metric]').forEach(button => button.classList.toggle('active', button.dataset.chartMetric === metric));
-      root.querySelector('.chart-summary').textContent = `${{config.label}} por dia; passe o mouse para ver faturamento, unidades, pedidos e preco.`;
+      root.querySelector('.chart-summary').textContent = `${{config.label}} por dia. Media do periodo: ${{config.format(average)}}.`;
       if (!rows.length || (metric === 'price' && !values.some(value => value > 0))) {{
         canvas.innerHTML = '<div class="muted" style="padding:28px">O snapshot ainda nao possui preco diario suficiente para esta visualizacao.</div>';
         return;
@@ -2461,6 +2478,8 @@ def render_dashboard(data):
       const y = value => top + chartH - ((Number(value) - scale.min) / range * chartH);
       const ticks = Array.from({{length:5}}, (_, index) => scale.min + ((scale.max - scale.min) * index / 4));
       const grid = ticks.map(value => `<g><line class="chart-grid" x1="${{left}}" y1="${{y(value).toFixed(1)}}" x2="${{width-right}}" y2="${{y(value).toFixed(1)}}"/><text class="chart-axis" x="${{left-12}}" y="${{(y(value)+4).toFixed(1)}}" text-anchor="end">${{safe(metric === 'revenue' || metric === 'price' ? brl(value) : num(Math.round(value)))}}</text></g>`).join('');
+      const averageY = y(average).toFixed(1);
+      const averageLine = `<line class="chart-average-line" x1="${{left}}" y1="${{averageY}}" x2="${{width-right}}" y2="${{averageY}}"/><text class="chart-average-label" x="${{width-right-4}}" y="${{Math.max(top+12, Number(averageY)-7).toFixed(1)}}" text-anchor="end">Media ${{safe(config.format(average))}}</text>`;
       const labelEvery = Math.max(1, Math.ceil(rows.length / 9));
       const xLabels = rows.map((row,index) => (index % labelEvery === 0 || index === rows.length - 1) ? `<text class="chart-axis" x="${{x(index).toFixed(1)}}" y="${{height-18}}" text-anchor="middle">${{safe(chartDateLabel(row.date))}}</text>` : '').join('');
       const barWidth = Math.max(8, Math.min(34, step * .62));
@@ -2476,7 +2495,7 @@ def render_dashboard(data):
       const hitWidth = Math.max(12, step);
       const hits = rows.map((row,index) => `<g><rect class="chart-hit" data-chart-index="${{index}}" x="${{(x(index)-hitWidth/2).toFixed(1)}}" y="${{top}}" width="${{hitWidth.toFixed(1)}}" height="${{chartH}}"/><line class="chart-hover-line" x1="${{x(index).toFixed(1)}}" y1="${{top}}" x2="${{x(index).toFixed(1)}}" y2="${{top+chartH}}"/></g>`).join('');
       canvas.innerHTML = `<svg class="daily-chart" viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="${{safe(config.label)}} por dia">
-        ${{grid}}${{area ? `<path d="${{area}}" fill="${{config.color}}" fill-opacity=".10"/>` : ''}}${{bars}}<path d="${{path}}" fill="none" stroke="${{config.color}}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>${{dots}}${{hits}}${{xLabels}}
+        ${{grid}}${{averageLine}}${{area ? `<path d="${{area}}" fill="${{config.color}}" fill-opacity=".10"/>` : ''}}${{bars}}<path d="${{path}}" fill="none" stroke="${{config.color}}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>${{dots}}${{hits}}${{xLabels}}
       </svg>`;
       const tooltip = root.querySelector('.chart-tooltip');
       root.querySelectorAll('[data-chart-index]').forEach(hit => {{
@@ -2528,7 +2547,7 @@ def render_dashboard(data):
         }}
         return price >= 79 ? 'Frete gratis obrigatorio' : 'Frete gratis';
       }}
-      if (item.freeShipping === false) return price > 0 && price < 79 ? 'Sem frete gratis opcional' : 'Sem frete gratis no cache';
+      if (item.freeShipping === false) return 'Frete por conta do comprador';
       return 'Frete nao informado';
     }}
     function listingBadges(item) {{
