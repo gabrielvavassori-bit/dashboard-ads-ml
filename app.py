@@ -42,9 +42,12 @@ Variaveis de ambiente:
 """
 import html as _html
 import calendar
+import hashlib
+import hmac
 import json
 import os
 import pathlib
+import re
 import secrets
 import tempfile
 import traceback
@@ -129,6 +132,19 @@ def _parse_form(handler):
     body = handler.rfile.read(length).decode("utf-8", errors="replace")
     parsed = parse_qs(body, keep_blank_values=True)
     return {k: v[0] for k, v in parsed.items()}
+
+
+def _parse_json_body(handler) -> dict:
+    length = int(handler.headers.get("Content-Length", "0") or 0)
+    if length <= 0 or length > 100_000:
+        raise ValueError("Corpo JSON ausente ou acima do limite.")
+    try:
+        payload = json.loads(handler.rfile.read(length).decode("utf-8", errors="strict"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("JSON invalido.") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("O corpo deve ser um objeto JSON.")
+    return payload
 
 
 def _parse_multipart(handler):
@@ -242,6 +258,62 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
         payload.setdefault("http_status", status)
         payload.setdefault("token_exposed", False)
     return payload if isinstance(payload, dict) else {"ok": False, "payload": payload, "http_status": status}
+
+
+def _post_dash_ads_json(path: str, payload: dict) -> dict:
+    secret = os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")
+    if not secret:
+        return {"ok": False, "http_status": 503, "message": "Segredo interno do Dash ADS nao configurado."}
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    req = Request(
+        f"{AGENTE_ML_BASE_URL}{path}",
+        data=body,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "X-COMPETITIVE-WORKER-SECRET": secret,
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=45) as response:
+            raw = response.read(8_000_000)
+            status = response.status
+    except HTTPError as exc:
+        raw = exc.read(8_000_000)
+        status = exc.code
+    except (URLError, TimeoutError) as exc:
+        return {"ok": False, "http_status": 502, "message": "Falha ao consultar agente-ml.", "error": exc.__class__.__name__}
+    try:
+        response_payload = json.loads(raw.decode("utf-8", errors="replace"))
+    except json.JSONDecodeError:
+        response_payload = {"ok": False, "message": "agente-ml retornou resposta nao JSON."}
+    if not isinstance(response_payload, dict):
+        response_payload = {"ok": False, "payload": response_payload}
+    for sensitive_key in ("access_token", "refresh_token", "client_secret"):
+        response_payload.pop(sensitive_key, None)
+    response_payload.setdefault("http_status", status)
+    response_payload.setdefault("token_exposed", False)
+    return response_payload
+
+
+def _promotion_csrf_token(user, session_token: str) -> str:
+    secret = os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")
+    if not secret:
+        return ""
+    message = f"promotion:{user['id']}:{session_token}".encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def _promotion_csrf_valid(handler, user, session_token: str) -> bool:
+    supplied = (handler.headers.get("X-Promotion-CSRF") or "").strip()
+    expected = _promotion_csrf_token(user, session_token)
+    return bool(supplied and expected) and hmac.compare_digest(supplied, expected)
+
+
+def _exact_mlb(value) -> str:
+    value = str(value or "").strip().upper()
+    return value if re.fullmatch(r"MLB\d+", value) else ""
 
 
 def _fetch_governance_summary() -> tuple[dict, int]:
@@ -1413,6 +1485,25 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/healthz":
                 _send_json(self, {"ok": True})
                 return
+            if path == "/api/promotions":
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if not beta_config.BETA_MODE or not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Promocoes online estao disponiveis somente no beta autorizado."}, 403)
+                    return
+                link, _, _ = _current_ml_account(user, token)
+                item_id = _exact_mlb(parse_qs(url.query or "").get("item_id", [""])[0])
+                if not link or not item_id:
+                    _send_json(self, {"ok": False, "message": "Selecione uma conta e um anuncio MLB individual."}, 400)
+                    return
+                payload = _fetch_dash_ads_json(
+                    "/internal/dash-ads/promotions",
+                    {"client": (link["client_id"] or "").strip(), "item_id": item_id},
+                )
+                _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
+                return
             if path == "/api/governance/summary":
                 user, _ = _current_user(self)
                 if not user:
@@ -1638,6 +1729,11 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     _send_html(self, templates.render_error_page(message), 503)
                     return
+                promotion_csrf = _promotion_csrf_token(user, token)
+                dashboard_data["promotionApi"] = {
+                    "enabled": bool(beta_config.BETA_MODE and promotion_csrf),
+                    "csrfToken": promotion_csrf,
+                }
                 _send_html(self, render_dashboard(dashboard_data))
                 return
             if path in ("/teste", "/teste/"):
@@ -1712,6 +1808,32 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         path = url.path
         try:
+            if path in ("/api/promotions/preview", "/api/promotions/confirm"):
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if not beta_config.BETA_MODE or not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Promocoes online estao disponiveis somente no beta autorizado."}, 403)
+                    return
+                if not _promotion_csrf_valid(self, user, token):
+                    _send_json(self, {"ok": False, "message": "Confirmacao de seguranca invalida."}, 403)
+                    return
+                link, _, _ = _current_ml_account(user, token)
+                if not link:
+                    _send_json(self, {"ok": False, "message": "Selecione uma conta Mercado Livre."}, 400)
+                    return
+                body = _parse_json_body(self)
+                item_id = _exact_mlb(body.get("item_id"))
+                if not item_id:
+                    _send_json(self, {"ok": False, "message": "Selecione um anuncio MLB individual."}, 400)
+                    return
+                body["item_id"] = item_id
+                body["client"] = (link["client_id"] or "").strip()
+                agent_path = "/internal/dash-ads/promotions/preview" if path.endswith("/preview") else "/internal/dash-ads/promotions/confirm"
+                payload = _post_dash_ads_json(agent_path, body)
+                _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
+                return
             if path == "/login":
                 self._post_login()
                 return

@@ -498,6 +498,43 @@ class HTTPRouteTests(unittest.TestCase):
                 return None
         return build_opener(NoRedirect)
 
+    def test_promotions_api_requires_authenticated_user(self):
+        for path, method in (
+            ("/api/promotions?item_id=MLB123", "GET"),
+            ("/api/promotions/preview", "POST"),
+            ("/api/promotions/confirm", "POST"),
+        ):
+            request = Request(
+                f"{self.base_url}{path}",
+                data=b"{}" if method == "POST" else None,
+                headers={"Content-Type": "application/json"},
+                method=method,
+            )
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request, timeout=5)
+            self.assertEqual(raised.exception.code, 401)
+
+    def test_promotions_api_rejects_missing_csrf(self):
+        user_id, cookie = self._login_cookie("promotion-csrf@example.com")
+        db.set_user_beta_access(user_id, True)
+        previous = app.beta_config.BETA_MODE
+        app.beta_config.BETA_MODE = True
+        try:
+            for path in ("/api/promotions/preview", "/api/promotions/confirm"):
+                request = Request(
+                    f"{self.base_url}{path}",
+                    data=json.dumps({"item_id": "MLB123"}).encode("utf-8"),
+                    headers={"Cookie": cookie, "Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=5)
+                self.assertEqual(raised.exception.code, 403)
+                payload_value = json.loads(raised.exception.read().decode("utf-8"))
+                self.assertEqual(payload_value["message"], "Confirmacao de seguranca invalida.")
+        finally:
+            app.beta_config.BETA_MODE = previous
+
     def test_beta_assertion_is_identity_only_and_single_use(self):
         user_id, _ = self._login_cookie("beta-assertion@example.com")
         db.set_user_beta_access(user_id, True)
