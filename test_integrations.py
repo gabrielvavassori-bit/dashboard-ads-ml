@@ -817,9 +817,10 @@ class HTTPRouteTests(unittest.TestCase):
             self.assertIn("Dependencia de Ads &gt; 50%", body)
             self.assertNotIn("agente-ml.onrender.com/relatorio", body)
             scripts = "\n".join(re.findall(r"<script>(.*?)</script>", body, flags=re.S))
+            script_path = pathlib.Path(TEST_DIR.name) / "online-dashboard-syntax.js"
+            script_path.write_text(scripts, encoding="utf-8")
             syntax = subprocess.run(
-                ["node", "--check", "-"],
-                input=scripts,
+                ["node", "--check", str(script_path)],
                 text=True,
                 capture_output=True,
                 check=False,
