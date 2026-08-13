@@ -25,6 +25,7 @@ os.environ["EDUZZ_CLIENT_ID"] = "test-client"
 os.environ["EDUZZ_CLIENT_SECRET"] = "test-client-secret"
 os.environ["APP_PUBLIC_URL"] = "http://127.0.0.1:4182"
 os.environ["COMPETITIVE_WORKER_SECRET"] = "local-worker-secret"
+os.environ["ML_LINK_ATTACH_SECRET"] = "local-ml-link-secret"
 os.environ["BETA_MODE"] = "false"
 os.environ["BETA_REJECT_BILLING_WEBHOOKS"] = "true"
 
@@ -1087,7 +1088,7 @@ class HTTPRouteTests(unittest.TestCase):
             data=payload,
             headers={
                 "Content-Type": "application/json",
-                "X-Internal-Secret": os.environ["COMPETITIVE_WORKER_SECRET"],
+                "X-Internal-Secret": os.environ["ML_LINK_ATTACH_SECRET"],
             },
             method="POST",
         )

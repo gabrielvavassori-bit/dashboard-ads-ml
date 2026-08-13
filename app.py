@@ -93,7 +93,11 @@ GOVERNANCE_HUB_URL = os.environ.get(
     "GOVERNANCE_HUB_URL",
     "https://marketplace-governance-hub.onrender.com",
 ).rstrip("/")
-ML_LINK_ATTACH_SECRET = (os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")).strip()
+ML_LINK_ATTACH_SECRET = (
+    os.environ.get("ML_LINK_ATTACH_SECRET")
+    or os.environ.get("DASH_ADS_INTERNAL_SECRET")
+    or os.environ.get("COMPETITIVE_WORKER_SECRET", "")
+).strip()
 ONLINE_TZ = ZoneInfo("America/Sao_Paulo")
 ONLINE_CACHE_PENDING_PREFIX = "__ONLINE_CACHE_PENDING__:"
 SALES_INTELLIGENCE_HTML = pathlib.Path(__file__).resolve().parent / "assets" / "inteligencia-vendas-marketplace.html"
