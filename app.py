@@ -565,6 +565,27 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     if not ads_rows:
         return None, "Ainda nao existem dados de publicidade em cache para esta conta. Aguarde a coleta online e tente novamente."
     ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
+    daily_sales_rows, daily_sales_error = _sales_intelligence_fetch_daily_sales(
+        client,
+        latest_date_from,
+        latest_date_to,
+    )
+    daily_sales_by_item: dict[str, list[dict]] = {}
+    for daily_raw in daily_sales_rows:
+        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
+        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
+        if not daily_code or not snapshot_date:
+            continue
+        daily_sales_by_item.setdefault(daily_code, []).append({
+            "date": snapshot_date,
+            "orders": _number(daily_raw.get("orders_count")),
+            "units": _number(daily_raw.get("units_total")),
+            "revenue": _number(daily_raw.get("revenue_total")),
+            "lastSaleDate": str(daily_raw.get("last_sale_date") or "").strip(),
+            "lastSalePrice": _number(daily_raw.get("last_price")),
+        })
+    for daily_series in daily_sales_by_item.values():
+        daily_series.sort(key=lambda row: row["date"])
     ads_codes = {
         _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
         for raw in ads_rows
@@ -627,11 +648,23 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             if active
             else ("Anuncio inativo na campanha" if status else "Status do anuncio nao informado")
         )
-        last_price = _number(
-            sale.get("last_price")
-            or sale.get("lastPrice")
-            or raw.get("price")
+        current_price = _number(raw.get("price") or raw.get("current_price"))
+        last_sale_price = _number(sale.get("last_price") or sale.get("lastPrice"))
+        last_price = last_sale_price or current_price
+        avg_sale_price = (total_revenue / units) if units else last_sale_price
+        price_reference = last_sale_price or avg_sale_price
+        price_change_pct = (
+            ((current_price - price_reference) / price_reference)
+            if current_price and price_reference
+            else 0.0
         )
+        suggested_test_price = 0.0
+        pricing_signal = "dados_insuficientes"
+        if current_price > price_reference > 0 and sale_last_date:
+            suggested_test_price = round(price_reference + ((current_price - price_reference) * 0.60), 2)
+            pricing_signal = "indicio_alta_preco_com_interrupcao"
+        shipping = raw.get("shipping") if isinstance(raw.get("shipping"), dict) else {}
+        free_shipping = raw.get("free_shipping") if "free_shipping" in raw else shipping.get("free_shipping")
         item = {
             "sku": str(raw.get("sku") or "").strip() or sale_sku,
             "code": code,
@@ -639,7 +672,23 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "lastSaleDate": sale_last_date,
             "lastSaleSort": 0,
             "lastPrice": last_price,
-            "avgSalePrice": (total_revenue / units) if units else last_price,
+            "lastSalePrice": last_sale_price,
+            "currentPrice": current_price,
+            "avgSalePrice": avg_sale_price,
+            "priceReference": price_reference,
+            "priceChangePct": price_change_pct,
+            "suggestedTestPrice": suggested_test_price,
+            "pricingSignal": pricing_signal,
+            "dailySeries": daily_sales_by_item.get(code, []),
+            "listingTypeId": str(raw.get("listing_type_id") or raw.get("listingTypeId") or "").strip(),
+            "logisticType": str(raw.get("logistic_type") or shipping.get("logistic_type") or "").strip(),
+            "freeShipping": bool(free_shipping) if free_shipping is not None else None,
+            "shippingCost": _number(
+                raw.get("shipping_cost")
+                or raw.get("estimated_shipping_cost")
+                or shipping.get("cost")
+            ),
+            "promotionEligibility": "nao_consultada_no_cache_atual",
             "orders": orders,
             "units": units,
             "productRevenue": total_revenue,
@@ -765,6 +814,11 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "revenueSource": "agente-ml / online-cache-latest / pedidos brutos",
             "onlineMode": {"enabled": True, "notice": notice, "complete": complete, "updatedAt": snapshot_at, "onlinePeriod": requested_period or {}, "periodMatch": period_match, "snapshot": snapshot_meta},
             "adsDeduplication": ads_deduplication,
+            "dailySales": {
+                "source": "agente-ml / sales-daily",
+                "available": not bool(daily_sales_error),
+                "error": daily_sales_error,
+            },
         },
         "items": sorted(items, key=lambda item: (-item["investment"], -item["totalRevenue"])),
         "decisionItems": [item for item in items if item.get("sku")],

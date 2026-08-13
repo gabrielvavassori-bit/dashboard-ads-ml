@@ -1562,6 +1562,15 @@ def render_dashboard(data):
     .detail-block h3 {{ font-size:14px; margin:0 0 8px; }}
     .detail-block ul {{ margin:0; padding-left:18px; }}
     .detail-block li {{ margin:4px 0; }}
+    .detail-block-wide {{ grid-column:1/-1; }}
+    .listing-facts {{ display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:8px; }}
+    .listing-fact {{ border:1px solid var(--line); border-radius:8px; padding:9px; background:#f8fafc; }}
+    .listing-fact b {{ display:block; margin-top:3px; color:var(--ink); }}
+    .readonly-badge {{ display:inline-block; margin-bottom:8px; padding:4px 8px; border-radius:999px; background:#eef4ff; color:#1849a9; font-size:12px; font-weight:800; }}
+    .price-signal {{ border-left:4px solid var(--orange); }}
+    .daily-chart {{ width:100%; min-height:190px; display:block; }}
+    .chart-legend {{ display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:12px; margin-top:6px; }}
+    .chart-dot {{ display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }}
     .child-table {{ margin-top:10px; border-spacing:0; }}
     .child-table th, .child-table td {{ font-size:12px; }}
       .period-picker {{ position:relative; z-index:30; margin:0 0 12px; overflow:visible; }}
@@ -1580,7 +1589,7 @@ def render_dashboard(data):
       .period-form .field-group[hidden] {{ display:none; }}
       .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
-    @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
+    @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
   </style>
 </head>
 <body>
@@ -1796,7 +1805,7 @@ def render_dashboard(data):
     const sortKeys = {{
       sku: item => item.sku || '',
       code: item => item.code || '',
-      price: item => item.lastPrice || 0,
+      price: item => item.currentPrice || item.lastPrice || 0,
       orders: item => item.orders || 0,
       units: item => item.units || 0,
       revenue: item => item.totalRevenue || 0,
@@ -2232,7 +2241,7 @@ def render_dashboard(data):
           <col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:78px"><col style="width:70px">
         </colgroup>
         <thead><tr>
-          <th>${{sortable('SKU','sku')}}</th><th>${{sortable('Anuncio','code')}}</th><th>ABC</th><th>Campanha</th><th class="num">${{sortable('Ult. preco','price')}}</th><th class="num">${{sortable('Unid.','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th>
+          <th>${{sortable('SKU','sku')}}</th><th>${{sortable('Anuncio','code')}}</th><th>ABC</th><th>Campanha</th><th class="num">${{sortable('Preco','price')}}</th><th class="num">${{sortable('Unid.','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th>
           <th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th>
         </tr></thead>
         <tbody>${{rows.map(row).join('')}}</tbody>
@@ -2322,6 +2331,77 @@ def render_dashboard(data):
         <tbody>${{children.map(child => `<tr><td>${{safe(child.sku || '(sem SKU)')}}</td><td>${{safe(child.code || '')}}</td><td>${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td>${{safe(child.title || '')}}</td><td class="num">${{num(child.orders || 0)}}</td><td class="num">${{num(child.units || 0)}}</td><td class="num">${{brl(child.totalRevenue || 0)}}</td><td class="num">${{brl(child.adsRevenue || 0)}}</td><td class="num">${{brl(child.investment || 0)}}</td><td class="num">${{pct(child.ctr || 0)}}</td><td class="num">${{pct(child.cvr || 0)}}</td><td class="num">${{pct(child.tacos || 0)}}</td><td>${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
       </table></div>`;
     }}
+    function listingTypeLabel(value) {{
+      const labels = {{ gold_pro:'Premium', gold_premium:'Premium', gold_special:'Classico', gold:'Classico' }};
+      return labels[String(value || '').toLowerCase()] || (value ? String(value) : 'Nao informado pelo cache');
+    }}
+    function logisticLabel(value) {{
+      const labels = {{ fulfillment:'Full', cross_docking:'Coleta', xd_drop_off:'Agencia/coleta', drop_off:'Agencia' }};
+      return labels[String(value || '').toLowerCase()] || (value ? String(value) : 'Nao informado pelo cache');
+    }}
+    function dailySeriesFor(item) {{
+      const sources = (item.children && item.children.length) ? item.children : [item];
+      const byDate = new Map();
+      sources.forEach(source => (source.dailySeries || []).forEach(row => {{
+        const date = String(row.date || '');
+        if (!date) return;
+        const current = byDate.get(date) || {{date, orders:0, units:0, revenue:0}};
+        current.orders += Number(row.orders || 0);
+        current.units += Number(row.units || 0);
+        current.revenue += Number(row.revenue || 0);
+        byDate.set(date, current);
+      }}));
+      return [...byDate.values()].sort((a,b) => a.date.localeCompare(b.date));
+    }}
+    function dailyChartBlock(item) {{
+      const rows = dailySeriesFor(item);
+      if (!rows.length) return `<div class="detail-block detail-block-wide"><h3>Vendas diarias do periodo</h3><div class="muted">A serie diaria ainda nao foi entregue pelo snapshot desta conta. Nenhum zero foi inventado.</div></div>`;
+      const width = 920, height = 190, left = 42, right = 18, top = 18, bottom = 34;
+      const chartW = width - left - right, chartH = height - top - bottom;
+      const maxRevenue = Math.max(1, ...rows.map(row => Number(row.revenue || 0)));
+      const maxUnits = Math.max(1, ...rows.map(row => Number(row.units || 0)));
+      const step = rows.length > 1 ? chartW / (rows.length - 1) : chartW;
+      const barWidth = Math.max(4, Math.min(18, chartW / Math.max(rows.length, 1) * .55));
+      const x = index => left + (rows.length > 1 ? index * step : chartW / 2);
+      const revenueY = value => top + chartH - (Number(value || 0) / maxRevenue * chartH);
+      const unitY = value => top + chartH - (Number(value || 0) / maxUnits * chartH);
+      const bars = rows.map((row,index) => `<rect x="${{(x(index) - barWidth / 2).toFixed(1)}}" y="${{unitY(row.units).toFixed(1)}}" width="${{barWidth.toFixed(1)}}" height="${{Math.max(0, top + chartH - unitY(row.units)).toFixed(1)}}" rx="2" fill="#b2ddff"><title>${{safe(row.date)}}: ${{num(row.units)}} unidade(s), ${{num(row.orders)}} pedido(s)</title></rect>`).join('');
+      const points = rows.map((row,index) => `${{x(index).toFixed(1)}},${{revenueY(row.revenue).toFixed(1)}}`).join(' ');
+      const first = rows[0].date, last = rows[rows.length - 1].date;
+      return `<div class="detail-block detail-block-wide"><h3>Vendas diarias do periodo</h3>
+        <svg class="daily-chart" viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="Grafico diario de faturamento e unidades">
+          <line x1="${{left}}" y1="${{top + chartH}}" x2="${{width-right}}" y2="${{top + chartH}}" stroke="#d0d5dd" />
+          ${{bars}}<polyline fill="none" stroke="#7f56d9" stroke-width="3" points="${{points}}" />
+          <text x="${{left}}" y="${{height-8}}" fill="#667085" font-size="11">${{safe(first)}}</text>
+          <text x="${{width-right}}" y="${{height-8}}" text-anchor="end" fill="#667085" font-size="11">${{safe(last)}}</text>
+          <text x="${{left}}" y="12" fill="#667085" font-size="11">max receita ${{safe(brl(maxRevenue))}}</text>
+        </svg><div class="chart-legend"><span><i class="chart-dot" style="background:#7f56d9"></i>Faturamento bruto</span><span><i class="chart-dot" style="background:#b2ddff"></i>Unidades</span><span>Pedidos preservados separadamente</span></div></div>`;
+    }}
+    function listingFactsBlock(item) {{
+      const freeShipping = item.freeShipping === true ? 'Sim' : item.freeShipping === false ? 'Nao' : 'Nao informado pelo cache';
+      const shippingCost = Number(item.shippingCost || 0) > 0 ? brl(item.shippingCost) : 'Nao fornecido pelo cache';
+      return `<div class="detail-block detail-block-wide"><h3>Condicao comercial do anuncio</h3><div class="listing-facts">
+        <div class="listing-fact"><span class="muted">Classificacao</span><b>${{safe(listingTypeLabel(item.listingTypeId))}}</b></div>
+        <div class="listing-fact"><span class="muted">Logistica</span><b>${{safe(logisticLabel(item.logisticType))}}</b></div>
+        <div class="listing-fact"><span class="muted">Frete gratis</span><b>${{safe(freeShipping)}}</b></div>
+        <div class="listing-fact"><span class="muted">Custo estimado do frete</span><b>${{safe(shippingCost)}}</b></div>
+        <div class="listing-fact"><span class="muted">Preco do anuncio no snapshot</span><b>${{item.currentPrice ? brl(item.currentPrice) : 'Nao informado'}}</b></div>
+        <div class="listing-fact"><span class="muted">Preco da ultima venda</span><b>${{item.lastSalePrice ? brl(item.lastSalePrice) : 'Nao informado'}}</b></div>
+        <div class="listing-fact"><span class="muted">Preco medio vendido</span><b>${{item.avgSalePrice ? brl(item.avgSalePrice) : 'Sem venda no periodo'}}</b></div>
+        <div class="listing-fact"><span class="muted">Ultima venda</span><b>${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : 'Nao informada'}}</b></div>
+      </div></div>`;
+    }}
+    function pricingPreviewBlock(item) {{
+      const change = Number(item.priceChangePct || 0);
+      const hasSignal = item.pricingSignal === 'indicio_alta_preco_com_interrupcao' && Number(item.suggestedTestPrice || 0) > 0;
+      const analysis = hasSignal
+        ? `O preco observado esta ${{(change * 100).toLocaleString('pt-BR', {{minimumFractionDigits:1, maximumFractionDigits:1}})}}% acima da ultima venda. Isso e um indicio, nao prova de causalidade.`
+        : 'Ainda nao ha evidencia suficiente no cache para atribuir a variacao de vendas ao preco.';
+      const suggestion = hasSignal
+        ? `Teste sugerido: ${{brl(item.suggestedTestPrice)}}. O valor preserva 60% do aumento observado e deve ser validado com margem, tarifa e frete.`
+        : 'Nenhum preco de teste foi calculado.';
+      return `<div class="detail-block detail-block-wide price-signal"><span class="readonly-badge">PREVIA SOMENTE LEITURA</span><h3>Hipotese de preco e promocao</h3><p>${{safe(analysis)}}</p><p><b>${{safe(suggestion)}}</b></p><div class="muted">Elegibilidade de promocao: nao consultada pelo cache atual. Esta etapa nao cria promocao, nao altera preco e nao envia comandos ao Mercado Livre.</div></div>`;
+    }}
     function detailBlocks(item) {{
       const evidence = [
         `Confianca: ${{item.confidence || 'hipotese'}}`,
@@ -2329,7 +2409,10 @@ def render_dashboard(data):
         ...((item.validationPoints || []).map(value => `Validar: ${{value}}`))
       ];
       if (item.campaignRevenueAmbiguous) evidence.unshift('TACOS da campanha e orientativo: o mesmo MLB aparece em mais de uma campanha.');
-      return listBlock('Leitura e confianca', evidence)
+      return dailyChartBlock(item)
+        + listingFactsBlock(item)
+        + pricingPreviewBlock(item)
+        + listBlock('Leitura e confianca', evidence)
         + listBlock('Causas mais provaveis', item.diagnosisHypotheses)
         + listBlock('O que fazer agora', item.testOrder)
         + campaignChildren(item);
@@ -2407,7 +2490,7 @@ def render_dashboard(data):
         <td><span class="summary-chip">PAI</span></td>
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
         <td class="text-cell">${{safe(item.parentId)}} · ${{num(item.optionCount)}} opcao(oes)<div class="muted">${{safe(item.catalogLabel)}}</div></td>
-        <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}<div class="muted">${{item.avgSalePrice ? 'media: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? 'ultima venda: ' + safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
+        <td class="num">${{(item.currentPrice || item.lastPrice) ? brl(item.currentPrice || item.lastPrice) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div><div class="muted">${{item.avgSalePrice ? 'media vendida: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
         <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
@@ -2450,7 +2533,7 @@ def render_dashboard(data):
         <td><span class="${{abcClass(abcValue)}}">${{campaignMode ? 'CAMP' : currentViewMode.toUpperCase()}} ${{abcValue || 'C'}}</span></td>
         <td class="text-cell">${{safe(item.campaign || item.adsCampaigns || 'Sem campanha')}}<div class="muted">${{safe(item.campaignStatus || '')}}</div></td>
         <td class="text-cell">${{safe(item.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(item.catalogLabel || '')}}</div></td>
-        <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}<div class="muted">${{item.avgSalePrice ? 'media: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? 'ultima venda: ' + safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
+        <td class="num">${{(item.currentPrice || item.lastPrice) ? brl(item.currentPrice || item.lastPrice) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div><div class="muted">${{item.avgSalePrice ? 'media vendida: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
         <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td>
         <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{safe(item.ctrClass || '')}}</div></td><td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{safe(item.cvrClass || '')}}</div></td>
@@ -2482,7 +2565,7 @@ def render_dashboard(data):
           : `<tbody>${{rows.map(item => row(item)).join('')}}</tbody>`;
       document.getElementById('table').innerHTML = `<table class="ops-table">
         <colgroup><col style="width:72px"><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
-        <thead><tr><th>Imagem</th><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Ult. preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
+        <thead><tr><th>Imagem</th><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
         ${{renderedBodies}}</table>`;
       const helpText = document.getElementById('tableHelpText');
       const helpMeta = document.getElementById('tableHelpMeta');
