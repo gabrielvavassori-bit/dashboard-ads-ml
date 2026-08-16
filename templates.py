@@ -218,6 +218,11 @@ def render_app_shell(user_name: str, version: str, error: str = "", linked_clien
         <a class="primary" href="/online">Abrir online beta</a>
       </div>
       <div class="mode-card">
+        <h3>Shopee — piloto</h3>
+        <p>Conecte uma loja autorizada para leitura de pedidos e Ads. Campanhas, precos e promocoes continuam bloqueados.</p>
+        <a class="secondary" href="/shopee">Abrir DashAds Shopee</a>
+      </div>
+      <div class="mode-card">
         <h3>Modo offline</h3>
         <p>Use dois XLSX: vendas + publicidade. Ideal para validacao manual, comparacao e cenarios sem conta vinculada.</p>
         <a class="secondary" href="#offline-form">Usar uploads offline</a>
@@ -239,6 +244,45 @@ def render_app_shell(user_name: str, version: str, error: str = "", linked_clien
     </div>
     """
     return _layout("Painel", body, extra_head)
+
+
+def render_shopee_pilot(user_name: str, accounts=(), configured: bool = False, info: str = "", error: str = "") -> str:
+    info_html = f'<div class="alert ok">{_html.escape(info)}</div>' if info else ""
+    error_html = f'<div class="alert err">{_html.escape(error)}</div>' if error else ""
+    config_html = (
+        '<div class="alert ok"><b>Conector configurado.</b> A autorizacao abre a Shopee e retorna ao beta.</div>'
+        if configured else
+        '<div class="alert err"><b>Conexao real bloqueada.</b> Faltam credenciais de producao/Go-Live e a chave de criptografia no ambiente.</div>'
+    )
+    rows = []
+    for account in accounts or ():
+        label = account["shop_name"] or "Loja Shopee"
+        rows.append(
+            f"<tr><td>{_html.escape(label)}</td><td>{_html.escape(str(account['shop_id']))}</td>"
+            f"<td><span class=\"pill active\">leitura autorizada</span></td>"
+            f"<td>Ads, pedidos e reconciliacao: pendentes de primeira sincronizacao</td></tr>"
+        )
+    account_html = (
+        '<table><thead><tr><th>Loja</th><th>Shop ID</th><th>Status</th><th>Dados</th></tr></thead><tbody>'
+        + ''.join(rows) + '</tbody></table>'
+        if rows else '<p class="hint">Nenhuma loja Shopee vinculada ainda.</p>'
+    )
+    connect_html = (
+        '<a href="/shopee/link/start" style="display:inline-block;padding:12px 16px;border-radius:10px;background:#ee4d2d;color:#fff;font-weight:800">Conectar minha loja Shopee</a>'
+        if configured else
+        '<span class="hint">Quando o Go-Live e as variaveis forem configurados, o botao de autorizacao sera liberado.</span>'
+    )
+    body = f"""
+    <h1>DashAds Shopee — piloto beta</h1>
+    <p>Ola, {_html.escape(user_name)}. Esta area e exclusivamente de leitura e conciliacao. Nenhuma campanha, orcamento, preco, voucher ou promocao pode ser alterado por aqui.</p>
+    {info_html}{error_html}{config_html}
+    <h2 style="font-size:17px;margin-top:22px">Lojas conectadas</h2>
+    {account_html}
+    <div style="margin-top:20px">{connect_html}</div>
+    <div class="box"><b>Proxima entrega apos o vinculo:</b> sincronizar pedidos e desempenho diario de Ads, calcular ACOS/ROAS e TACOS realizado. GMV direto e amplo serao exibidos separadamente; o painel nao chamara a diferenca de "organico confirmado".</div>
+    <p style="margin-top:18px"><a href="/">Voltar ao painel</a></p>
+    """
+    return _layout("DashAds Shopee", body)
 
 
 def render_online_beta_warning(

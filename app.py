@@ -39,6 +39,9 @@ Variaveis de ambiente:
   GOVERNANCE_HUB_URL      URL do MARKETPLACE GOVERNANCE central
   GOVERNANCE_READ_API_KEY Chave de leitura do Governance central
   MAX_UPLOAD_MB           Limite por arquivo (padrao 20)
+  SHOPEE_PARTNER_ID       Partner ID da Shopee Open Platform em producao
+  SHOPEE_PARTNER_KEY      Partner key da Shopee Open Platform (somente cofre/ambiente)
+  SHOPEE_TOKEN_ENCRYPTION_KEY Chave Fernet para tokens Shopee em repouso
 """
 import html as _html
 import calendar
@@ -65,6 +68,7 @@ import beta_bridge
 import beta_config
 import db
 import eduzz_api
+import shopee_api
 import templates
 import webhook as eduzz_webhook
 from gerar_dashboard_ads_ml import (
@@ -1481,6 +1485,25 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/oauth/eduzz/callback":
                 self._eduzz_oauth_callback(url)
                 return
+            if path == "/shopee":
+                user, _ = _current_user(self)
+                if not user:
+                    _redirect(self, "/login?return_to=/shopee")
+                    return
+                _send_html(self, templates.render_shopee_pilot(
+                    user["name"] or user["email"],
+                    db.list_active_shopee_accounts_for_user(user["id"]),
+                    configured=shopee_api.is_configured(),
+                    info=(parse_qs(url.query or "").get("info", [""])[0] or "")[:180],
+                    error=(parse_qs(url.query or "").get("error", [""])[0] or "")[:180],
+                ))
+                return
+            if path == "/shopee/link/start":
+                self._shopee_link_start()
+                return
+            if path == "/oauth/shopee/callback":
+                self._shopee_oauth_callback(url)
+                return
             if path == "/beta/authorize":
                 self._beta_authorize(url)
                 return
@@ -1783,6 +1806,54 @@ class Handler(BaseHTTPRequestHandler):
             _send_html(self, templates.render_error_page(str(exc), tb), 500)
 
     # ----------- Handlers especificos -----------
+
+    def _shopee_link_start(self):
+        """Inicia OAuth somente quando o ambiente de producao estiver pronto."""
+        user, _ = _current_user(self)
+        if not user:
+            _redirect(self, "/login?return_to=/shopee")
+            return
+        if not shopee_api.is_configured():
+            _redirect(self, "/shopee?error=" + quote("Go-Live ou configuracao segura ainda pendente."))
+            return
+        state = "shp-" + secrets.token_urlsafe(24)
+        db.save_shopee_link_state(state, user["id"], return_to="/shopee")
+        db.log_audit(user["id"], "shopee.oauth.start", "read_only", _client_ip(self))
+        try:
+            _redirect(self, shopee_api.authorization_url(state))
+        except shopee_api.ShopeeAPIError as exc:
+            _redirect(self, "/shopee?error=" + quote(str(exc)))
+
+    def _shopee_oauth_callback(self, url):
+        qs = parse_qs(url.query or "")
+        state = (qs.get("state", [""])[0] or "").strip()
+        code = (qs.get("code", [""])[0] or "").strip()
+        shop_id = (qs.get("shop_id", [""])[0] or "").strip()
+        if not state or not code or not shop_id:
+            _send_html(self, templates.render_error_page("A Shopee nao retornou os dados necessarios para concluir a autorizacao."), 400)
+            return
+        link_state = db.consume_shopee_link_state(state)
+        if not link_state:
+            _send_html(self, templates.render_error_page("Esta autorizacao Shopee expirou, ja foi usada ou nao pertence a uma sessao valida."), 400)
+            return
+        try:
+            token_payload = shopee_api.exchange_code(code, int(shop_id))
+            access_encrypted = shopee_api.encrypt_token(token_payload.get("access_token", ""))
+            refresh_encrypted = shopee_api.encrypt_token(token_payload.get("refresh_token", "")) if token_payload.get("refresh_token") else ""
+            ts = int(time.time())
+            expires_in = int(token_payload.get("expire_in", 0) or 0)
+            refresh_expires_in = int(token_payload.get("refresh_token_expire_in", 0) or 0)
+            db.upsert_shopee_account(
+                link_state["user_id"], shop_id, access_encrypted, refresh_encrypted,
+                token_expires_at=(ts + expires_in if expires_in else None),
+                refresh_expires_at=(ts + refresh_expires_in if refresh_expires_in else None),
+                region="BR",
+            )
+            db.log_audit(link_state["user_id"], "shopee.oauth.connected", f"shop_id={shop_id}", _client_ip(self))
+            _redirect(self, "/shopee?info=" + quote("Loja Shopee vinculada em modo leitura."))
+        except (ValueError, shopee_api.ShopeeAPIError):
+            db.log_audit(link_state["user_id"], "shopee.oauth.failed", "token_exchange", _client_ip(self))
+            _redirect(self, "/shopee?error=" + quote("Nao foi possivel concluir a vinculacao Shopee. Confira o Go-Live e tente novamente."))
 
     def _post_select_ml_account(self):
         user, token = _current_user(self)

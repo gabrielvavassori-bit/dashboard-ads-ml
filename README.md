@@ -167,6 +167,14 @@ Depois é só logar em `/cadastrar` com `teste@cliente.com`.
 
 ---
 
+## DashAds Shopee - piloto de leitura
+
+O beta expoe a rota autenticada `/shopee`. Ela so permite iniciar o OAuth quando o Go-Live estiver aprovado e estas variaveis existirem no ambiente do Render: `SHOPEE_PARTNER_ID`, `SHOPEE_PARTNER_KEY`, `SHOPEE_OAUTH_CALLBACK_URL` e `SHOPEE_TOKEN_ENCRYPTION_KEY`.
+
+Os tokens sao gravados criptografados e nunca retornam pelo HTML. A primeira entrega nao cria, edita, pausa ou publica campanhas, precos, vouchers ou promocoes. Ela prepara o vinculo da loja para leitura e conciliacao; sincronizacao de pedidos e Ads entra somente apos uma loja real autorizada e validacao de sete dias.
+
+---
+
 ## FAQ rápido
 
 **E se o cliente passar o login pra outra pessoa?**

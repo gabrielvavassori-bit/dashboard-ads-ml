@@ -146,6 +146,37 @@ CREATE TABLE IF NOT EXISTS ml_link_states (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS shopee_link_states (
+    state_hash TEXT PRIMARY KEY,
+    user_id    INTEGER NOT NULL,
+    return_to  TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used_at    INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS user_shopee_accounts (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id               INTEGER NOT NULL,
+    shop_id               TEXT NOT NULL,
+    shop_name             TEXT,
+    region                TEXT NOT NULL DEFAULT 'BR',
+    status                TEXT NOT NULL DEFAULT 'active',
+    access_token_encrypted  TEXT NOT NULL,
+    refresh_token_encrypted TEXT,
+    token_expires_at      INTEGER,
+    refresh_expires_at    INTEGER,
+    connected_at          INTEGER NOT NULL,
+    last_verified_at      INTEGER,
+    created_at            INTEGER NOT NULL,
+    updated_at            INTEGER NOT NULL,
+    UNIQUE(user_id, shop_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_shopee_accounts_user_status
+    ON user_shopee_accounts(user_id, status);
+
 CREATE TABLE IF NOT EXISTS admins (
     email         TEXT PRIMARY KEY COLLATE NOCASE,
     password_hash TEXT NOT NULL,
@@ -410,6 +441,22 @@ def list_active_ml_links_for_user(user_id: int):
             """SELECT * FROM user_ml_accounts
                WHERE user_id=? AND status='active'
                ORDER BY slot_number, id""",
+            (user_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def list_active_shopee_accounts_for_user(user_id: int):
+    conn = get_conn()
+    try:
+        return conn.execute(
+            """SELECT id, user_id, shop_id, shop_name, region, status,
+                      token_expires_at, refresh_expires_at, connected_at,
+                      last_verified_at, created_at, updated_at
+               FROM user_shopee_accounts
+               WHERE user_id=? AND status='active'
+               ORDER BY connected_at DESC, id DESC""",
             (user_id,),
         ).fetchall()
     finally:
@@ -1057,6 +1104,92 @@ def consume_ml_link_state(state: str):
             raise
         finally:
             conn.close()
+
+
+def save_shopee_link_state(state: str, user_id: int, return_to: str = "/shopee", ttl_seconds: int = 900):
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    conn = get_conn()
+    try:
+        ts = now()
+        conn.execute("DELETE FROM shopee_link_states WHERE expires_at < ?", (ts,))
+        conn.execute(
+            """INSERT OR REPLACE INTO shopee_link_states
+               (state_hash, user_id, return_to, expires_at, used_at)
+               VALUES (?,?,?,?,NULL)""",
+            (state_hash, user_id, return_to or "/shopee", ts + ttl_seconds),
+        )
+    finally:
+        conn.close()
+
+
+def consume_shopee_link_state(state: str):
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    with _lock:
+        conn = get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM shopee_link_states WHERE state_hash=?", (state_hash,)
+            ).fetchone()
+            valid = bool(row and not row["used_at"] and row["expires_at"] >= now())
+            if valid:
+                conn.execute("UPDATE shopee_link_states SET used_at=? WHERE state_hash=?", (now(), state_hash))
+            conn.execute("COMMIT")
+            return row if valid else None
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def upsert_shopee_account(
+    user_id: int,
+    shop_id: int | str,
+    access_token_encrypted: str,
+    refresh_token_encrypted: str = "",
+    token_expires_at=None,
+    refresh_expires_at=None,
+    shop_name: str = "",
+    region: str = "BR",
+):
+    shop_id = str(shop_id or "").strip()
+    if not shop_id or not access_token_encrypted:
+        raise ValueError("shop_id e token protegido sao obrigatorios")
+    conn = get_conn()
+    try:
+        ts = now()
+        existing = conn.execute(
+            "SELECT id FROM user_shopee_accounts WHERE user_id=? AND shop_id=?", (user_id, shop_id)
+        ).fetchone()
+        values = (
+            shop_name or None, region or "BR", access_token_encrypted,
+            refresh_token_encrypted or None, token_expires_at, refresh_expires_at,
+            ts, ts, user_id, shop_id,
+        )
+        if existing:
+            conn.execute(
+                """UPDATE user_shopee_accounts
+                   SET shop_name=?, region=?, access_token_encrypted=?, refresh_token_encrypted=?,
+                       token_expires_at=?, refresh_expires_at=?, status='active',
+                       connected_at=?, updated_at=?
+                   WHERE user_id=? AND shop_id=?""",
+                values,
+            )
+            return int(existing["id"])
+        cur = conn.execute(
+            """INSERT INTO user_shopee_accounts
+               (user_id, shop_id, shop_name, region, status, access_token_encrypted,
+                refresh_token_encrypted, token_expires_at, refresh_expires_at,
+                connected_at, created_at, updated_at)
+               VALUES (?,?,?,?, 'active', ?,?,?,?,?,?,?)""",
+            (user_id, shop_id, shop_name or None, region or "BR", access_token_encrypted,
+             refresh_token_encrypted or None, token_expires_at, refresh_expires_at,
+             ts, ts, ts),
+        )
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
 
 
 def consume_oauth_state(state: str) -> bool:

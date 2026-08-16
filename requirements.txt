@@ -1,2 +1,2 @@
-# Esta aplicacao usa apenas a biblioteca padrao do Python.
-# Nenhuma dependencia externa precisa ser instalada.
+# Criptografia de tokens OAuth Shopee em repouso.
+cryptography>=42,<46
