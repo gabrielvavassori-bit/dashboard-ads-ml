@@ -539,21 +539,25 @@ def upsert_beta_identity(identity: dict) -> int:
             identity.get("plan") or "beta",
             identity.get("status") or "active",
             identity.get("beta_enabled"),
+            1 if identity.get("sales_enabled", True) else 0,
+            max(1, min(5, int(identity.get("ml_slot_limit") or 1))),
             identity.get("expires_at"),
             ts,
         )
         if existing:
             conn.execute(
-                """UPDATE users SET name=?, plan=?, status=?, beta_enabled=?, expires_at=?,
+                """UPDATE users SET name=?, plan=?, status=?, beta_enabled=?, sales_enabled=?,
+                   ml_slot_limit=?, expires_at=?,
                    access_origin='beta_bridge', updated_at=? WHERE id=?""",
                 (*values, existing["id"]),
             )
             return int(existing["id"])
         cur = conn.execute(
             """INSERT INTO users
-               (email, name, access_origin, plan, status, beta_enabled, expires_at, created_at, updated_at)
-               VALUES (?,?, 'beta_bridge', ?,?,?,?,?,?)""",
-            (email, values[0], values[1], values[2], values[3], values[4], ts, ts),
+               (email, name, access_origin, plan, status, beta_enabled, sales_enabled,
+                ml_slot_limit, expires_at, created_at, updated_at)
+               VALUES (?,?, 'beta_bridge', ?,?,?,?,?,?,?,?)""",
+            (email, values[0], values[1], values[2], values[3], values[4], values[5], values[6], ts, ts),
         )
         return int(cur.lastrowid)
     finally:
@@ -1120,6 +1124,99 @@ def save_shopee_link_state(state: str, user_id: int, return_to: str = "/shopee",
         )
     finally:
         conn.close()
+
+
+def sync_beta_ml_accounts(user_id: int, accounts: list[dict]) -> int:
+    """Mirrors non-secret account metadata from production into beta."""
+    normalized = []
+    seen_slots = set()
+    seen_clients = set()
+    for raw in accounts:
+        account = dict(raw)
+        slot_number = int(account.get("slot_number") or 0)
+        client_id = (account.get("client_id") or "").strip()
+        if slot_number < 1 or slot_number > 5 or not client_id:
+            raise ValueError("conta Mercado Livre invalida para sincronizacao beta")
+        if slot_number in seen_slots or client_id in seen_clients:
+            raise ValueError("slots ou contas Mercado Livre duplicados")
+        seen_slots.add(slot_number)
+        seen_clients.add(client_id)
+        normalized.append(account)
+
+    with _lock:
+        conn = get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            user = conn.execute(
+                "SELECT ml_slot_limit FROM users WHERE id=?", (int(user_id),)
+            ).fetchone()
+            if not user:
+                raise ValueError("usuario beta inexistente")
+            slot_limit = max(1, min(5, int(user["ml_slot_limit"] or 1)))
+            if any(int(account["slot_number"]) > slot_limit for account in normalized):
+                raise ValueError("conta Mercado Livre excede o limite de slots")
+
+            previous = {
+                (int(row["slot_number"]), str(row["client_id"]))
+                for row in conn.execute(
+                    "SELECT slot_number, client_id FROM user_ml_accounts WHERE user_id=?",
+                    (int(user_id),),
+                ).fetchall()
+            }
+            current = {
+                (int(account["slot_number"]), str(account["client_id"]))
+                for account in normalized
+            }
+            ts = now()
+            conn.execute("DELETE FROM user_ml_accounts WHERE user_id=?", (int(user_id),))
+            for account in sorted(normalized, key=lambda item: int(item["slot_number"])):
+                conn.execute(
+                    """INSERT INTO user_ml_accounts
+                       (user_id, slot_number, client_id, ml_user_id, nickname, official_store,
+                        advertiser_id, seller_id, site_id, status, admin_granted, bound_at,
+                        last_replaced_at, replacement_locked_until, created_at, updated_at,
+                        last_verified_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        int(user_id), int(account["slot_number"]), str(account["client_id"]),
+                        account.get("ml_user_id"), account.get("nickname"), account.get("official_store"),
+                        account.get("advertiser_id"), account.get("seller_id"), account.get("site_id"),
+                        account.get("status") or "active", 1 if account.get("admin_granted") else 0,
+                        account.get("bound_at") or account.get("created_at") or ts,
+                        account.get("last_replaced_at"),
+                        account.get("replacement_locked_until"), account.get("created_at") or ts,
+                        account.get("updated_at") or ts, account.get("last_verified_at"),
+                    ),
+                )
+
+            conn.execute("DELETE FROM user_ml_links WHERE user_id=?", (int(user_id),))
+            if normalized:
+                legacy = sorted(normalized, key=lambda item: int(item["slot_number"]))[0]
+                conn.execute(
+                    """INSERT INTO user_ml_links
+                       (user_id, client_id, ml_user_id, nickname, official_store, advertiser_id,
+                        seller_id, site_id, status, created_at, updated_at, last_verified_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        int(user_id), str(legacy["client_id"]), legacy.get("ml_user_id"),
+                        legacy.get("nickname"), legacy.get("official_store"), legacy.get("advertiser_id"),
+                        legacy.get("seller_id"), legacy.get("site_id"), legacy.get("status") or "active",
+                        legacy.get("created_at") or ts, legacy.get("updated_at") or ts,
+                        legacy.get("last_verified_at"),
+                    ),
+                )
+            if previous != current:
+                conn.execute(
+                    "UPDATE sessions SET selected_ml_account_id=NULL WHERE user_id=?",
+                    (int(user_id),),
+                )
+            conn.execute("COMMIT")
+            return len(normalized)
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
 
 def consume_shopee_link_state(state: str):
