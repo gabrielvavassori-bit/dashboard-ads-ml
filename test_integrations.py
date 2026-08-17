@@ -538,6 +538,8 @@ class HTTPRouteTests(unittest.TestCase):
     def test_beta_assertion_is_identity_only_and_single_use(self):
         user_id, _ = self._login_cookie("beta-assertion@example.com")
         db.set_user_beta_access(user_id, True)
+        db.set_user_sales_access(user_id, False)
+        db.set_user_ml_slot_limit(user_id, 2)
         user = db.get_user_by_id(user_id)
         link = {
             "client_id": "client-1",
@@ -549,14 +551,36 @@ class HTTPRouteTests(unittest.TestCase):
             "site_id": "MLB",
             "status": "active",
         }
+        accounts = [
+            {**link, "slot_number": 1, "client_id": "client-1"},
+            {
+                **link,
+                "slot_number": 2,
+                "client_id": "client-2",
+                "nickname": "Art Paper",
+                "access_token": "never-copy-access",
+                "refresh_token": "never-copy-refresh",
+                "password_hash": "never-copy-password",
+            },
+        ]
         base_now = int(app.time.time())
-        token = beta_bridge.create_assertion("secret", user, link, "https://beta.example/beta/callback", now=base_now)
+        token = beta_bridge.create_assertion(
+            "secret", user, link, "https://beta.example/beta/callback",
+            now=base_now, ml_accounts=accounts,
+        )
         self.assertNotIn("access_token", token)
         self.assertNotIn("refresh_token", token)
         payload_value = beta_bridge.verify_assertion(token, "secret", "https://beta.example/beta/callback", now=base_now + 1)
         self.assertEqual(payload_value["user"]["email"], "beta-assertion@example.com")
         self.assertIs(payload_value["user"]["beta_enabled"], True)
+        self.assertIs(payload_value["user"]["sales_enabled"], False)
+        self.assertEqual(payload_value["user"]["ml_slot_limit"], 2)
         self.assertEqual(payload_value["ml"]["client_id"], "client-1")
+        self.assertEqual([row["client_id"] for row in payload_value["ml_accounts"]], ["client-1", "client-2"])
+        serialized = json.dumps(payload_value, sort_keys=True)
+        self.assertNotIn("never-copy-access", serialized)
+        self.assertNotIn("never-copy-refresh", serialized)
+        self.assertNotIn("never-copy-password", serialized)
         self.assertTrue(db.claim_beta_handoff(payload_value["nonce"], payload_value["exp"]))
         self.assertFalse(db.claim_beta_handoff(payload_value["nonce"], payload_value["exp"]))
 
@@ -627,6 +651,13 @@ class HTTPRouteTests(unittest.TestCase):
     def test_sync_beta_access_posts_signed_assertion(self):
         user_id, _ = self._login_cookie("beta-sync@example.com")
         db.set_user_beta_access(user_id, True)
+        db.set_user_ml_slot_limit(user_id, 2)
+        db.upsert_user_ml_link(
+            user_id, client_id="beta-sync-a", nickname="Conta A", slot_number=1,
+        )
+        db.upsert_user_ml_link(
+            user_id, client_id="beta-sync-b", nickname="Conta B", slot_number=2,
+        )
         user = db.get_user_by_id(user_id)
         received = {}
 
@@ -657,12 +688,70 @@ class HTTPRouteTests(unittest.TestCase):
         try:
             self.assertTrue(app._sync_beta_access(user))
             self.assertIs(received["user"]["beta_enabled"], True)
+            self.assertEqual(received["user"]["ml_slot_limit"], 2)
+            self.assertEqual(
+                [(row["slot_number"], row["client_id"]) for row in received["ml_accounts"]],
+                [(1, "beta-sync-a"), (2, "beta-sync-b")],
+            )
+            serialized = json.dumps(received, sort_keys=True)
+            self.assertNotIn("password_hash", serialized)
+            self.assertNotIn("access_token", serialized)
+            self.assertNotIn("refresh_token", serialized)
         finally:
             app.beta_config.BETA_SHARED_AUTH_SECRET = original_secret
             app.beta_config.BETA_PUBLIC_URL = original_public_url
             fake.shutdown()
             fake.server_close()
             thread.join(timeout=3)
+
+    def test_sync_beta_ml_accounts_replaces_snapshot_and_clears_selection(self):
+        user_id, cookie = self._login_cookie("beta-accounts@example.com")
+        db.set_user_ml_slot_limit(user_id, 2)
+        db.upsert_user_ml_link(user_id, client_id="old-a", nickname="Antiga A", slot_number=1)
+        old_second_id = db.upsert_user_ml_link(
+            user_id, client_id="old-b", nickname="Antiga B", slot_number=2,
+        )
+        token = cookie.split("=", 1)[1]
+        self.assertTrue(db.set_session_selected_ml_account(token, user_id, old_second_id))
+        self.assertEqual(db.get_session(token)["selected_ml_account_id"], old_second_id)
+
+        count = db.sync_beta_ml_accounts(user_id, [
+            {"slot_number": 1, "client_id": "new-a", "nickname": "Nova A", "status": "active"},
+            {"slot_number": 2, "client_id": "new-b", "nickname": "Nova B", "status": "active"},
+        ])
+
+        self.assertEqual(count, 2)
+        rows = db.list_active_ml_links_for_user(user_id)
+        self.assertEqual(
+            [(row["slot_number"], row["client_id"], row["nickname"]) for row in rows],
+            [(1, "new-a", "Nova A"), (2, "new-b", "Nova B")],
+        )
+        self.assertIsNone(db.get_session(token)["selected_ml_account_id"])
+
+    def test_beta_admin_is_centrally_managed_by_production(self):
+        original = (app.beta_config.BETA_MODE, app.beta_config.BETA_SHARED_AUTH_URL)
+        app.beta_config.BETA_MODE = True
+        app.beta_config.BETA_SHARED_AUTH_URL = "https://auth.example.test"
+        opener = self._no_redirect_opener()
+        try:
+            with self.assertRaises(HTTPError) as raised:
+                opener.open(Request(f"{self.base_url}/admin", method="GET"), timeout=5)
+            self.assertEqual(raised.exception.code, 302)
+            self.assertEqual(raised.exception.headers.get("Location"), "https://auth.example.test/admin")
+            raised.exception.close()
+
+            request = Request(
+                f"{self.base_url}/admin/login",
+                data=urlencode({"email": "admin@example.com", "password": "123456"}).encode("utf-8"),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as rejected:
+                urlopen(request, timeout=5)
+            self.assertEqual(rejected.exception.code, 403)
+            rejected.exception.close()
+        finally:
+            app.beta_config.BETA_MODE, app.beta_config.BETA_SHARED_AUTH_URL = original
 
     def test_health_and_custom_delivery(self):
         with urlopen(f"{self.base_url}/healthz", timeout=5) as response:
