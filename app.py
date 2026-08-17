@@ -1783,6 +1783,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/admin/users/bind_ml_link":
                 self._post_admin_bind_ml_link()
                 return
+            if path == "/admin/beta-sync-all":
+                self._post_admin_beta_sync_all()
+                return
             if path.startswith("/admin/users/") and path.endswith("/reset_password"):
                 self._post_admin_reset_password(path)
                 return
@@ -2445,6 +2448,35 @@ class Handler(BaseHTTPRequestHandler):
             info = f"Acesso beta {action} com sucesso"
         else:
             info = f"Acesso beta {action}; sincronizacao com o beta pendente"
+        _redirect(self, "/admin?" + urlencode({"info": info}))
+
+    def _post_admin_beta_sync_all(self):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        synced = 0
+        failed = 0
+        skipped = 0
+        for user in db.list_all_users():
+            if user["beta_enabled"] is None:
+                skipped += 1
+                continue
+            ok = _sync_beta_access(user)
+            if ok:
+                synced += 1
+            else:
+                failed += 1
+            db.log_audit(
+                user["id"],
+                "admin.beta_resync",
+                f"admin={admin['email']}; result={'ok' if ok else 'failed'}",
+                _client_ip(self),
+            )
+        info = (
+            f"Sincronizacao beta concluida: {synced} usuario(s) sincronizado(s), "
+            f"{failed} falha(s), {skipped} sem regra beta explicita."
+        )
         _redirect(self, "/admin?" + urlencode({"info": info}))
 
     def _post_admin_set_sales_access(self, path: str):

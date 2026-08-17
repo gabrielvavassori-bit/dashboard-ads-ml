@@ -1273,6 +1273,73 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertIn("Liberar beta", body)
         self.assertIn(f"/admin/users/{user_id}/set_beta_access", body)
 
+    def test_admin_can_resync_all_explicit_beta_users_and_accounts(self):
+        enabled_id = db.upsert_manual_user(
+            email="beta-resync-enabled@example.com",
+            name="Cliente Beta Liberado",
+            plan="cortesia",
+            status="active",
+            expires_at=None,
+        )
+        blocked_id = db.upsert_manual_user(
+            email="beta-resync-blocked@example.com",
+            name="Cliente Beta Bloqueado",
+            plan="cortesia",
+            status="active",
+            expires_at=None,
+        )
+        implicit_id = db.upsert_manual_user(
+            email="beta-resync-implicit@example.com",
+            name="Cliente Sem Regra Beta",
+            plan="cortesia",
+            status="active",
+            expires_at=None,
+        )
+        db.set_user_beta_access(enabled_id, True)
+        db.set_user_beta_access(blocked_id, False)
+        db.upsert_user_ml_link(
+            enabled_id,
+            client_id="beta-resync-account",
+            nickname="Conta Segura",
+            slot_number=1,
+        )
+
+        synced = []
+        original_sync = app._sync_beta_access
+        app._sync_beta_access = lambda user: synced.append(user["id"]) or True
+        try:
+            admin_cookie = self._admin_cookie()
+            request = Request(
+                f"{self.base_url}/admin/beta-sync-all",
+                data=b"",
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Cookie": admin_cookie,
+                },
+                method="POST",
+            )
+            opener = self._no_redirect_opener()
+            with self.assertRaises(HTTPError) as raised:
+                opener.open(request, timeout=5)
+            self.assertEqual(raised.exception.code, 302)
+            location = raised.exception.headers.get("Location", "")
+            raised.exception.close()
+        finally:
+            app._sync_beta_access = original_sync
+
+        self.assertTrue({enabled_id, blocked_id}.issubset(set(synced)))
+        self.assertNotIn(implicit_id, synced)
+        self.assertIn("Sincronizacao+beta+concluida", location)
+        self.assertIn("0+falha%28s%29", location)
+
+        with urlopen(Request(
+            f"{self.base_url}/admin",
+            headers={"Cookie": self._admin_cookie()},
+        ), timeout=5) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        self.assertIn("/admin/beta-sync-all", body)
+        self.assertIn("Sincronizar usuarios e contas com o beta", body)
+
     def test_admin_can_allow_and_block_sales_intelligence_access(self):
         user_id = db.upsert_manual_user(
             email="sales-toggle@example.com",

@@ -510,6 +510,9 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
       <input type="text" name="q" value="{_html.escape(query)}" placeholder="Buscar por email ou nome">
       <button type="submit" style="width:auto;display:inline-block;margin-left:8px">Buscar</button>
     </form>
+    <form method="post" action="/admin/beta-sync-all" style="margin:0 0 18px" onsubmit="return confirm('Sincronizar agora os usuarios com regra beta explicita e suas contas Mercado Livre?')">
+      <button type="submit" style="width:auto">Sincronizar usuarios e contas com o beta</button>
+    </form>
     <div style="border:1px solid #d9e1ec;border-radius:12px;padding:16px;margin:18px 0 22px;background:#f8fafc">
       <div style="font-weight:800;font-size:16px;margin-bottom:6px">Liberar acesso manual</div>
       <div style="font-size:13px;color:#667085;margin-bottom:14px">

@@ -696,6 +696,16 @@ def list_users(query: str = "", limit: int = 200):
         conn.close()
 
 
+def list_all_users():
+    """Lista todos os usuarios para operacoes administrativas em lote."""
+    conn = get_conn()
+    try:
+        _expire_overdue_active_users(conn)
+        return conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
+    finally:
+        conn.close()
+
+
 def set_password(user_id: int, password_hash: str):
     conn = get_conn()
     try:
