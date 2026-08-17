@@ -27,7 +27,14 @@ def _sign(body: str, secret: str) -> str:
     return _b64(hmac.new(secret.encode("utf-8"), body.encode("ascii"), hashlib.sha256).digest())
 
 
-def create_assertion(secret: str, user, ml_link, audience: str, now: int | None = None) -> str:
+def create_assertion(
+    secret: str,
+    user,
+    ml_link,
+    audience: str,
+    now: int | None = None,
+    ml_accounts=None,
+) -> str:
     if not secret:
         raise ValueError("ponte beta sem segredo")
     now = int(time.time() if now is None else now)
@@ -48,6 +55,16 @@ def create_assertion(secret: str, user, ml_link, audience: str, now: int | None 
                 if "beta_enabled" not in user.keys() or user["beta_enabled"] is None
                 else bool(user["beta_enabled"])
             ),
+            "sales_enabled": (
+                True
+                if "sales_enabled" not in user.keys() or user["sales_enabled"] is None
+                else bool(user["sales_enabled"])
+            ),
+            "ml_slot_limit": (
+                1
+                if "ml_slot_limit" not in user.keys() or user["ml_slot_limit"] is None
+                else int(user["ml_slot_limit"])
+            ),
             "expires_at": user["expires_at"],
         },
     }
@@ -60,6 +77,21 @@ def create_assertion(secret: str, user, ml_link, audience: str, now: int | None 
             )
             if key in ml_link.keys()
         }
+    if ml_accounts is not None:
+        safe_fields = (
+            "slot_number", "client_id", "ml_user_id", "nickname", "official_store",
+            "advertiser_id", "seller_id", "site_id", "status", "admin_granted",
+            "bound_at", "last_replaced_at", "replacement_locked_until", "created_at",
+            "updated_at", "last_verified_at",
+        )
+        payload["ml_accounts"] = [
+            {
+                key: account[key]
+                for key in safe_fields
+                if key in account.keys()
+            }
+            for account in ml_accounts
+        ]
     body = _b64(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
     return f"{body}.{_sign(body, secret)}"
 

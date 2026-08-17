@@ -1388,11 +1388,14 @@ def _sync_beta_access(user) -> bool:
     if not beta_config.bridge_enabled():
         return False
     audience = f"{beta_config.BETA_PUBLIC_URL}/internal/beta/access-sync"
+    ml_accounts = db.list_active_ml_links_for_user(user["id"])
+    legacy_ml_link = ml_accounts[0] if ml_accounts else None
     assertion = beta_bridge.create_assertion(
         beta_config.BETA_SHARED_AUTH_SECRET,
         user,
-        None,
+        legacy_ml_link,
         audience,
+        ml_accounts=ml_accounts,
     )
     request = Request(
         audience,
@@ -1406,6 +1409,15 @@ def _sync_beta_access(user) -> bool:
         return response.status == 200 and payload.get("ok") is True
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
         return False
+
+
+def _sync_beta_user_if_enabled(user_id: int) -> bool:
+    if beta_config.BETA_MODE:
+        return True
+    user = db.get_user_by_id(user_id)
+    if not user or not bool(user["beta_enabled"]):
+        return True
+    return _sync_beta_access(user)
 
 
 # ------------------ Handler ------------------
@@ -1422,6 +1434,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/healthz":
                 _send_json(self, {"ok": True})
+                return
+            if beta_config.BETA_MODE and (path == "/admin" or path.startswith("/admin/")):
+                target = beta_config.BETA_SHARED_AUTH_URL.rstrip("/") + path
+                if url.query:
+                    target += "?" + url.query
+                _redirect(self, target)
                 return
             if path == "/api/governance/summary":
                 user, _ = _current_user(self)
@@ -1743,6 +1761,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/internal/beta/access-sync":
                 self._post_internal_beta_access_sync()
                 return
+            if beta_config.BETA_MODE and (path == "/admin" or path.startswith("/admin/")):
+                _read_and_discard_body(self)
+                _send_json(self, {"ok": False, "error": "Admin gerenciado no ambiente original."}, 403)
+                return
             if path == "/contas/select":
                 self._post_select_ml_account()
                 return
@@ -1977,7 +1999,13 @@ class Handler(BaseHTTPRequestHandler):
         )
         db.mark_ml_link_state_attached(bridge_state)
         db.log_audit(state_row["user_id"], "ml_link.ok", str(payload.get("client_id") or ""), _client_ip(self))
-        _send_json(self, {"ok": True, "account_id": account_id, "slot": state_row["slot_number"]}, 200)
+        beta_synced = _sync_beta_user_if_enabled(state_row["user_id"])
+        _send_json(self, {
+            "ok": True,
+            "account_id": account_id,
+            "slot": state_row["slot_number"],
+            "beta_synced": beta_synced,
+        }, 200)
 
     def _post_webhook(self):
         if beta_config.BETA_MODE and beta_config.BETA_REJECT_BILLING_WEBHOOKS:
@@ -2174,11 +2202,13 @@ class Handler(BaseHTTPRequestHandler):
         if not _beta_access_allowed(user):
             _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
             return
+        ml_accounts = db.list_active_ml_links_for_user(user["id"])
         assertion = beta_bridge.create_assertion(
             beta_config.BETA_SHARED_AUTH_SECRET,
             user,
-            db.get_active_ml_link_for_user(user["id"]),
+            ml_accounts[0] if ml_accounts else None,
             expected,
+            ml_accounts=ml_accounts,
         )
         _redirect(self, f"{expected}?{urlencode({'assertion': assertion})}")
 
@@ -2199,9 +2229,12 @@ class Handler(BaseHTTPRequestHandler):
             if not db.claim_beta_handoff(payload["nonce"], payload["exp"]):
                 raise ValueError("assertion beta ja utilizada ou expirada")
             user_id = db.upsert_beta_identity(payload["user"])
-            ml_link = payload.get("ml") or {}
-            if ml_link.get("client_id"):
-                db.upsert_user_ml_link(user_id, **ml_link)
+            if "ml_accounts" in payload:
+                db.sync_beta_ml_accounts(user_id, payload.get("ml_accounts") or [])
+            else:
+                ml_link = payload.get("ml") or {}
+                if ml_link.get("client_id"):
+                    db.upsert_user_ml_link(user_id, **ml_link)
             session_token = auth.new_session_token()
             db.create_session(user_id, session_token, _client_ip(self), self.headers.get("User-Agent", "")[:200])
             db.log_audit(user_id, "beta.bridge.login", "identity-only", _client_ip(self))
@@ -2264,6 +2297,7 @@ class Handler(BaseHTTPRequestHandler):
             expires_at=expires_at,
         )
         db.log_audit(user_id, f"admin.manual_access:{days}d", admin["email"], _client_ip(self))
+        _sync_beta_user_if_enabled(user_id)
         _redirect(self, f"/admin?info=Acesso%20manual%20liberado%20por%20{days}%20dias")
 
     def _post_admin_bind_ml_link(self):
@@ -2307,6 +2341,7 @@ class Handler(BaseHTTPRequestHandler):
             allow_replacement=True,
         )
         db.log_audit(user["id"], f"admin.bind_ml_link:{client_id}", admin["email"], _client_ip(self))
+        _sync_beta_user_if_enabled(user["id"])
         _redirect(self, f"/admin?info=Conta%20ML%20vinculada%20com%20sucesso%20para%20{quote(email)}")
 
     def _post_admin_set_ml_slot_limit(self, path: str):
@@ -2327,6 +2362,7 @@ class Handler(BaseHTTPRequestHandler):
             _send_html(self, templates.render_error_page(str(exc)), 400)
             return
         db.log_audit(user_id, f"admin.ml_slot_limit:{slot_limit}", admin["email"], _client_ip(self))
+        _sync_beta_user_if_enabled(user_id)
         _redirect(self, f"/admin?info=Limite%20de%20contas%20alterado%20para%20{slot_limit}")
 
     def _post_admin_grant_access(self, path: str):
@@ -2351,6 +2387,7 @@ class Handler(BaseHTTPRequestHandler):
         expires_at = int(time.time()) + (days * 86400)
         db.set_user_access_window(user_id, status="active", expires_at=expires_at)
         db.log_audit(user_id, f"admin.grant_access:{days}d", admin["email"], _client_ip(self))
+        _sync_beta_user_if_enabled(user_id)
         _redirect(self, f"/admin?info=Acesso%20renovado%20por%20{days}%20dias")
 
     def _post_admin_set_status(self, path: str):
@@ -2375,6 +2412,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             db.set_user_status(user_id, new_status)
         db.log_audit(user_id, f"admin.set_status:{new_status}", admin["email"], _client_ip(self))
+        _sync_beta_user_if_enabled(user_id)
         _redirect(self, f"/admin?info=Status%20alterado%20para%20{new_status}")
 
     def _post_admin_set_beta_access(self, path: str):
@@ -2428,6 +2466,7 @@ class Handler(BaseHTTPRequestHandler):
         db.set_user_sales_access(user_id, enabled)
         action = "liberada" if enabled else "bloqueada"
         db.log_audit(user_id, f"admin.sales_access:{action}", admin["email"], _client_ip(self))
+        _sync_beta_user_if_enabled(user_id)
         _redirect(self, "/admin?" + urlencode({"info": f"Inteligencia de Vendas {action} com sucesso"}))
 
     def _post_internal_beta_access_sync(self):
@@ -2449,11 +2488,23 @@ class Handler(BaseHTTPRequestHandler):
             if not db.claim_beta_handoff(payload["nonce"], payload["exp"]):
                 raise ValueError("sincronizacao beta repetida ou expirada")
             user_id = db.upsert_beta_identity(payload["user"])
+            account_count = 0
+            if "ml_accounts" in payload:
+                account_count = db.sync_beta_ml_accounts(user_id, payload.get("ml_accounts") or [])
+            else:
+                ml_link = payload.get("ml") or {}
+                if ml_link.get("client_id"):
+                    db.upsert_user_ml_link(user_id, **ml_link)
+                    account_count = 1
             if not beta_enabled:
                 db.delete_user_sessions(user_id)
             action = "liberado" if beta_enabled else "bloqueado"
             db.log_audit(user_id, f"beta.access_sync:{action}", "signed-bridge", _client_ip(self))
-            _send_json(self, {"ok": True, "beta_enabled": bool(beta_enabled)})
+            _send_json(self, {
+                "ok": True,
+                "beta_enabled": bool(beta_enabled),
+                "account_count": account_count,
+            })
         except (ValueError, KeyError, TypeError) as exc:
             _send_json(self, {"ok": False, "message": str(exc)}, 400)
 
