@@ -93,6 +93,8 @@ class OnlinePeriodTests(unittest.TestCase):
                 ],
             },
             "sales": {
+                "date_from": "2026-08-04",
+                "date_to": "2026-08-10",
                 "items": {
                     "MLB5399002228": {"revenue_total": 500, "orders_count": 4, "units_total": 5},
                     "MLB6689184622": {"revenue_total": 631.84, "orders_count": 1, "units_total": 8},
@@ -160,13 +162,17 @@ class OnlinePeriodTests(unittest.TestCase):
                     "units_quantity": 5,
                 }],
             },
-            "sales": {"items": {"MLB5364060738": {
-                "revenue_total": 388.70,
-                "orders_count": 13,
-                "units_total": 13,
-                "last_sale_date": "2026-08-11T12:00:00-03:00",
-                "last_price": 29.90,
-            }}},
+            "sales": {
+                "date_from": "2026-08-07",
+                "date_to": "2026-08-13",
+                "items": {"MLB5364060738": {
+                    "revenue_total": 388.70,
+                    "orders_count": 13,
+                    "units_total": 13,
+                    "last_sale_date": "2026-08-11T12:00:00-03:00",
+                    "last_price": 29.90,
+                }},
+            },
         }
         daily_payload = {
             "ok": True,
@@ -319,7 +325,11 @@ class OnlinePeriodTests(unittest.TestCase):
                     "price": "100",
                 }],
             },
-            "sales": {"items": {"MLB123": {"revenue_total": "120", "units_total": "2"}}},
+            "sales": {
+                "date_from": "2026-07-24",
+                "date_to": "2026-07-30",
+                "items": {"MLB123": {"revenue_total": "120", "units_total": "2"}},
+            },
         }
 
         def fake_fetch(path, params):
@@ -393,6 +403,39 @@ class OnlinePeriodTests(unittest.TestCase):
                 "/internal/dash-ads/online-cache-latest",
             ],
         )
+
+    def test_online_builder_rejects_ads_from_a_different_period(self):
+        mixed_payload = {
+            "ok": True,
+            "period_cache_hit": True,
+            "latest": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": "2026-07-19",
+                "date_to": "2026-08-17",
+                "items": [{"item_id": "MLB1", "cost": 15123.85, "total_amount": 103081.91}],
+            },
+            "sales": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "items": {"MLB1": {"revenue_total": 51234.19}},
+            },
+        }
+
+        with patch.object(app, "_fetch_dash_ads_json", return_value=mixed_payload):
+            data, message = app._build_online_dashboard_data(
+                "varietyshop1",
+                "adv-1",
+                "2026-08-11",
+                "2026-08-17",
+                {"dateFrom": "2026-08-11", "dateTo": "2026-08-17"},
+            )
+
+        self.assertIsNone(data)
+        self.assertIn("fora do periodo", message)
 
     def test_online_builder_reports_pending_while_period_refresh_runs(self):
         stale_payload = {
@@ -540,14 +583,18 @@ class OnlinePeriodTests(unittest.TestCase):
                 "clicks": "5",
             }],
         },
-        "sales": {"items": {
-            "MLB123": {
-                "revenue_total": "120",
-                "units_total": "2",
-                "sku": "SKU-123",
-                "title": "Produto teste",
-            }
-        }},
+        "sales": {
+            "date_from": "2026-07-03",
+            "date_to": "2026-08-01",
+            "items": {
+                "MLB123": {
+                    "revenue_total": "120",
+                    "units_total": "2",
+                    "sku": "SKU-123",
+                    "title": "Produto teste",
+                }
+            },
+        },
         }
         calls = []
 
