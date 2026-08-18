@@ -1212,6 +1212,8 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     if not latest_payload:
         return None, message
 
+    sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
+    sales_items = sales.get("items") if isinstance(sales.get("items"), dict) else {}
     item_meta = _sales_intelligence_collect_item_meta(latest_payload)
     daily_rows, daily_error = _sales_intelligence_fetch_daily_sales(
         client_id,
@@ -1219,12 +1221,14 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
         period["dateTo"],
     )
     if daily_error:
-        return None, (
-            "Nao foi possivel ler os snapshots diarios de vendas agora. "
-            "A coleta continua em segundo plano; tente novamente em alguns minutos. "
-            f"Detalhe tecnico: {daily_error}."
-        )
+        daily_rows = []
     if not item_meta and not daily_rows:
+        if daily_error:
+            return None, (
+                "Nao foi possivel ler os snapshots diarios de vendas agora. "
+                "A coleta continua em segundo plano; tente novamente em alguns minutos. "
+                f"Detalhe tecnico: {daily_error}."
+            )
         return {
             "clientName": link["official_store"] or link["nickname"] or client_id or (user["name"] or user["email"]),
             "pageSubtitle": "Leitura online beta da conta vinculada. Nenhuma venda encontrada na janela carregada.",
@@ -1239,10 +1243,24 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
             "noSalesRejected": {},
         }, ""
     if not daily_rows and item_meta:
-        return None, (
-            "O cache agregado possui vendas, mas os snapshots diarios ainda nao estao disponiveis "
-            "para esta janela. A coleta continua em segundo plano; tente novamente em alguns minutos."
-        )
+        for code, meta in item_meta.items():
+            sale = sales_items.get(code) if isinstance(sales_items.get(code), dict) else {}
+            qty = max(0, int(_number(sale.get("units_total"))))
+            gross = _number(sale.get("revenue_total"))
+            if qty <= 0 and gross <= 0:
+                continue
+            raw_date = str(sale.get("last_sale_date") or "").strip()
+            snapshot_date = raw_date[:10] if len(raw_date) >= 10 else period["dateTo"]
+            daily_rows.append({
+                "item_id": code,
+                "snapshot_date": snapshot_date,
+                "orders_count": max(0, int(_number(sale.get("orders_count")))),
+                "units_total": qty,
+                "revenue_total": gross,
+                "fallback_aggregate": True,
+                "sku": str(meta.get("sku") or code).strip(),
+                "title": str(meta.get("title") or "").strip(),
+            })
     sales_rows = []
     import_id = f"online:{client_id}:{period['dateFrom']}:{period['dateTo']}"
     row_number = 0
@@ -1312,7 +1330,10 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     online_notice = (
         f"Base online carregada via OAuth/cache para {client_label}. Cobertura inicial: {period['dateFrom']} ate {period['dateTo']}."
     )
-    online_notice += " Fonte: snapshots diarios persistidos; a abertura da pagina nao refaz a busca de pedidos no Mercado Livre."
+    if any(daily.get("fallback_aggregate") for daily in daily_rows):
+        online_notice += " Fonte: cache agregado da conta usado como fallback porque os snapshots diarios ainda nao estavam disponiveis."
+    else:
+        online_notice += " Fonte: snapshots diarios persistidos; a abertura da pagina nao refaz a busca de pedidos no Mercado Livre."
     return {
         "clientName": client_label,
         "pageSubtitle": "Leitura online beta da conta vinculada. O upload manual continua disponivel para validacao e historico completo.",
@@ -1600,6 +1621,9 @@ class Handler(BaseHTTPRequestHandler):
                             ),
                             202,
                         )
+                        return
+                    elif message:
+                        _send_html(self, templates.render_error_page(message), 503)
                         return
                 _send_html(self, html)
                 return

@@ -662,7 +662,7 @@
     const DB_NAME = 'un_clic_marketplace_intelligence_v1';
     const DB_VERSION = 1;
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
-    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardWindow: '30d', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
+    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardWindow: '30d', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
 
     const $ = (id) => document.getElementById(id);
@@ -1071,7 +1071,8 @@
       }
       const prevNote = wnd.previousLabel ? ` | Comparativo: <strong>${wnd.previousLabel}</strong>` : '';
       const modeNote = state.reportWindow === 'monthtd' ? ' | Regra: mes atual fechado ate ontem e comparado com o mesmo trecho do mes anterior.' : '';
-      target.innerHTML = `Periodo global ativo: <strong>${wnd.label}</strong>${prevNote}${baseNote}${searchNote}${modeNote}. Todas as abas usam esta janela ate voce alterar.`;
+      const onlineNote = state.onlineNotice ? `<br><strong>Fonte online:</strong> ${esc(state.onlineNotice)}` : '';
+      target.innerHTML = `Periodo global ativo: <strong>${wnd.label}</strong>${prevNote}${baseNote}${searchNote}${modeNote}. Todas as abas usam esta janela ate voce alterar.${onlineNote}`;
     }
 
     function setDashboardWindow(win) {
@@ -3136,7 +3137,7 @@
 
     window.__marketplaceApp = {
       getState: () => state,
-      setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku = {}, profitTaxRate = 0, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {} }) => {
+      setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku = {}, profitTaxRate = 0, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
         state.sales = (sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
         state.imports = imports;
         state.events = events;
@@ -3153,6 +3154,7 @@
         state.globalSearchScope = globalSearchScope === 'title' ? 'title' : 'code';
         state.globalSearch = String(globalSearch || '');
         state.noSalesRejected = noSalesRejected && typeof noSalesRejected === 'object' ? noSalesRejected : {};
+        state.onlineNotice = String(onlineNotice || '');
         syncDerivedWindowsFromReport();
         if ($('profitTaxInput')) $('profitTaxInput').value = String(state.profitTaxRate);
         if ($('profitDateStart')) $('profitDateStart').value = state.profitDateStart;

@@ -482,10 +482,11 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(data["sales"][0]["productRevenue"], 150)
         self.assertEqual(data["sales"][0]["sku"], "SKU-123")
 
-    def test_sales_intelligence_does_not_mask_daily_snapshot_failure_as_empty_base(self):
+    def test_sales_intelligence_falls_back_to_aggregate_cache_when_daily_snapshot_fails(self):
         latest = {
             "sales": {"items": {"MLB123": {
-                "sku": "SKU-123", "units_total": 1, "revenue_total": 50,
+                "sku": "SKU-123", "title": "Produto teste", "units_total": 1, "revenue_total": 50,
+                "orders_count": 1, "last_sale_date": "2026-08-10T12:00:00-03:00",
             }}},
             "ads": {"items": []},
         }
@@ -496,9 +497,13 @@ class OnlinePeriodTests(unittest.TestCase):
              patch.object(app, "_sales_intelligence_fetch_daily_sales", return_value=([], "worker_timeout")):
             data, message = app._build_sales_intelligence_memory_data(user, link)
 
-        self.assertIsNone(data)
-        self.assertIn("snapshots diarios", message)
-        self.assertIn("worker_timeout", message)
+        self.assertEqual(message, "")
+        self.assertEqual(len(data["sales"]), 1)
+        self.assertEqual(data["sales"][0]["ordersCount"], 1)
+        self.assertEqual(data["sales"][0]["units"], 1)
+        self.assertEqual(data["sales"][0]["productRevenue"], 50)
+        self.assertEqual(data["sales"][0]["sku"], "SKU-123")
+        self.assertIn("fallback", data["onlineNotice"].lower())
 
     def test_sales_intelligence_asset_counts_aggregated_daily_orders(self):
         source = Path(__file__).with_name("assets").joinpath("inteligencia-vendas-marketplace.html").read_text(encoding="utf-8")
