@@ -595,6 +595,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         period_cache_hit
         and latest_date_from == requested_from
         and latest_date_to == requested_to
+        and ads.get("date_from") == requested_from
+        and ads.get("date_to") == requested_to
+        and sales.get("date_from") == requested_from
+        and sales.get("date_to") == requested_to
     )
     refresh_payload = {}
     if not period_match and requested_from and requested_to:
@@ -618,6 +622,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         period_cache_hit
         and latest_date_from == requested_from
         and latest_date_to == requested_to
+        and ads.get("date_from") == requested_from
+        and ads.get("date_to") == requested_to
+        and sales.get("date_from") == requested_from
+        and sales.get("date_to") == requested_to
     )
     if not period_match:
         refresh_running = refresh_payload.get("ok") and refresh_payload.get("status") == "running"
