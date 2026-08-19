@@ -645,6 +645,49 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     if not ads_rows:
         return None, "Ainda nao existem dados de publicidade em cache para esta conta. Aguarde a coleta online e tente novamente."
     ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
+    # O cache de Ads pode conter uma janela/estado antigo mesmo quando a
+    # metadada do snapshot bate com o periodo solicitado. Nunca renderizar
+    # receita Ads maior que o faturamento bruto: tentar a reconciliacao
+    # oficial apenas nesse caso, mantendo o caminho normal intacto.
+    cached_sales_revenue = sum(
+        _number(value.get("revenue_total"))
+        for value in sales_by_item.values()
+        if isinstance(value, dict)
+    )
+    cached_ads_revenue = sum(
+        _number(value.get("total_amount"))
+        for value in ads_rows
+        if isinstance(value, dict)
+    )
+    sales_complete = bool((latest.get("sales") or {}).get("complete"))
+    if sales_complete:
+        if cached_sales_revenue > 0 and cached_ads_revenue > cached_sales_revenue + 0.01:
+            reconciliation = _fetch_dash_ads_json(
+                "/internal/dash-ads/ads-api-reconciliacao",
+                {"client": client, "advertiser_id": advertiser_id, **period_params},
+            )
+            reconciliation_from = str(reconciliation.get("date_from") or "")
+            reconciliation_to = str(reconciliation.get("date_to") or "")
+            reconciled_rows = reconciliation.get("items") if isinstance(reconciliation.get("items"), list) else []
+            reconciled_ads_revenue = sum(
+                _number(value.get("total_amount"))
+                for value in reconciled_rows
+                if isinstance(value, dict)
+            )
+            if (
+                reconciliation.get("ok")
+                and reconciled_rows
+                and reconciliation_from == requested_from
+                and reconciliation_to == requested_to
+                and reconciled_ads_revenue <= cached_sales_revenue + 0.01
+            ):
+                ads_rows = reconciled_rows
+                ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
+            else:
+                return None, (
+                    "Cache online inconsistente: a receita atribuida por Ads supera o faturamento bruto "
+                    "do periodo. A reconciliacao oficial ainda nao confirmou os dados; tente novamente."
+                )
     daily_sales_rows, daily_sales_error = _sales_intelligence_fetch_daily_sales(
         client,
         latest_date_from,
