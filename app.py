@@ -594,9 +594,20 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     sales_complete = bool((latest.get("sales") or {}).get("complete"))
     if sales_complete:
         if cached_sales_revenue > 0 and cached_ads_revenue > cached_sales_revenue + 0.01:
+            reconciliation_item_ids = sorted({
+                _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
+                for raw in ads_rows
+                if isinstance(raw, dict)
+                and _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
+            })
             reconciliation = _fetch_dash_ads_json(
                 "/internal/dash-ads/ads-api-reconciliacao",
-                {"client": client, "advertiser_id": advertiser_id, **period_params},
+                {
+                    "client": client,
+                    "advertiser_id": advertiser_id,
+                    "items": ",".join(reconciliation_item_ids),
+                    **period_params,
+                },
             )
             reconciliation_from = str(reconciliation.get("date_from") or "")
             reconciliation_to = str(reconciliation.get("date_to") or "")
