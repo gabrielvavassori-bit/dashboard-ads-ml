@@ -1603,11 +1603,13 @@ def render_dashboard(data):
     .chart-hit {{ fill:transparent; cursor:crosshair; }}
     .chart-hit:hover + .chart-hover-line {{ opacity:1; }}
     .chart-hover-line {{ opacity:0; stroke:#98a2b3; stroke-width:1; stroke-dasharray:3 3; pointer-events:none; }}
-    .chart-tooltip {{ position:absolute; z-index:4; min-width:170px; max-width:220px; padding:10px 12px; border:1px solid #d0d5dd; border-radius:10px; background:rgba(255,255,255,.98); box-shadow:0 12px 26px rgba(16,24,40,.18); color:#101828; font-size:12px; line-height:1.45; pointer-events:none; opacity:0; transform:translate(-50%,-108%); transition:opacity .12s ease; }}
+    .chart-tooltip {{ position:absolute; z-index:4; min-width:170px; max-width:220px; padding:10px 12px; border:1px solid #d0d5dd; border-radius:10px; background:rgba(255,255,255,.98); box-shadow:0 12px 26px rgba(16,24,40,.18); color:#101828; font-size:12px; line-height:1.45; pointer-events:none; opacity:0; transform:translateX(-50%); transition:opacity .12s ease; }}
     .chart-tooltip.visible {{ opacity:1; }}
     .chart-tooltip b {{ display:block; margin-bottom:4px; font-size:13px; }}
     .chart-tooltip-row {{ display:flex; justify-content:space-between; gap:14px; }}
     .chart-tooltip-row.active {{ color:#175cd3; font-weight:800; }}
+    .chart-extreme-label {{ fill:#b42318; font-size:10px; font-weight:900; }}
+    .chart-extreme-marker {{ fill:#d92d20; stroke:#fff; stroke-width:1.5; }}
     .campaign-config-grid {{ display:grid; grid-template-columns:repeat(4,minmax(145px,1fr)); gap:8px; margin:0 0 12px; }}
     .campaign-config-card {{ border:1px solid #dbe5f5; border-radius:10px; padding:9px 11px; background:#f8fbff; }}
     .campaign-config-card span {{ display:block; color:#667085; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }}
@@ -2507,6 +2509,7 @@ def render_dashboard(data):
       }});
     }}
     function chartScale(values, metric) {{
+      if (metric === 'tacos') return {{min:0, max:.15}};
       const finite = values.filter(value => Number.isFinite(value));
       if (!finite.length) return {{min:0, max:1}};
       const rawMin = Math.min(...finite);
@@ -2549,21 +2552,26 @@ def render_dashboard(data):
         canvas.innerHTML = '<div class="muted" style="padding:28px">O snapshot ainda nao possui preco diario suficiente para esta visualizacao.</div>';
         return;
       }}
-      const width = 1040, height = 280, left = 76, right = 28, top = 22, bottom = 52;
+      const width = 1040, height = metric === 'tacos' ? 360 : 300, left = 76, right = 28, top = 48, bottom = 52;
       const chartW = width - left - right, chartH = height - top - bottom;
       const scale = chartScale(reference > 0 ? [...values, reference] : values, metric);
       const range = Math.max(.0001, scale.max - scale.min);
       const step = chartW / Math.max(rows.length, 1);
       const x = index => left + step * index + step / 2;
-      const y = value => top + chartH - ((Number(value) - scale.min) / range * chartH);
-      const ticks = Array.from({{length:5}}, (_, index) => scale.min + ((scale.max - scale.min) * index / 4));
+      const plottedValue = value => metric === 'tacos'
+        ? Math.min(scale.max, Math.max(scale.min, Number(value)))
+        : Number(value);
+      const y = value => top + chartH - ((plottedValue(value) - scale.min) / range * chartH);
+      const ticks = metric === 'tacos'
+        ? Array.from({{length:16}}, (_, index) => index / 100)
+        : Array.from({{length:5}}, (_, index) => scale.min + ((scale.max - scale.min) * index / 4));
       const grid = ticks.map(value => `<g><line class="chart-grid" x1="${{left}}" y1="${{y(value).toFixed(1)}}" x2="${{width-right}}" y2="${{y(value).toFixed(1)}}"/><text class="chart-axis" x="${{left-12}}" y="${{(y(value)+4).toFixed(1)}}" text-anchor="end">${{safe(config.format(value))}}</text></g>`).join('');
       const averageY = y(average).toFixed(1);
-      const averageLine = `<line class="chart-average-line" x1="${{left}}" y1="${{averageY}}" x2="${{width-right}}" y2="${{averageY}}"/><text class="chart-average-label" x="${{width-right-4}}" y="${{Math.max(top+12, Number(averageY)-7).toFixed(1)}}" text-anchor="end">${{safe(summaryLabel)}} ${{safe(config.format(average))}}</text>`;
+      const averageLine = `<line class="chart-average-line" x1="${{left}}" y1="${{averageY}}" x2="${{width-right}}" y2="${{averageY}}"/><text class="chart-average-label" x="${{width-right-4}}" y="22" text-anchor="end">${{safe(summaryLabel)}} ${{safe(config.format(average))}}</text>`;
       const referenceY = reference > 0 ? y(reference).toFixed(1) : '';
       const referenceLabel = metric === 'roas' ? 'Meta ROAS' : 'Orcamento medio diario';
       const referenceLine = reference > 0
-        ? `<line class="chart-reference-line" x1="${{left}}" y1="${{referenceY}}" x2="${{width-right}}" y2="${{referenceY}}"/><text class="chart-reference-label" x="${{left+4}}" y="${{Math.max(top+12, Number(referenceY)-7).toFixed(1)}}">${{safe(referenceLabel)}} ${{safe(config.format(reference))}}</text>`
+        ? `<line class="chart-reference-line" x1="${{left}}" y1="${{referenceY}}" x2="${{width-right}}" y2="${{referenceY}}"/><text class="chart-reference-label" x="${{left+4}}" y="22">${{safe(referenceLabel)}} ${{safe(config.format(reference))}}</text>`
         : '';
       const labelEvery = Math.max(1, Math.ceil(rows.length / 9));
       const xLabels = rows.map((row,index) => (index % labelEvery === 0 || index === rows.length - 1) ? `<text class="chart-axis" x="${{x(index).toFixed(1)}}" y="${{height-18}}" text-anchor="middle">${{safe(chartDateLabel(row.date))}}</text>` : '').join('');
@@ -2578,10 +2586,16 @@ def render_dashboard(data):
       const path = smoothChartPath(points);
       const area = lineOnly && path ? `${{path}} L ${{x(rows.length-1).toFixed(1)}} ${{(top+chartH).toFixed(1)}} L ${{x(0).toFixed(1)}} ${{(top+chartH).toFixed(1)}} Z` : '';
       const dots = lineOnly ? points.map(point => `<circle cx="${{point[0].toFixed(1)}}" cy="${{point[1].toFixed(1)}}" r="4" fill="#fff" stroke="${{config.color}}" stroke-width="2"/>`).join('') : '';
+      const extremes = metric === 'tacos' ? rows.map((row,index) => {{
+        const actual = Number(row.tacos || 0);
+        if (actual <= scale.max) return '';
+        const pointX = x(index).toFixed(1);
+        return `<g><path class="chart-extreme-marker" d="M ${{pointX}} ${{top-2}} l -6 -9 h 12 Z"/><text class="chart-extreme-label" x="${{pointX}}" y="${{top-16}}" text-anchor="middle">${{safe(config.format(actual))}}</text></g>`;
+      }}).join('') : '';
       const hitWidth = Math.max(12, step);
       const hits = rows.map((row,index) => `<g><rect class="chart-hit" data-chart-index="${{index}}" x="${{(x(index)-hitWidth/2).toFixed(1)}}" y="${{top}}" width="${{hitWidth.toFixed(1)}}" height="${{chartH}}"/><line class="chart-hover-line" x1="${{x(index).toFixed(1)}}" y1="${{top}}" x2="${{x(index).toFixed(1)}}" y2="${{top+chartH}}"/></g>`).join('');
       canvas.innerHTML = `<svg class="daily-chart" viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="${{safe(config.label)}} por dia">
-        ${{grid}}${{averageLine}}${{referenceLine}}${{area ? `<path d="${{area}}" fill="${{config.color}}" fill-opacity=".10"/>` : ''}}${{bars}}<path d="${{path}}" fill="none" stroke="${{config.color}}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>${{dots}}${{hits}}${{xLabels}}
+        ${{grid}}${{averageLine}}${{referenceLine}}${{area ? `<path d="${{area}}" fill="${{config.color}}" fill-opacity=".10"/>` : ''}}${{bars}}<path d="${{path}}" fill="none" stroke="${{config.color}}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>${{dots}}${{extremes}}${{hits}}${{xLabels}}
       </svg>`;
       const tooltip = root.querySelector('.chart-tooltip');
       root.querySelectorAll('[data-chart-index]').forEach(hit => {{
@@ -2605,9 +2619,10 @@ def render_dashboard(data):
         <div class="chart-tooltip-row ${{metric === 'orders' ? 'active' : ''}}"><span>Pedidos</span><span>${{num(Number(row.orders || 0))}}</span></div>
         <div class="chart-tooltip-row ${{metric === 'price' ? 'active' : ''}}"><span>Preco medio</span><span>${{safe(priceText)}}</span></div>`;
       const relativeX = hitRect.left - stageRect.left + hitRect.width / 2;
-      tooltip.style.left = `${{Math.max(92, Math.min(stageRect.width - 92, relativeX))}}px`;
-      tooltip.style.top = `${{Math.max(88, hitRect.top - stageRect.top + 8)}}px`;
       tooltip.classList.add('visible');
+      const halfWidth = tooltip.getBoundingClientRect().width / 2;
+      tooltip.style.left = `${{Math.max(halfWidth + 8, Math.min(stageRect.width - halfWidth - 8, relativeX))}}px`;
+      tooltip.style.top = '10px';
     }}
     function activateDailyCharts() {{
       document.querySelectorAll('[data-daily-chart]').forEach(root => {{
