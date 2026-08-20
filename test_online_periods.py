@@ -147,6 +147,7 @@ class OnlinePeriodTests(unittest.TestCase):
                 "date_to": "2026-08-13",
                 "items": [{
                     "item_id": "MLB5364060738",
+                    "campaign_id": "CAMP-1",
                     "sku": "BA00463",
                     "title": "Kit Espatulas",
                     "price": 34.90,
@@ -162,6 +163,12 @@ class OnlinePeriodTests(unittest.TestCase):
                     "units_quantity": 5,
                 }],
             },
+            "campaigns": {"campaigns": [{
+                "campaign_id": "CAMP-1",
+                "campaign_budget": 50,
+                "target_roas": 12,
+                "observed_fields": ["campaign_budget", "target_roas"],
+            }]},
             "sales": {
                 "date_from": "2026-08-07",
                 "date_to": "2026-08-13",
@@ -182,9 +189,22 @@ class OnlinePeriodTests(unittest.TestCase):
                 {"item_id": "MLB5364060738", "snapshot_date": "2026-08-13", "orders_count": 0, "units_total": 0, "revenue_total": 0},
             ],
         }
+        daily_ads_payload = {
+            "ok": True,
+            "rows": [{
+                "item_id": "MLB5364060738", "snapshot_date": "2026-08-11",
+                "campaign_id": "CAMP-1", "cost": 10, "total_amount": 50,
+                "direct_amount": 40, "indirect_amount": 10,
+                "prints": 100, "clicks": 5, "units_quantity": 2,
+            }],
+        }
 
         def fetch(path, params=None):
-            return daily_payload if path == "/internal/dash-ads/sales-daily" else latest_payload
+            if path == "/internal/dash-ads/sales-daily":
+                return daily_payload
+            if path == "/internal/dash-ads/ads-daily":
+                return daily_ads_payload
+            return latest_payload
 
         with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
             data, error = app._build_online_dashboard_data(
@@ -202,16 +222,30 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(item["logisticType"], "fulfillment")
         self.assertTrue(item["freeShipping"])
         self.assertTrue(item["fastShipping"])
+        self.assertEqual(item["campaignBudget"], 50)
+        self.assertEqual(item["campaignTargetRoas"], 12)
         self.assertEqual([row["date"] for row in item["dailySeries"]], ["2026-08-11", "2026-08-12", "2026-08-13"])
+        self.assertEqual(item["dailySeries"][0]["adsRevenue"], 50)
+        self.assertEqual(item["dailySeries"][0]["investment"], 10)
+        self.assertEqual(item["dailySeries"][0]["tacosBaseRevenue"], 39.90)
 
         html = render_dashboard(data)
         self.assertIn("Vendas diarias do periodo", html)
         self.assertIn('data-chart-metric="revenue"', html)
+        self.assertIn('data-chart-metric="adsRevenue"', html)
+        self.assertIn('data-chart-metric="investment"', html)
+        self.assertIn('data-chart-metric="roas"', html)
+        self.assertIn('data-chart-metric="tacos"', html)
         self.assertIn('data-chart-metric="units"', html)
         self.assertIn('data-chart-metric="orders"', html)
         self.assertIn('data-chart-metric="price"', html)
         self.assertIn("chart-average-line", html)
         self.assertIn("Media do periodo", html)
+        self.assertIn("Orcamento medio diario", html)
+        self.assertIn("ROAS objetivo", html)
+        self.assertIn("ROAS realizado", html)
+        self.assertIn("TACOS realizado", html)
+        self.assertIn("chart-reference-line", html)
         self.assertIn("Frete gratis e rapido", html)
         self.assertIn("Frete por conta do comprador", html)
         self.assertIn("Condicao comercial do anuncio", html)

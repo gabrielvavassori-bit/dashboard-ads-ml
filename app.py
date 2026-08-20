@@ -640,6 +640,13 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             f"{latest_date_to or 'sem data'}). Solicitado {requested_from or 'sem data'} a "
             f"{requested_to or 'sem data'}. Atualize a coleta online e tente novamente."
         )
+    campaigns = latest_payload.get("campaigns") if isinstance(latest_payload.get("campaigns"), dict) else {}
+    campaign_rows = campaigns.get("campaigns") if isinstance(campaigns.get("campaigns"), list) else []
+    campaign_config_by_id = {
+        str(row.get("campaign_id") or row.get("id") or "").strip(): row
+        for row in campaign_rows
+        if isinstance(row, dict) and str(row.get("campaign_id") or row.get("id") or "").strip()
+    }
     ads_rows = ads.get("items") if isinstance(ads.get("items"), list) else []
     sales_by_item = sales.get("items") if isinstance(sales.get("items"), dict) else {}
     if not ads_rows:
@@ -704,22 +711,59 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         latest_date_from,
         latest_date_to,
     )
-    daily_sales_by_item: dict[str, list[dict]] = {}
+    daily_ads_rows, daily_ads_error = _sales_intelligence_fetch_daily_ads(
+        client,
+        latest_date_from,
+        latest_date_to,
+    )
+    daily_by_item_date: dict[str, dict[str, dict]] = {}
     for daily_raw in daily_sales_rows:
         daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
         snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
         if not daily_code or not snapshot_date:
             continue
-        daily_sales_by_item.setdefault(daily_code, []).append({
+        daily_by_item_date.setdefault(daily_code, {})[snapshot_date] = {
             "date": snapshot_date,
             "orders": _number(daily_raw.get("orders_count")),
             "units": _number(daily_raw.get("units_total")),
             "revenue": _number(daily_raw.get("revenue_total")),
             "lastSaleDate": str(daily_raw.get("last_sale_date") or "").strip(),
             "lastSalePrice": _number(daily_raw.get("last_price")),
+            "adsRevenue": 0.0,
+            "adsDirectRevenue": 0.0,
+            "adsIndirectRevenue": 0.0,
+            "investment": 0.0,
+            "impressions": 0.0,
+            "clicks": 0.0,
+            "adsUnits": 0.0,
+        }
+    for daily_raw in daily_ads_rows:
+        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
+        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
+        if not daily_code or not snapshot_date:
+            continue
+        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
+            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
+            "lastSaleDate": "", "lastSalePrice": 0.0,
         })
-    for daily_series in daily_sales_by_item.values():
-        daily_series.sort(key=lambda row: row["date"])
+        daily.update({
+            "adsRevenue": _number(daily_raw.get("total_amount")),
+            "adsDirectRevenue": _number(daily_raw.get("direct_amount")),
+            "adsIndirectRevenue": _number(daily_raw.get("indirect_amount")),
+            "investment": _number(daily_raw.get("cost")),
+            "impressions": _number(daily_raw.get("prints")),
+            "clicks": _number(daily_raw.get("clicks")),
+            "adsUnits": _number(daily_raw.get("units_quantity")),
+        })
+    daily_series_by_item: dict[str, list[dict]] = {}
+    for daily_code, daily_by_date in daily_by_item_date.items():
+        daily_series = []
+        for daily in daily_by_date.values():
+            daily["tacosBaseRevenue"] = _number(daily.get("revenue")) + max(
+                0.0, _number(daily.get("adsIndirectRevenue"))
+            )
+            daily_series.append(daily)
+        daily_series_by_item[daily_code] = sorted(daily_series, key=lambda row: row["date"])
     ads_codes = {
         _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
         for raw in ads_rows
@@ -771,6 +815,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         organic_revenue = max(0.0, total_revenue - ads_direct_revenue)
         tacos_base = organic_revenue + ads_direct_revenue + ads_indirect_revenue
         campaign_id = str(raw.get("campaign_id") or "").strip()
+        campaign_config = campaign_config_by_id.get(campaign_id, {})
+        campaign_observed = set(campaign_config.get("observed_fields") or [])
         campaign_name = str(
             raw.get("campaign_name") or raw.get("campaign_title") or raw.get("campaign") or ""
         ).strip()
@@ -826,7 +872,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "priceChangePct": price_change_pct,
             "suggestedTestPrice": suggested_test_price,
             "pricingSignal": pricing_signal,
-            "dailySeries": daily_sales_by_item.get(code, []),
+            "dailySeries": daily_series_by_item.get(code, []),
             "listingTypeId": str(raw.get("listing_type_id") or raw.get("listingTypeId") or "").strip(),
             "logisticType": str(raw.get("logistic_type") or shipping.get("logistic_type") or "").strip(),
             "freeShipping": bool(free_shipping) if free_shipping is not None else None,
@@ -855,6 +901,14 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "campaign": campaign_label,
             "campaignId": campaign_id,
             "campaignName": campaign_name,
+            "campaignBudget": (
+                _number(campaign_config.get("campaign_budget"))
+                if "campaign_budget" in campaign_observed else None
+            ),
+            "campaignTargetRoas": (
+                _number(campaign_config.get("target_roas"))
+                if "target_roas" in campaign_observed else None
+            ),
             "adsCampaigns": f"Campanha {campaign_id}" if campaign_id else "",
             "campaignStatus": campaign_status,
             "userProductId": str(raw.get("user_product_id") or raw.get("userProductId") or "").strip(),
@@ -966,6 +1020,11 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 "source": "agente-ml / sales-daily",
                 "available": not bool(daily_sales_error),
                 "error": daily_sales_error,
+            },
+            "dailyAds": {
+                "source": "agente-ml / ads-daily",
+                "available": not bool(daily_ads_error),
+                "error": daily_ads_error,
             },
         },
         "items": sorted(items, key=lambda item: (-item["investment"], -item["totalRevenue"])),
@@ -1325,6 +1384,21 @@ def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: 
     if payload.get("ok") is True:
         return [row for row in rows if isinstance(row, dict)], ""
     return [], str(payload.get("erro") or payload.get("error") or "snapshots_diarios_indisponiveis")
+
+
+def _sales_intelligence_fetch_daily_ads(client: str, date_from: str, date_to: str) -> tuple[list[dict], str]:
+    payload = _fetch_dash_ads_json(
+        "/internal/dash-ads/ads-daily",
+        {
+            "client": client,
+            "date_from": date_from,
+            "date_to": date_to,
+        },
+    )
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    if payload.get("ok") is True:
+        return [row for row in rows if isinstance(row, dict)], ""
+    return [], str(payload.get("erro") or payload.get("error") or "snapshots_diarios_ads_indisponiveis")
 
 
 def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]:
