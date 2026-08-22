@@ -496,6 +496,14 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
               <input type="number" name="slot_limit" value="{int(u.get('ml_slot_limit') or 1)}" min="1" max="5" style="width:58px;padding:6px 8px;border:1px solid #cfd6e4;border-radius:8px">
               <button type="submit">Slots ML</button>
             </form>
+            {f'''<form method="post" action="/admin/users/{u['id']}/impersonate">
+              <input type="hidden" name="return_to" value="/online?confirmed=1">
+              <button type="submit">Acessar Dash Ads</button>
+            </form>
+            <form method="post" action="/admin/users/{u['id']}/impersonate">
+              <input type="hidden" name="return_to" value="/inteligencia-vendas">
+              <button type="submit">Acessar Inteligencia</button>
+            </form>''' if u.get("ml_link_label") else ''}
           </td>
         </tr>""")
 

@@ -99,6 +99,7 @@ GOVERNANCE_HUB_URL = os.environ.get(
 ML_LINK_ATTACH_SECRET = (os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")).strip()
 ONLINE_TZ = ZoneInfo("America/Sao_Paulo")
 ONLINE_CACHE_PENDING_PREFIX = "__ONLINE_CACHE_PENDING__:"
+ADMIN_IMPERSONATION_MAX_AGE = 2 * 60 * 60
 SALES_INTELLIGENCE_HTML = pathlib.Path(__file__).resolve().parent / "assets" / "inteligencia-vendas-marketplace.html"
 
 # Serializa geracoes pesadas para nao estourar memoria em planos pequenos.
@@ -174,6 +175,7 @@ def _parse_multipart(handler):
 
 
 def _send_html(handler, html: str, status: int = 200, set_cookie: str = None):
+    html = _inject_admin_impersonation_banner(handler, html)
     data = html.encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "text/html; charset=utf-8")
@@ -215,6 +217,32 @@ def _read_and_discard_body(handler):
 
 def _absolute_app_url(path: str) -> str:
     return f"{APP_PUBLIC_URL.rstrip('/')}{path}"
+
+
+def _inject_admin_impersonation_banner(handler, page_html: str) -> str:
+    if urlparse(getattr(handler, "path", "")).path.startswith("/admin"):
+        return page_html
+    token = _get_cookies(handler).get(auth.SESSION_COOKIE)
+    session = db.get_session(token) if token else None
+    if not session or not session["impersonated_by_admin"]:
+        return page_html
+    client = _html.escape(session["name"] or session["email"] or "cliente")
+    email = _html.escape(session["email"] or "")
+    banner = f"""
+    <div style="position:sticky;top:0;z-index:2147483647;background:#fff3cd;border-bottom:1px solid #e5bd55;color:#513c00;padding:10px 18px;display:flex;gap:14px;align-items:center;justify-content:center;font:600 14px Arial,sans-serif">
+      <span>Acesso administrativo temporario: <strong>{client}</strong> ({email})</span>
+      <form method="post" action="/admin/stop-impersonation" style="margin:0">
+        <button type="submit" style="border:0;border-radius:8px;background:#10243b;color:#fff;padding:8px 12px;font-weight:700;cursor:pointer">Voltar ao painel admin</button>
+      </form>
+    </div>
+    """
+    lower = page_html.lower()
+    body_start = lower.find("<body")
+    if body_start >= 0:
+        body_end = lower.find(">", body_start)
+        if body_end >= 0:
+            return page_html[:body_end + 1] + banner + page_html[body_end + 1:]
+    return banner + page_html
 
 
 def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
@@ -1185,10 +1213,14 @@ def _current_user(handler):
     sess = db.get_session(token)
     if not sess:
         return None, None
-    if auth.session_expired(sess["last_seen"]):
+    is_admin_impersonation = bool(sess["impersonated_by_admin"])
+    if is_admin_impersonation and (time.time() - int(sess["created_at"] or 0)) > ADMIN_IMPERSONATION_MAX_AGE:
         db.delete_session(token)
         return None, None
-    if not auth.user_is_active(sess):
+    if not is_admin_impersonation and auth.session_expired(sess["last_seen"]):
+        db.delete_session(token)
+        return None, None
+    if not is_admin_impersonation and not auth.user_is_active(sess):
         return None, None
     db.touch_session(token)
     user = db.get_user_by_id(sess["user_id"])
@@ -2052,6 +2084,12 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/admin/users/") and path.endswith("/set_ml_slot_limit"):
                 self._post_admin_set_ml_slot_limit(path)
                 return
+            if path.startswith("/admin/users/") and path.endswith("/impersonate"):
+                self._post_admin_impersonate(path)
+                return
+            if path == "/admin/stop-impersonation":
+                self._post_admin_stop_impersonation()
+                return
 
             _send_html(self, templates.render_error_page("Rota nao encontrada."), 404)
         except Exception as exc:
@@ -2506,6 +2544,65 @@ class Handler(BaseHTTPRequestHandler):
             return
         token = auth.create_admin_session(email)
         _redirect(self, "/admin", set_cookie=auth.make_admin_set_cookie(token))
+
+    def _post_admin_impersonate(self, path: str):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        try:
+            user_id = int(path.split("/")[3])
+        except (ValueError, IndexError):
+            _send_html(self, templates.render_error_page("ID invalido."), 400)
+            return
+        user = db.get_user_by_id(user_id)
+        if not user:
+            _send_html(self, templates.render_error_page("Usuario nao encontrado."), 404)
+            return
+        form = _parse_form(self)
+        destination = _safe_return_to(form.get("return_to", "/online?confirmed=1"), "/online?confirmed=1")
+        if urlparse(destination).path not in ("/online", "/inteligencia-vendas", "/"):
+            destination = "/online?confirmed=1"
+        links = db.list_active_ml_links_for_user(user_id)
+        if not links:
+            _send_html(self, templates.render_error_page("Este cliente ainda nao possui conta Mercado Livre vinculada."), 400)
+            return
+        session_token = auth.new_session_token()
+        db.create_session(
+            user_id,
+            session_token,
+            _client_ip(self),
+            self.headers.get("User-Agent", "")[:200],
+            replace_existing=False,
+            impersonated_by_admin=admin["email"],
+        )
+        if len(links) == 1:
+            db.set_session_selected_ml_account(session_token, user_id, links[0]["id"])
+        else:
+            destination = "/contas?" + urlencode({"return_to": destination})
+        db.log_audit(
+            user_id,
+            "admin.impersonate.start",
+            f"admin={admin['email']}; destination={destination}",
+            _client_ip(self),
+        )
+        _redirect(self, destination, set_cookie=auth.make_set_cookie(session_token))
+
+    def _post_admin_stop_impersonation(self):
+        cookies = _get_cookies(self)
+        token = cookies.get(auth.SESSION_COOKIE)
+        session = db.get_session(token) if token else None
+        if session and session["impersonated_by_admin"]:
+            db.log_audit(
+                session["user_id"],
+                "admin.impersonate.stop",
+                f"admin={session['impersonated_by_admin']}",
+                _client_ip(self),
+            )
+            db.delete_session(token)
+        admin, _ = _current_admin(self)
+        target = "/admin" if admin else "/admin/login"
+        _redirect(self, target, set_cookie=auth.make_clear_cookie())
 
     def _post_admin_reset_password(self, path: str):
         admin, _ = _current_admin(self)

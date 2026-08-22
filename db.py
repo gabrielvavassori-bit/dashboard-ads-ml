@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     last_seen   INTEGER NOT NULL,
     ip          TEXT,
     user_agent  TEXT,
+    impersonated_by_admin TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -255,6 +256,8 @@ def init_db():
             }
             if "selected_ml_account_id" not in session_columns:
                 conn.execute("ALTER TABLE sessions ADD COLUMN selected_ml_account_id INTEGER")
+            if "impersonated_by_admin" not in session_columns:
+                conn.execute("ALTER TABLE sessions ADD COLUMN impersonated_by_admin TEXT")
             conn.execute(
                 """INSERT OR IGNORE INTO user_ml_accounts
                    (user_id, slot_number, client_id, ml_user_id, nickname,
@@ -789,15 +792,33 @@ def reset_user_password(user_id: int):
 
 # ---------- SESSIONS ----------
 
-def create_session(user_id: int, token: str, ip: str, user_agent: str):
-    """Cria sessão. Como queremos sessão ÚNICA por usuário, apaga as anteriores."""
+def create_session(
+    user_id: int,
+    token: str,
+    ip: str,
+    user_agent: str,
+    *,
+    replace_existing: bool = True,
+    impersonated_by_admin: str = "",
+):
+    """Cria sessão normal ou uma sessão administrativa temporária."""
     conn = get_conn()
     try:
-        conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+        if replace_existing:
+            conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
         conn.execute(
-            """INSERT INTO sessions (token, user_id, created_at, last_seen, ip, user_agent)
-               VALUES (?,?,?,?,?,?)""",
-            (token, user_id, now(), now(), ip, user_agent),
+            """INSERT INTO sessions
+               (token, user_id, created_at, last_seen, ip, user_agent, impersonated_by_admin)
+               VALUES (?,?,?,?,?,?,?)""",
+            (
+                token,
+                user_id,
+                now(),
+                now(),
+                ip,
+                user_agent,
+                (impersonated_by_admin or "").strip().lower() or None,
+            ),
         )
     finally:
         conn.close()
