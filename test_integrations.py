@@ -1227,6 +1227,87 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertGreater(user["expires_at"], int(app.time.time()) + (6 * 86400))
         raised.exception.close()
 
+    def test_admin_can_impersonate_client_without_ending_client_session(self):
+        user_id, client_cookie = self._login_cookie("impersonated-client@example.com")
+        account_id = db.upsert_user_ml_link(
+            user_id,
+            client_id="impersonated-client",
+            nickname="Cliente Administrado",
+            slot_number=1,
+        )
+        original_token = client_cookie.split("=", 1)[1]
+        admin_cookie = self._admin_cookie()
+        request = Request(
+            f"{self.base_url}/admin/users/{user_id}/impersonate",
+            data=urlencode({"return_to": "/online?confirmed=1"}).encode("utf-8"),
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cookie": admin_cookie,
+            },
+            method="POST",
+        )
+        opener = self._no_redirect_opener()
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        self.assertEqual(raised.exception.headers.get("Location"), "/online?confirmed=1")
+        set_cookie = raised.exception.headers.get("Set-Cookie", "")
+        raised.exception.close()
+        impersonation_token = set_cookie.split(";", 1)[0].split("=", 1)[1]
+
+        self.assertIsNotNone(db.get_session(original_token))
+        session = db.get_session(impersonation_token)
+        self.assertEqual(session["user_id"], user_id)
+        self.assertEqual(session["impersonated_by_admin"], "admin@example.com")
+        self.assertEqual(session["selected_ml_account_id"], account_id)
+
+        with urlopen(Request(
+            f"{self.base_url}/",
+            headers={"Cookie": f"{auth.SESSION_COOKIE}={impersonation_token}"},
+        ), timeout=5) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        self.assertIn("Acesso administrativo temporario", body)
+        self.assertIn("impersonated-client@example.com", body)
+        self.assertIn("/admin/stop-impersonation", body)
+
+        stop_request = Request(
+            f"{self.base_url}/admin/stop-impersonation",
+            data=b"",
+            headers={"Cookie": f"{admin_cookie}; {auth.SESSION_COOKIE}={impersonation_token}"},
+            method="POST",
+        )
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(stop_request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        self.assertEqual(raised.exception.headers.get("Location"), "/admin")
+        raised.exception.close()
+        self.assertIsNone(db.get_session(impersonation_token))
+        self.assertIsNotNone(db.get_session(original_token))
+
+    def test_admin_impersonation_uses_account_selector_for_multiple_accounts(self):
+        user_id, _ = self._login_cookie("impersonated-multi@example.com")
+        db.set_user_ml_slot_limit(user_id, 2)
+        db.upsert_user_ml_link(user_id, client_id="multi-a", nickname="Conta A", slot_number=1)
+        db.upsert_user_ml_link(user_id, client_id="multi-b", nickname="Conta B", slot_number=2)
+        request = Request(
+            f"{self.base_url}/admin/users/{user_id}/impersonate",
+            data=urlencode({"return_to": "/inteligencia-vendas"}).encode("utf-8"),
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cookie": self._admin_cookie(),
+            },
+            method="POST",
+        )
+        opener = self._no_redirect_opener()
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        self.assertEqual(
+            raised.exception.headers.get("Location"),
+            "/contas?return_to=%2Finteligencia-vendas",
+        )
+        raised.exception.close()
+
     def test_admin_can_allow_and_block_beta_without_changing_real_access(self):
         user_id = db.upsert_manual_user(
             email="beta-toggle@example.com",
