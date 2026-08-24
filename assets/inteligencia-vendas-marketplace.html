@@ -201,12 +201,27 @@
     .dash-left { min-width: 0; }
     .dash-right { min-width: 0; display: grid; gap: 16px; }
     .chart {
-      height: 260px;
+      min-height: 260px;
       border: 1px solid var(--line);
       background: linear-gradient(#fff, #f9fbfd);
       border-radius: 8px;
       padding: 12px;
       overflow: hidden;
+    }
+    .chart-scroll {
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+    .chart-scroll svg {
+      display: block;
+      height: 236px;
+      min-height: 236px;
+    }
+    .chart-note {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
     }
     svg { max-width: 100%; height: 100%; display: block; }
 
@@ -507,7 +522,7 @@
         <div class="dashboard-grid">
           <div class="dash-left">
             <div class="section">
-              <div class="section-head"><h2 class="section-title">Vendas por mes</h2><div class="seg" id="dashboardMetricSeg"><button class="active" data-metric="revenue">Receita</button><button data-metric="units">Unidades</button></div></div>
+              <div class="section-head"><h2 class="section-title">Vendas por periodo</h2><div class="filters"><div class="seg" id="dashboardMetricSeg"><button class="active" data-metric="revenue">Receita</button><button data-metric="units">Unidades</button></div><div class="seg" id="dashboardGranularitySeg" style="display:none"><button class="active" data-granularity="day">Diaria</button><button data-granularity="month">Mensal</button></div></div></div>
               <div class="section-body"><div class="chart" id="salesChart"></div></div>
             </div>
             <div class="section">
@@ -662,7 +677,7 @@
     const DB_NAME = 'un_clic_marketplace_intelligence_v1';
     const DB_VERSION = 1;
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
-    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardWindow: '30d', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
+    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardWindow: '30d', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
 
     const $ = (id) => document.getElementById(id);
@@ -872,6 +887,7 @@
       document.querySelectorAll('#profitGroupSeg button').forEach((b) => b.onclick = () => setSeg('profitGroupSeg', b, () => { state.profitGroup = b.dataset.group; state.selectedProfitKey = ''; renderProfit(); }));
       document.querySelectorAll('#metricSeg button').forEach((b) => b.onclick = () => setSeg('metricSeg', b, () => { state.monthlyMetric = b.dataset.metric; renderMonthly(); }));
       document.querySelectorAll('#dashboardMetricSeg button').forEach((b) => b.onclick = () => setSeg('dashboardMetricSeg', b, () => { state.dashboardMetric = b.dataset.metric; renderDashboard(); }));
+      document.querySelectorAll('#dashboardGranularitySeg button').forEach((b) => b.onclick = () => setSeg('dashboardGranularitySeg', b, () => { state.dashboardGranularity = b.dataset.granularity === 'month' ? 'month' : 'day'; renderDashboard(); }));
       document.querySelectorAll('#monthlyGroupSeg button').forEach((b) => b.onclick = () => setSeg('monthlyGroupSeg', b, () => { state.monthlyGroup = b.dataset.group; state.selectedMonthlySku = ''; renderMonthly(); }));
       document.querySelectorAll('#noSalesGroupSeg button').forEach((b) => b.onclick = () => setSeg('noSalesGroupSeg', b, () => { state.noSalesGroup = b.dataset.group; renderNoSales(); }));
       document.querySelectorAll('#noSalesModeSeg button').forEach((b) => b.onclick = () => setSeg('noSalesModeSeg', b, () => { state.noSalesMode = b.dataset.mode === 'rejected' ? 'rejected' : 'active'; renderNoSales(); }));
@@ -948,6 +964,7 @@
       document.querySelectorAll('#profitWindowSeg button').forEach((b) => b.classList.toggle('active', b.dataset.win === state.reportWindow));
       document.querySelectorAll('#dashboardSkuWindowSeg button').forEach((b) => b.classList.toggle('active', b.dataset.win === (state.reportWindow === '60d' ? 'quarter' : state.reportWindow)));
       document.querySelectorAll('#sellPlanWindowSeg button').forEach((b) => b.classList.toggle('active', b.dataset.win === (state.reportWindow === '60d' ? 'quarter' : state.reportWindow)));
+      document.querySelectorAll('#dashboardGranularitySeg button').forEach((b) => b.classList.toggle('active', b.dataset.granularity === (state.dashboardGranularity === 'month' ? 'month' : 'day')));
       document.querySelectorAll('#noSalesDaysSeg button').forEach((b) => {
         const expected = b.dataset.days === '0' ? 'total' : `${b.dataset.days}d`;
         b.classList.toggle('active', expected === state.reportWindow || (b.dataset.days === '60' && state.reportWindow === '60d'));
@@ -1020,13 +1037,17 @@
           previousSales: wnd.previousSales,
           valid: true,
           label: wnd.label,
-          previousLabel: wnd.previousLabel
+          previousLabel: wnd.previousLabel,
+          currentStart: wnd.currentStart,
+          currentEnd: wnd.currentEnd,
+          previousStart: wnd.previousStart,
+          previousEnd: wnd.previousEnd
         };
       }
       if (state.reportWindow === 'custom') {
         const start = state.reportDateStart ? new Date(state.reportDateStart + 'T00:00:00') : null;
         const end = state.reportDateEnd ? new Date(state.reportDateEnd + 'T23:59:59') : null;
-        if (!start || !end || start > end) return { currentSales: [], previousSales: [], valid: false, label: 'Periodo personalizado invalido', previousLabel: '' };
+        if (!start || !end || start > end) return { currentSales: [], previousSales: [], valid: false, label: 'Periodo personalizado invalido', previousLabel: '', currentStart: null, currentEnd: null, previousStart: null, previousEnd: null };
         const days = Math.max(1, Math.round((dateOnly(end) - dateOnly(start)) / 86400000) + 1);
         const prevEnd = addDays(dateOnly(start), -1);
         const prevStart = addDays(prevEnd, -(days - 1));
@@ -1037,11 +1058,28 @@
           previousSales,
           valid: true,
           label: `${start.toLocaleDateString('pt-BR')} a ${end.toLocaleDateString('pt-BR')}`,
-          previousLabel: `${prevStart.toLocaleDateString('pt-BR')} a ${prevEnd.toLocaleDateString('pt-BR')}`
+          previousLabel: `${prevStart.toLocaleDateString('pt-BR')} a ${prevEnd.toLocaleDateString('pt-BR')}`,
+          currentStart: dateOnly(start),
+          currentEnd: dateOnly(end),
+          previousStart: prevStart,
+          previousEnd: prevEnd
         };
       }
       const days = reportWindowDays();
-      if (!days) return { currentSales: state.sales.slice(), previousSales: [], valid: true, label: 'historico total', previousLabel: '' };
+      if (!days) {
+        const dates = state.sales.map((s) => s.date).filter(Boolean).map((d) => dateOnly(d)).sort((a, b) => a - b);
+        return {
+          currentSales: state.sales.slice(),
+          previousSales: [],
+          valid: true,
+          label: 'historico total',
+          previousLabel: '',
+          currentStart: dates[0] || null,
+          currentEnd: dates.at(-1) || null,
+          previousStart: null,
+          previousEnd: null
+        };
+      }
       const base = maxDate() || new Date();
       const endCur = dateOnly(base);
       const startCur = addDays(endCur, -(days - 1));
@@ -1053,7 +1091,11 @@
         previousSales: state.sales.filter((s) => inRange(s.date, startPrev, endPrev)),
         valid: true,
         label: `${startCur.toLocaleDateString('pt-BR')} a ${endCur.toLocaleDateString('pt-BR')}`,
-        previousLabel: `${startPrev.toLocaleDateString('pt-BR')} a ${endPrev.toLocaleDateString('pt-BR')}`
+        previousLabel: `${startPrev.toLocaleDateString('pt-BR')} a ${endPrev.toLocaleDateString('pt-BR')}`,
+        currentStart: startCur,
+        currentEnd: endCur,
+        previousStart: startPrev,
+        previousEnd: endPrev
       };
     }
 
@@ -2109,30 +2151,98 @@
       const arrow = value >= 0 ? '+' : '-';
       return `<span class="${cls}">${arrow} ${fmtPct(Math.abs(value))}</span> <span class="muted">vs. periodo anterior</span>`;
     }
-    function renderChart(rows) {
+    function renderDashboardChartControls() {
+      const seg = $('dashboardGranularitySeg');
+      if (!seg) return;
+      const show = state.reportWindow === 'quarter';
+      seg.style.display = show ? 'inline-flex' : 'none';
+      if (!show) state.dashboardGranularity = 'day';
+      document.querySelectorAll('#dashboardGranularitySeg button').forEach((b) => b.classList.toggle('active', b.dataset.granularity === (state.dashboardGranularity === 'month' ? 'month' : 'day')));
+    }
+
+    function dayKey(date) {
+      const d = dateOnly(date);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function monthKeyFromDate(date) {
+      const d = dateOnly(date);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    function formatDayShort(key) {
+      if (!key || !/^\d{4}-\d{2}-\d{2}$/.test(key)) return key || '';
+      const [, m, d] = key.split('-');
+      return `${d}/${m}`;
+    }
+
+    function buildDashboardChartSeries(rows, wnd) {
+      const isQuarterMonthly = state.reportWindow === 'quarter' && state.dashboardGranularity === 'month';
+      const isTotalMonthly = state.reportWindow === 'total';
+      const bucketMode = (isQuarterMonthly || isTotalMonthly) ? 'month' : 'day';
       const by = {};
       rows.forEach((s) => {
-        by[s.month] = by[s.month] || { revenue: 0, units: 0 };
-        by[s.month].revenue += s.productRevenue || 0;
-        by[s.month].units += s.units || 0;
+        if (!s.date) return;
+        const key = bucketMode === 'month' ? monthKeyFromDate(s.date) : dayKey(s.date);
+        by[key] = by[key] || { revenue: 0, units: 0 };
+        by[key].revenue += s.productRevenue || 0;
+        by[key].units += s.units || 0;
       });
-      const months = Object.keys(by).sort();
-      if (!months.length) { $('salesChart').innerHTML = '<div class="empty">Sem dados para grafico.</div>'; return; }
-      const revVals = months.map((m) => by[m].revenue);
-      const unitVals = months.map((m) => by[m].units);
+      const keys = [];
+      if (bucketMode === 'month') {
+        let cursor = wnd.currentStart ? new Date(wnd.currentStart.getFullYear(), wnd.currentStart.getMonth(), 1) : null;
+        const end = wnd.currentEnd ? new Date(wnd.currentEnd.getFullYear(), wnd.currentEnd.getMonth(), 1) : null;
+        while (cursor && end && cursor <= end) {
+          keys.push(monthKeyFromDate(cursor));
+          cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+        }
+      } else {
+        let cursor = wnd.currentStart ? dateOnly(wnd.currentStart) : null;
+        const end = wnd.currentEnd ? dateOnly(wnd.currentEnd) : null;
+        while (cursor && end && cursor <= end) {
+          keys.push(dayKey(cursor));
+          cursor = addDays(cursor, 1);
+        }
+      }
+      return keys.map((key) => ({
+        key,
+        revenue: by[key]?.revenue || 0,
+        units: by[key]?.units || 0,
+        label: bucketMode === 'month' ? formatMonthLong(key) : formatDayShort(key),
+        title: bucketMode === 'month' ? formatMonthLong(key) : key.split('-').reverse().join('/'),
+        bucketMode
+      }));
+    }
+
+    function renderChart(rows) {
+      const wnd = reportWindowData();
+      const series = buildDashboardChartSeries(rows, wnd);
+      renderDashboardChartControls();
+      if (!series.length) { $('salesChart').innerHTML = '<div class="empty">Sem dados para grafico.</div>'; return; }
       const useRevenue = state.dashboardMetric !== 'units';
-      const vals = useRevenue ? revVals : unitVals;
+      const vals = series.map((item) => useRevenue ? item.revenue : item.units);
       const maxVal = Math.max(...vals, 1);
-      const x = (i) => 58 + i * (680 / Math.max(1, months.length - 1));
-      const points = vals.map((v, i) => `${x(i)},${210 - (v / maxVal) * 160}`).join(' ');
-      const dots = vals.map((v, i) => `<circle cx="${x(i)}" cy="${210 - (v / maxVal) * 160}" r="5" fill="${useRevenue ? '#0f8b8d' : '#1f66d1'}"><title>${formatMonthShort(months[i])}: ${useRevenue ? fmtMoney(v) : fmtNum(v)}</title></circle>`).join('');
-      const labels = months.map((m, i) => `<text x="${x(i)}" y="238" font-size="11" text-anchor="middle" fill="#66758a">${m.slice(5)}/${m.slice(2,4)}</text>`).join('');
-      const grid = [0,1,2,3].map((n) => {
-        const y = 50 + n * 53;
-        const gv = maxVal * (1 - n / 3);
-        return `<line x1="50" y1="${y}" x2="750" y2="${y}" stroke="#e2e8f0" stroke-dasharray="4 4"/><text x="42" y="${y+4}" font-size="10" text-anchor="end" fill="#66758a">${useRevenue ? fmtCompact(gv) : fmtNum(gv)}</text>`;
+      const isMonthly = series[0]?.bucketMode === 'month';
+      const slot = isMonthly ? 130 : 48;
+      const plotW = Math.max(860, 100 + (Math.max(1, series.length - 1) * slot));
+      const x = (i) => 58 + i * ((plotW - 116) / Math.max(1, series.length - 1));
+      const y = (v) => 210 - (v / maxVal) * 156;
+      const points = vals.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+      const color = useRevenue ? '#0f8b8d' : '#1f66d1';
+      const dots = vals.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="5" fill="${color}"><title>${series[i].title}: ${useRevenue ? fmtMoney(v) : fmtNum(v)}</title></circle>`).join('');
+      const labelRotate = !isMonthly && series.length > 20;
+      const labels = series.map((item, i) => {
+        const lx = x(i);
+        if (labelRotate) return `<text x="${lx}" y="232" font-size="11" text-anchor="end" transform="rotate(-45 ${lx} 232)" fill="#66758a">${item.label}</text>`;
+        return `<text x="${lx}" y="238" font-size="11" text-anchor="middle" fill="#66758a">${esc(item.label)}</text>`;
       }).join('');
-      $('salesChart').innerHTML = `<svg viewBox="0 0 800 250" aria-label="Vendas por mes">${grid}<text x="330" y="24" font-size="12" fill="${useRevenue ? '#0f8b8d' : '#1f66d1'}">${useRevenue ? 'Receita' : 'Unidades'}</text><line x1="390" y1="20" x2="430" y2="20" stroke="${useRevenue ? '#0f8b8d' : '#1f66d1'}" stroke-width="4"/><polyline fill="none" stroke="${useRevenue ? '#0f8b8d' : '#1f66d1'}" stroke-width="4" points="${points}"/>${dots}<line x1="50" y1="212" x2="750" y2="212" stroke="#d9e1ea"/>${labels}</svg>`;
+      const grid = [0,1,2,3].map((n) => {
+        const gy = 50 + n * 53;
+        const gv = maxVal * (1 - n / 3);
+        return `<line x1="50" y1="${gy}" x2="${plotW - 50}" y2="${gy}" stroke="#e2e8f0" stroke-dasharray="4 4"/><text x="42" y="${gy + 4}" font-size="10" text-anchor="end" fill="#66758a">${useRevenue ? fmtCompact(gv) : fmtNum(gv)}</text>`;
+      }).join('');
+      const modeLabel = isMonthly ? 'visao mensal consolidada' : 'visao diaria completa do periodo';
+      $('salesChart').innerHTML = `<div class="chart-note">${useRevenue ? 'Receita' : 'Unidades'} | ${modeLabel}</div><div class="chart-scroll"><svg viewBox="0 0 ${plotW} 250" aria-label="Vendas por periodo">${grid}<text x="${Math.max(260, plotW / 2 - 70)}" y="24" font-size="12" fill="${color}">${useRevenue ? 'Receita' : 'Unidades'}</text><line x1="${Math.max(320, plotW / 2 - 10)}" y1="20" x2="${Math.max(360, plotW / 2 + 30)}" y2="20" stroke="${color}" stroke-width="4"/><polyline fill="none" stroke="${color}" stroke-width="4" points="${points}"/>${dots}<line x1="50" y1="212" x2="${plotW - 50}" y2="212" stroke="#d9e1ea"/>${labels}</svg></div>`;
     }
 
     function formatMonthShort(key) {
@@ -2975,6 +3085,7 @@
         reportWindow: state.reportWindow || '30d',
         reportDateStart: state.reportDateStart || '',
         reportDateEnd: state.reportDateEnd || '',
+        dashboardGranularity: state.dashboardGranularity || 'day',
         globalSearchScope: state.globalSearchScope || 'code',
         globalSearch: state.globalSearch || '',
         noSalesRejected: state.noSalesRejected || {}
@@ -3010,6 +3121,7 @@
         reportWindow: state.reportWindow || '30d',
         reportDateStart: state.reportDateStart || '',
         reportDateEnd: state.reportDateEnd || '',
+        dashboardGranularity: state.dashboardGranularity || 'day',
         globalSearchScope: state.globalSearchScope || 'code',
         globalSearch: state.globalSearch || '',
         noSalesRejected: state.noSalesRejected || {}
@@ -3088,6 +3200,7 @@
         const reportWindow = payload.reportWindow || '30d';
         const reportDateStart = payload.reportDateStart || '';
         const reportDateEnd = payload.reportDateEnd || '';
+        const dashboardGranularity = payload.dashboardGranularity || 'day';
         const globalSearchScope = payload.globalSearchScope || 'code';
         const globalSearch = payload.globalSearch || '';
         const noSalesRejected = payload.noSalesRejected && typeof payload.noSalesRejected === 'object' ? payload.noSalesRejected : {};
@@ -3110,6 +3223,7 @@
         state.reportWindow = ['7d','15d','30d','60d','monthtd','quarter','total','custom'].includes(reportWindow) ? reportWindow : '30d';
         state.reportDateStart = String(reportDateStart || '');
         state.reportDateEnd = String(reportDateEnd || '');
+        state.dashboardGranularity = dashboardGranularity === 'month' ? 'month' : 'day';
         state.globalSearchScope = globalSearchScope === 'title' ? 'title' : 'code';
         state.globalSearch = String(globalSearch || '');
         state.noSalesRejected = noSalesRejected;
@@ -3137,7 +3251,7 @@
 
     window.__marketplaceApp = {
       getState: () => state,
-      setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku = {}, profitTaxRate = 0, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
+      setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku = {}, profitTaxRate = 0, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', dashboardGranularity = 'day', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
         state.sales = (sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
         state.imports = imports;
         state.events = events;
@@ -3151,6 +3265,7 @@
         state.reportWindow = ['7d','15d','30d','60d','monthtd','quarter','total','custom'].includes(reportWindow) ? reportWindow : '30d';
         state.reportDateStart = String(reportDateStart || '');
         state.reportDateEnd = String(reportDateEnd || '');
+        state.dashboardGranularity = dashboardGranularity === 'month' ? 'month' : 'day';
         state.globalSearchScope = globalSearchScope === 'title' ? 'title' : 'code';
         state.globalSearch = String(globalSearch || '');
         state.noSalesRejected = noSalesRejected && typeof noSalesRejected === 'object' ? noSalesRejected : {};
