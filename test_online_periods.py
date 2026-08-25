@@ -57,6 +57,7 @@ class OnlinePeriodTests(unittest.TestCase):
                         "item_id": "MLB5399002228",
                         "campaign_id": "CAMP-1",
                         "campaign_name": "Campanha principal",
+                        "family_id": "FAM-7X4",
                         "user_product_id": "MLBU-7X4",
                         "catalog_product_id": "CAT-7X4",
                         "catalog_listing": True,
@@ -77,6 +78,7 @@ class OnlinePeriodTests(unittest.TestCase):
                         "item_id": "MLB6689184622",
                         "campaign_id": "CAMP-2",
                         "campaign_name": "Campanha secundaria",
+                        "family_id": "FAM-7X4",
                         "user_product_id": "MLBU-7X4",
                         "catalog_product_id": "CAT-7X4",
                         "catalog_listing": True,
@@ -113,6 +115,7 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertEqual(error, "")
         self.assertEqual({item["campaignId"] for item in data["items"]}, {"CAMP-1", "CAMP-2"})
+        self.assertTrue(all(item["familyId"] == "FAM-7X4" for item in data["items"]))
         self.assertTrue(all(item["userProductId"] == "MLBU-7X4" for item in data["items"]))
         self.assertTrue(all(item["conditionCount"] == 2 for item in data["items"]))
         self.assertTrue(all(item["catalogProductId"] == "CAT-7X4" for item in data["items"]))

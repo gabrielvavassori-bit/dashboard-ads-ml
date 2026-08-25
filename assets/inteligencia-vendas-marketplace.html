@@ -223,6 +223,77 @@
       font-size: 12px;
       line-height: 1.35;
     }
+    .chart-kpis {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0 0 12px;
+    }
+    .chart-kpi {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fbff;
+      padding: 10px 12px;
+    }
+    .chart-kpi-label {
+      color: #607086;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .chart-kpi-value {
+      margin-top: 6px;
+      color: #18212f;
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+    .chart-panel { position: relative; }
+    .chart-tooltip {
+      position: absolute;
+      min-width: 220px;
+      max-width: 280px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255,255,255,.96);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, .18);
+      pointer-events: none;
+      z-index: 3;
+    }
+    .chart-tooltip-date {
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #334155;
+    }
+    .chart-tooltip-grid {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 10px;
+      font-size: 12px;
+      color: #334155;
+    }
+    .chart-tooltip-grid strong {
+      color: #1f66d1;
+      font-weight: 800;
+    }
+    .chart-avg-note {
+      position: absolute;
+      right: 18px;
+      top: 6px;
+      color: #b45309;
+      font-size: 13px;
+      font-weight: 800;
+      background: rgba(255,255,255,.88);
+      padding: 4px 8px;
+      border-radius: 999px;
+    }
+    .chart-metric-inline {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+    }
     svg { max-width: 100%; height: 100%; display: block; }
 
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -397,6 +468,7 @@
       .nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .grid-2 { grid-template-columns: 1fr; }
+      .chart-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .monthly-chart-layout { grid-template-columns: 1fr; }
       .monthly-chart-scroll svg { height: 380px; min-height: 380px; }
       .monthly-pie-legend.cols-2 { grid-template-columns: 1fr; }
@@ -477,7 +549,7 @@
         </div>
         <div class="report-bar-right">
           <select class="control" id="globalSearchScope">
-            <option value="code">Codigo/SKU/MLB</option>
+            <option value="code">Codigo/SKU/MLB/MLBU/Familia</option>
             <option value="title">Titulo</option>
           </select>
           <input class="control" id="globalSearchInput" placeholder="Pesquisa global do relatorio..." style="min-width:280px">
@@ -522,7 +594,7 @@
         <div class="dashboard-grid">
           <div class="dash-left">
             <div class="section">
-              <div class="section-head"><h2 class="section-title">Vendas por periodo</h2><div class="filters"><div class="seg" id="dashboardMetricSeg"><button class="active" data-metric="revenue">Receita</button><button data-metric="units">Unidades</button></div><div class="seg" id="dashboardGranularitySeg" style="display:none"><button class="active" data-granularity="day">Diaria</button><button data-granularity="month">Mensal</button></div></div></div>
+              <div class="section-head"><h2 class="section-title">Vendas por periodo</h2><div class="filters"><div class="seg" id="dashboardMetricSeg"><button class="active" data-metric="revenue">Receita</button><button data-metric="units">Unidades</button><button data-metric="orders">Pedidos</button><button data-metric="avgPrice">Preco medio</button></div><div class="seg" id="dashboardGranularitySeg" style="display:none"><button class="active" data-granularity="day">Diaria</button><button data-granularity="month">Mensal</button></div></div></div>
               <div class="section-body"><div class="chart" id="salesChart"></div></div>
             </div>
             <div class="section">
@@ -557,8 +629,11 @@
             <div class="filters">
               <h2 class="section-title">Analise por produto</h2>
               <div class="seg" id="groupSeg">
+                <button data-group="family">Familia</button>
+                <button data-group="variation">Variacao</button>
                 <button class="active" data-group="sku">SKU</button>
-                <button data-group="mlb">Codigo MLB</button>
+                <button data-group="mlb">Anuncio MLB</button>
+                <button data-group="campaign">Campanha</button>
               </div>
             </div>
           </div>
@@ -579,8 +654,11 @@
                 <button data-metric="revenue">Faturamento</button>
               </div>
               <div class="seg" id="monthlyGroupSeg">
+                <button data-group="family">Familia</button>
+                <button data-group="variation">Variacao</button>
                 <button class="active" data-group="sku">SKU</button>
-                <button data-group="mlb">MLB</button>
+                <button data-group="mlb">Anuncio MLB</button>
+                <button data-group="campaign">Campanha</button>
               </div>
               <select class="control" id="avgMode">
                 <option value="monthly">Media mensal</option>
@@ -602,8 +680,11 @@
             <div class="filters">
               <h2 class="section-title">Lucro e prejuizo</h2>
               <div class="seg" id="profitGroupSeg">
+                <button data-group="family">Familia</button>
+                <button data-group="variation">Variacao</button>
                 <button class="active" data-group="sku">SKU</button>
-                <button data-group="mlb">MLB</button>
+                <button data-group="mlb">Anuncio MLB</button>
+                <button data-group="campaign">Campanha</button>
               </div>
             </div>
             <div class="filters">
@@ -625,8 +706,11 @@
             <div class="filters">
               <h2 class="section-title">Sem vendas</h2>
               <div class="seg" id="noSalesGroupSeg">
+                <button data-group="family">Familia</button>
+                <button data-group="variation">Variacao</button>
                 <button class="active" data-group="sku">SKU</button>
-                <button data-group="mlb">MLB</button>
+                <button data-group="mlb">Anuncio MLB</button>
+                <button data-group="campaign">Campanha</button>
               </div>
               <div class="seg" id="noSalesModeSeg">
                 <button class="active" data-mode="active">Operacional</button>
@@ -677,7 +761,7 @@
     const DB_NAME = 'un_clic_marketplace_intelligence_v1';
     const DB_VERSION = 1;
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
-    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardWindow: '30d', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
+    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
 
     const $ = (id) => document.getElementById(id);
@@ -1627,12 +1711,62 @@
       return (rows || []).reduce((total, sale) => total + orderCountOf(sale), 0);
     }
 
+    function groupLabel(group) {
+      return {
+        family: 'Familia',
+        variation: 'Variacao',
+        sku: 'SKU',
+        mlb: 'Anuncio MLB',
+        campaign: 'Campanha'
+      }[group] || 'Item';
+    }
+
+    function saleCampaignLabel(sale) {
+      return String(
+        sale?.campaignName ||
+        sale?.campaign ||
+        (sale?.campaignId ? `Campanha ${sale.campaignId}` : '')
+      ).trim();
+    }
+
+    function groupKeyFromSale(sale, group) {
+      if (!sale) return '';
+      if (group === 'family') return String(sale.familyId || '').trim();
+      if (group === 'variation') return String(sale.userProductId || '').trim();
+      if (group === 'campaign') return saleCampaignLabel(sale);
+      if (group === 'mlb') return String(sale.mlb || '').trim();
+      return String(sale.sku || '').trim();
+    }
+
+    function summarizeValues(values, fallback = '-', limit = 2) {
+      const list = [...new Set((values || []).map((value) => String(value || '').trim()).filter(Boolean))];
+      if (!list.length) return fallback;
+      return list.slice(0, limit).join(', ') + (list.length > limit ? ` +${list.length - limit}` : '');
+    }
+
+    function rowHierarchyLines(r, group) {
+      const lines = [];
+      if (group !== 'family' && r.familyLabel && r.familyLabel !== 'Familia nao informada') lines.push(`Familia: ${r.familyLabel}`);
+      if (group !== 'variation' && r.variationLabel && r.variationLabel !== 'Sem vinculo MLBU') lines.push(`Variacao: ${r.variationLabel}`);
+      if (group !== 'mlb' && r.mlbLabel && r.mlbLabel !== 'Sem MLB') lines.push(`Anuncio: ${r.mlbLabel}`);
+      if (group !== 'sku' && r.skuLabel && r.skuLabel !== 'Sem SKU') lines.push(`SKU: ${r.skuLabel}`);
+      if (group !== 'campaign' && r.campaignLabel && r.campaignLabel !== 'Sem campanha identificada') lines.push(`Campanha: ${r.campaignLabel}`);
+      if (r.catalogLabel && r.catalogLabel !== 'Sem catalogo identificado') lines.push(`Catalogo: ${r.catalogLabel}`);
+      return lines;
+    }
+
+    function aggregateIdentityCell(r, group, extraLine = '') {
+      const lines = rowHierarchyLines(r, group).map((line) => `<span class="subline">${esc(line)}</span>`);
+      if (extraLine) lines.push(`<span class="subline">${extraLine}</span>`);
+      return `<strong>${esc(r.key)}</strong>${lines.join('')}`;
+    }
+
     function aggregateFromSales(salesList, group = 'sku', previousSalesList = []) {
       const map = new Map();
       const previousMap = new Map();
       (previousSalesList || []).filter((s) => s.sku && s.lineType === 'item_sale').forEach((s) => {
-        const key = group === 'sku' ? s.sku : s.mlb || '(sem MLB)';
-        if (!key || key === '(sem MLB)' && group === 'sku') return;
+        const key = groupKeyFromSale(s, group);
+        if (!key) return;
         const row = previousMap.get(key) || { units: 0, revenue: 0, orders: 0, sales: new Set() };
         row.units += s.units || 0;
         row.revenue += s.productRevenue || 0;
@@ -1641,10 +1775,47 @@
         previousMap.set(key, row);
       });
       (salesList || []).filter((s) => s.sku).forEach((s) => {
-        const key = group === 'sku' ? s.sku : s.mlb || '(sem MLB)';
-        if (!key || key === '(sem MLB)' && group === 'sku') return;
-        const row = map.get(key) || { key, sku: group === 'sku' ? key : s.sku, mlb: group === 'mlb' ? key : '', title: s.title, titleDate: null, units: 0, revenue: 0, orders: 0, sales: new Set(), returnSales: new Set(), complaintSales: new Set(), cancellationSales: new Set(), mlbs: new Set(), currentPrice: 0, currentDate: null, returns: 0, complaints: 0, cancellations: 0, promo: 0, months: {} };
+        const key = groupKeyFromSale(s, group);
+        if (!key) return;
+        const row = map.get(key) || {
+          key,
+          sku: group === 'sku' ? key : s.sku,
+          mlb: group === 'mlb' ? key : '',
+          familyId: group === 'family' ? key : '',
+          userProductId: group === 'variation' ? key : '',
+          campaignName: group === 'campaign' ? key : '',
+          title: s.title,
+          titleDate: null,
+          units: 0,
+          revenue: 0,
+          orders: 0,
+          sales: new Set(),
+          returnSales: new Set(),
+          complaintSales: new Set(),
+          cancellationSales: new Set(),
+          mlbs: new Set(),
+          skus: new Set(),
+          familyIds: new Set(),
+          userProducts: new Set(),
+          catalogProducts: new Set(),
+          campaignIds: new Set(),
+          campaignNames: new Set(),
+          currentPrice: 0,
+          currentDate: null,
+          returns: 0,
+          complaints: 0,
+          cancellations: 0,
+          promo: 0,
+          months: {}
+        };
         if (s.mlb) row.mlbs.add(s.mlb);
+        if (s.sku) row.skus.add(s.sku);
+        if (s.familyId) row.familyIds.add(s.familyId);
+        if (s.userProductId) row.userProducts.add(s.userProductId);
+        if (s.catalogProductId) row.catalogProducts.add(s.catalogProductId);
+        if (s.campaignId) row.campaignIds.add(s.campaignId);
+        const campaignLabel = saleCampaignLabel(s);
+        if (campaignLabel) row.campaignNames.add(campaignLabel);
         if (s.title) {
           if (group === 'sku') {
             if (!row.title || s.title.length < row.title.length) row.title = s.title;
@@ -1701,6 +1872,12 @@
         r.nextAction = r.diagnostic.nextAction;
         r.confidence = r.diagnostic.confidence || 'media';
         r.secondarySignals = r.diagnostic.secondarySignals || [];
+        r.familyLabel = summarizeValues(r.familyIds, 'Familia nao informada');
+        r.variationLabel = summarizeValues(r.userProducts, 'Sem vinculo MLBU');
+        r.catalogLabel = summarizeValues(r.catalogProducts, 'Sem catalogo identificado');
+        r.campaignLabel = summarizeValues([...r.campaignNames, ...[...r.campaignIds].map((id) => `Campanha ${id}`)], 'Sem campanha identificada');
+        r.mlbLabel = summarizeValues(r.mlbs, 'Sem MLB');
+        r.skuLabel = summarizeValues(r.skus, 'Sem SKU');
         return applyGovernanceToAggregateRow(r);
       }).sort((a, b) => b.revenue - a.revenue);
     }
@@ -1709,7 +1886,25 @@
       const q = (state.globalSearch || '').trim().toLowerCase();
       if (!q) return true;
       if (state.globalSearchScope === 'title') return (r.title || '').toLowerCase().includes(q);
-      return [r.key, r.sku, r.mlb, ...(r.mlbs ? [...r.mlbs] : []), ...(r.skus ? [...r.skus] : [])].join(' ').toLowerCase().includes(q);
+      return [
+        r.key,
+        r.sku,
+        r.mlb,
+        r.familyId,
+        r.userProductId,
+        r.campaignName,
+        r.familyLabel,
+        r.variationLabel,
+        r.catalogLabel,
+        r.campaignLabel,
+        ...(r.mlbs ? [...r.mlbs] : []),
+        ...(r.skus ? [...r.skus] : []),
+        ...(r.familyIds ? [...r.familyIds] : []),
+        ...(r.userProducts ? [...r.userProducts] : []),
+        ...(r.catalogProducts ? [...r.catalogProducts] : []),
+        ...(r.campaignIds ? [...r.campaignIds] : []),
+        ...(r.campaignNames ? [...r.campaignNames] : [])
+      ].join(' ').toLowerCase().includes(q);
     }
 
     function diagnose(r) {
@@ -2184,9 +2379,10 @@
       rows.forEach((s) => {
         if (!s.date) return;
         const key = bucketMode === 'month' ? monthKeyFromDate(s.date) : dayKey(s.date);
-        by[key] = by[key] || { revenue: 0, units: 0 };
+        by[key] = by[key] || { revenue: 0, units: 0, orders: 0 };
         by[key].revenue += s.productRevenue || 0;
         by[key].units += s.units || 0;
+        by[key].orders += orderCountOf(s);
       });
       const keys = [];
       if (bucketMode === 'month') {
@@ -2208,10 +2404,38 @@
         key,
         revenue: by[key]?.revenue || 0,
         units: by[key]?.units || 0,
+        orders: by[key]?.orders || 0,
+        avgPrice: (by[key]?.units || 0) ? (by[key].revenue / by[key].units) : 0,
         label: bucketMode === 'month' ? formatMonthLong(key) : formatDayShort(key),
         title: bucketMode === 'month' ? formatMonthLong(key) : key.split('-').reverse().join('/'),
         bucketMode
       }));
+    }
+
+    function dashboardMetricMeta(metric) {
+      if (metric === 'units') return { label: 'Unidades', color: '#14b8a6', format: fmtNum, compact: fmtNum };
+      if (metric === 'orders') return { label: 'Pedidos', color: '#2563eb', format: fmtNum, compact: fmtNum };
+      if (metric === 'avgPrice') return { label: 'Preco medio', color: '#ef4444', format: fmtMoney, compact: fmtCompact };
+      return { label: 'Receita', color: '#0f8b8d', format: fmtMoney, compact: fmtCompact };
+    }
+
+    function dashboardMetricValue(item, metric) {
+      if (metric === 'units') return Number(item.units || 0);
+      if (metric === 'orders') return Number(item.orders || 0);
+      if (metric === 'avgPrice') return Number(item.avgPrice || 0);
+      return Number(item.revenue || 0);
+    }
+
+    function movingAverage(values, radius = 1) {
+      return values.map((_, idx) => {
+        let total = 0;
+        let count = 0;
+        for (let i = Math.max(0, idx - radius); i <= Math.min(values.length - 1, idx + radius); i++) {
+          total += Number(values[i] || 0);
+          count++;
+        }
+        return count ? total / count : 0;
+      });
     }
 
     function renderChart(rows) {
@@ -2219,17 +2443,30 @@
       const series = buildDashboardChartSeries(rows, wnd);
       renderDashboardChartControls();
       if (!series.length) { $('salesChart').innerHTML = '<div class="empty">Sem dados para grafico.</div>'; return; }
-      const useRevenue = state.dashboardMetric !== 'units';
-      const vals = series.map((item) => useRevenue ? item.revenue : item.units);
+      const metric = dashboardMetricMeta(state.dashboardMetric);
+      const vals = series.map((item) => dashboardMetricValue(item, state.dashboardMetric));
+      const trendVals = movingAverage(vals, series.length > 45 ? 2 : 1);
       const maxVal = Math.max(...vals, 1);
       const isMonthly = series[0]?.bucketMode === 'month';
       const slot = isMonthly ? 130 : 48;
-      const plotW = Math.max(860, 100 + (Math.max(1, series.length - 1) * slot));
+      const plotW = Math.max(980, 120 + (Math.max(1, series.length - 1) * slot));
       const x = (i) => 58 + i * ((plotW - 116) / Math.max(1, series.length - 1));
-      const y = (v) => 210 - (v / maxVal) * 156;
-      const points = vals.map((v, i) => `${x(i)},${y(v)}`).join(' ');
-      const color = useRevenue ? '#0f8b8d' : '#1f66d1';
-      const dots = vals.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="5" fill="${color}"><title>${series[i].title}: ${useRevenue ? fmtMoney(v) : fmtNum(v)}</title></circle>`).join('');
+      const y = (v) => 222 - (v / maxVal) * 152;
+      const points = trendVals.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+      const color = metric.color;
+      const barW = Math.max(14, Math.min(26, slot * 0.58));
+      const avgVal = vals.reduce((a, b) => a + b, 0) / Math.max(1, vals.length);
+      const avgY = y(avgVal);
+      const hoverIdx = Number.isInteger(state.dashboardChartHover) && state.dashboardChartHover >= 0 && state.dashboardChartHover < series.length ? state.dashboardChartHover : -1;
+      const bars = vals.map((v, i) => {
+        const bx = x(i) - (barW / 2);
+        const by = y(v);
+        const bh = Math.max(2, 222 - by);
+        const fill = hoverIdx === i ? '#a78bfa' : '#c4b5fd';
+        return `<rect x="${bx}" y="${by}" width="${barW}" height="${bh}" rx="6" fill="${fill}" onmouseenter="__marketplaceApp.dashboardChartHover(${i})" onmouseleave="__marketplaceApp.dashboardChartHover(-1)"></rect>`;
+      }).join('');
+      const hoverLine = hoverIdx >= 0 ? `<line x1="${x(hoverIdx)}" y1="34" x2="${x(hoverIdx)}" y2="224" stroke="#94a3b8" stroke-dasharray="5 5"/>` : '';
+      const dots = trendVals.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="${hoverIdx === i ? 5 : 4}" fill="${color}" onmouseenter="__marketplaceApp.dashboardChartHover(${i})" onmouseleave="__marketplaceApp.dashboardChartHover(-1)"></circle>`).join('');
       const labelRotate = !isMonthly && series.length > 20;
       const labels = series.map((item, i) => {
         const lx = x(i);
@@ -2237,12 +2474,19 @@
         return `<text x="${lx}" y="238" font-size="11" text-anchor="middle" fill="#66758a">${esc(item.label)}</text>`;
       }).join('');
       const grid = [0,1,2,3].map((n) => {
-        const gy = 50 + n * 53;
+        const gy = 54 + n * 50;
         const gv = maxVal * (1 - n / 3);
-        return `<line x1="50" y1="${gy}" x2="${plotW - 50}" y2="${gy}" stroke="#e2e8f0" stroke-dasharray="4 4"/><text x="42" y="${gy + 4}" font-size="10" text-anchor="end" fill="#66758a">${useRevenue ? fmtCompact(gv) : fmtNum(gv)}</text>`;
+        return `<line x1="50" y1="${gy}" x2="${plotW - 50}" y2="${gy}" stroke="#e2e8f0" stroke-dasharray="4 4"/><text x="42" y="${gy + 4}" font-size="10" text-anchor="end" fill="#66758a">${metric.compact(gv)}</text>`;
       }).join('');
       const modeLabel = isMonthly ? 'visao mensal consolidada' : 'visao diaria completa do periodo';
-      $('salesChart').innerHTML = `<div class="chart-note">${useRevenue ? 'Receita' : 'Unidades'} | ${modeLabel}</div><div class="chart-scroll"><svg viewBox="0 0 ${plotW} 250" aria-label="Vendas por periodo">${grid}<text x="${Math.max(260, plotW / 2 - 70)}" y="24" font-size="12" fill="${color}">${useRevenue ? 'Receita' : 'Unidades'}</text><line x1="${Math.max(320, plotW / 2 - 10)}" y1="20" x2="${Math.max(360, plotW / 2 + 30)}" y2="20" stroke="${color}" stroke-width="4"/><polyline fill="none" stroke="${color}" stroke-width="4" points="${points}"/>${dots}<line x1="50" y1="212" x2="${plotW - 50}" y2="212" stroke="#d9e1ea"/>${labels}</svg></div>`;
+      const totalRevenue = series.reduce((a, item) => a + item.revenue, 0);
+      const totalUnits = series.reduce((a, item) => a + item.units, 0);
+      const totalOrders = series.reduce((a, item) => a + item.orders, 0);
+      const avgPrice = totalUnits ? totalRevenue / totalUnits : 0;
+      const hover = hoverIdx >= 0 ? series[hoverIdx] : null;
+      const tooltip = hover ? `<div class="chart-tooltip" style="left:${Math.min(Math.max(12, x(hoverIdx) - 90), plotW - 270)}px; top:12px"><div class="chart-tooltip-date">${esc(hover.title)}</div><div class="chart-tooltip-grid"><span>${metric.label}</span><strong>${metric.format(dashboardMetricValue(hover, state.dashboardMetric))}</strong><span>Receita</span><strong>${fmtMoney(hover.revenue)}</strong><span>Unidades</span><strong>${fmtNum(hover.units)}</strong><span>Pedidos</span><strong>${fmtNum(hover.orders)}</strong><span>Preco medio</span><strong>${fmtMoney(hover.avgPrice)}</strong></div></div>` : '';
+      const avgLabel = `${metric.label} medio do periodo ${metric.format(avgVal)}`;
+      $('salesChart').innerHTML = `<div class="chart-note">${metric.label} | ${modeLabel}</div><div class="chart-kpis"><div class="chart-kpi"><div class="chart-kpi-label">Receita do periodo</div><div class="chart-kpi-value">${fmtMoney(totalRevenue)}</div></div><div class="chart-kpi"><div class="chart-kpi-label">Unidades</div><div class="chart-kpi-value">${fmtNum(totalUnits)}</div></div><div class="chart-kpi"><div class="chart-kpi-label">Pedidos</div><div class="chart-kpi-value">${fmtNum(totalOrders)}</div></div><div class="chart-kpi"><div class="chart-kpi-label">Preco medio</div><div class="chart-kpi-value">${fmtMoney(avgPrice)}</div></div></div><div class="chart-panel"><div class="chart-avg-note">${esc(avgLabel)}</div>${tooltip}<div class="chart-scroll"><svg viewBox="0 0 ${plotW} 250" aria-label="Vendas por periodo">${grid}<line x1="50" y1="${avgY}" x2="${plotW - 50}" y2="${avgY}" stroke="#f59e0b" stroke-width="2.5" stroke-dasharray="8 6"/><text x="${Math.max(260, plotW / 2 - 70)}" y="24" font-size="12" fill="${color}">${metric.label}</text><line x1="${Math.max(320, plotW / 2 - 10)}" y1="20" x2="${Math.max(360, plotW / 2 + 30)}" y2="20" stroke="${color}" stroke-width="4"/>${hoverLine}${bars}<polyline fill="none" stroke="${color}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" points="${points}"/>${dots}<line x1="50" y1="224" x2="${plotW - 50}" y2="224" stroke="#d9e1ea"/>${labels}</svg></div></div>`;
     }
 
     function formatMonthShort(key) {
@@ -2400,9 +2644,9 @@
 
     function renderAnalysis() {
       let rows = aggregate(state.group).filter(rowMatchesGlobalSearch);
-      $('analysisTable').innerHTML = tableWrap(['Codigo','Titulo','Unid.','Receita','Preco atual','Preco medio','Dev.','Recl.','Queda','Causa provavel','Proxima acao'], rows.slice(0, 500).map((r) => [
-        `<strong>${esc(r.key)}</strong><span class="subline">Media mensal: ${fmtNum(avgMonthly(r).toFixed(1))} un | MLBs: ${r.mlbs ? r.mlbs.size : 1}</span>${governanceTraceLabel(r) ? `<span class="subline">${esc(governanceTraceLabel(r))}</span>` : ''}`,
-        esc(r.title || '-'),
+      $('analysisTable').innerHTML = tableWrap([groupLabel(state.group),'Titulo','Unid.','Receita','Preco atual','Preco medio','Dev.','Recl.','Queda','Causa provavel','Proxima acao'], rows.slice(0, 500).map((r) => [
+        aggregateIdentityCell(r, state.group, `Media mensal: ${fmtNum(avgMonthly(r).toFixed(1))} un | MLBs: ${r.mlbs ? r.mlbs.size : 1}`),
+        `${esc(r.title || '-')}<span class="subline">${esc(r.catalogLabel || 'Sem catalogo identificado')}</span>`,
         right(fmtNum(r.units)),
         right(fmtMoney(r.revenue)),
         right(fmtMoney(r.currentPrice)),
@@ -2427,9 +2671,26 @@
       );
       const map = new Map();
       baseRows.forEach((s) => {
-        const key = group === 'sku' ? s.sku : (s.mlb || '(sem MLB)');
-        if (!key || (group === 'mlb' && key === '(sem MLB)')) return;
-        const row = map.get(key) || { key, title: s.title || '', units: 0, gross: 0, netBeforeCostTax: 0, cost: 0, tax: 0, profit: 0, orders: new Set(), skus: new Set() };
+        const key = groupKeyFromSale(s, group);
+        if (!key) return;
+        const row = map.get(key) || {
+          key,
+          title: s.title || '',
+          units: 0,
+          gross: 0,
+          netBeforeCostTax: 0,
+          cost: 0,
+          tax: 0,
+          profit: 0,
+          orders: new Set(),
+          skus: new Set(),
+          mlbs: new Set(),
+          familyIds: new Set(),
+          userProducts: new Set(),
+          catalogProducts: new Set(),
+          campaignIds: new Set(),
+          campaignNames: new Set()
+        };
         const skuCost = Number(state.costBySku[s.sku] || 0);
         const gross = Number(s.productRevenue || 0);
         const netBeforeCostTax = gross + Number(s.shippingRevenue || 0) + Number(s.sellingFee || 0) + Number(s.shippingFee || 0) + Number(s.discounts || 0) + Number(s.refunds || 0);
@@ -2443,6 +2704,13 @@
         row.profit += netBeforeCostTax - cost - tax;
         row.orders.add(s.saleNumber || s.dedupeKey);
         row.skus.add(s.sku);
+        if (s.mlb) row.mlbs.add(s.mlb);
+        if (s.familyId) row.familyIds.add(s.familyId);
+        if (s.userProductId) row.userProducts.add(s.userProductId);
+        if (s.catalogProductId) row.catalogProducts.add(s.catalogProductId);
+        if (s.campaignId) row.campaignIds.add(s.campaignId);
+        const campaignLabel = saleCampaignLabel(s);
+        if (campaignLabel) row.campaignNames.add(campaignLabel);
         if (!row.title || ((s.title || '').length < row.title.length)) row.title = s.title || row.title;
         map.set(key, row);
       });
@@ -2450,6 +2718,12 @@
         r.margin = r.gross ? r.profit / r.gross : 0;
         r.loss = r.profit < 0;
         r.avgSkuCost = r.units ? r.cost / r.units : 0;
+        r.familyLabel = summarizeValues(r.familyIds, 'Familia nao informada');
+        r.variationLabel = summarizeValues(r.userProducts, 'Sem vinculo MLBU');
+        r.catalogLabel = summarizeValues(r.catalogProducts, 'Sem catalogo identificado');
+        r.campaignLabel = summarizeValues([...r.campaignNames, ...[...r.campaignIds].map((id) => `Campanha ${id}`)], 'Sem campanha identificada');
+        r.mlbLabel = summarizeValues(r.mlbs, 'Sem MLB');
+        r.skuLabel = summarizeValues(r.skus, 'Sem SKU');
         return r;
       });
     }
@@ -2470,7 +2744,7 @@
       const margin = totalGross ? totalProfit / totalGross : 0;
       $('profitSummary').innerHTML = `<div class="notice">Resultado liquido (sem devolucoes): <strong>${fmtMoney(totalProfit)}</strong> | Margem media: <strong class="${margin >= 0 ? 'pos' : 'neg'}">${fmtPct(margin)}</strong> | Itens com prejuizo: <strong class="${lossCount ? 'neg' : 'pos'}">${fmtNum(lossCount)}</strong></div>`;
       const headers = [
-        state.profitGroup === 'sku' ? 'SKU' : 'MLB',
+        groupLabel(state.profitGroup),
         'Produto',
         'Unidades',
         'Receita',
@@ -2490,8 +2764,8 @@
           ? '<span class="badge info">Custo nao informado</span>'
           : r.loss ? '<span class="badge bad">Prejuizo</span>' : r.margin < 0.08 ? '<span class="badge warn">Margem baixa</span>' : '<span class="badge ok">Saudavel</span>';
         const row = [
-          `<strong>${esc(r.key)}</strong>${state.profitGroup === 'mlb' ? `<span class="subline">${fmtNum(r.skus.size)} SKU(s)</span>` : ''}`,
-          esc(r.title || '-'),
+          aggregateIdentityCell(r, state.profitGroup, state.profitGroup !== 'sku' ? `${fmtNum(r.skus.size)} SKU(s) consolidados` : ''),
+          `${esc(r.title || '-')}<span class="subline">${esc(r.catalogLabel || 'Sem catalogo identificado')}</span>`,
           right(fmtNum(r.units)),
           right(fmtMoney(r.gross)),
           right(fmtMoney(r.netBeforeCostTax)),
@@ -2513,7 +2787,7 @@
       const target = $('profitDetail');
       if (!target) return;
       if (!state.selectedProfitKey) {
-        target.innerHTML = '<div class="notice">Clique em um SKU/MLB para abrir o lucro por venda.</div>';
+        target.innerHTML = `<div class="notice">Clique em um ${groupLabel(state.profitGroup).toLowerCase()} para abrir o lucro por venda.</div>`;
         return;
       }
       const taxRate = Math.max(0, Number(state.profitTaxRate || 0)) / 100;
@@ -2524,7 +2798,7 @@
         s.lineType === 'item_sale' &&
         !returnedSaleNumbers.has(s.saleNumber || s.dedupeKey) &&
         s.eventClass !== 'cancelamento' &&
-        (state.profitGroup === 'sku' ? s.sku === state.selectedProfitKey : (s.mlb || '(sem MLB)') === state.selectedProfitKey)
+        groupKeyFromSale(s, state.profitGroup) === state.selectedProfitKey
       );
       if (!filtered.length) {
         target.innerHTML = '<div class="notice">Sem vendas validas para o item selecionado neste periodo.</div>';
@@ -2552,7 +2826,7 @@
           right(`<span class="${margin >= 0 ? 'pos' : 'neg'}">${fmtPct(margin)}</span>`)
         ];
       });
-      target.innerHTML = `<div class="section"><div class="section-head"><h2 class="section-title">Lucro por venda: ${esc(state.selectedProfitKey)}</h2></div><div class="section-body">${tableWrap(['Venda','Data','SKU','MLB','Unid.','Receita','Base liquida','Custo','Imposto','Lucro','Margem'], rows, 'profit_detail')}</div></div>`;
+      target.innerHTML = `<div class="section"><div class="section-head"><h2 class="section-title">Lucro por venda: ${esc(state.selectedProfitKey)}</h2><div class="muted">${esc(groupLabel(state.profitGroup))}</div></div><div class="section-body">${tableWrap(['Venda','Data','SKU','MLB','Unid.','Receita','Base liquida','Custo','Imposto','Lucro','Margem'], rows, 'profit_detail')}</div></div>`;
     }
 
     function renderMonthly() {
@@ -2565,7 +2839,7 @@
         const cmpPct = cmp.prev === 0 ? (cmp.current > 0 ? '+100,0%' : '0,0%') : fmtPct(cmp.change);
         const cmpVal = state.monthlyMetric === 'revenue' ? fmtMoney(cmp.delta) : fmtNum(cmp.delta);
         const cmpTone = cmp.change > 0 ? 'pos' : cmp.change < 0 ? 'neg' : '';
-        const cells = [`<strong>${esc(r.key)}</strong><span class="subline">${esc(r.title || '-')}</span><span class="subline">Media mensal: ${fmtNum(avgMonthly(r).toFixed(1))} un | Preco atual: ${fmtMoney(r.currentPrice)} | Preco medio: ${fmtMoney(r.avgPrice)} | <span class="${cmpTone}">${cmpPct}</span> (${cmpVal}) vs periodo anterior</span>`, fmtNum(avgByMode(r).toFixed(1))];
+        const cells = [aggregateIdentityCell(r, state.monthlyGroup, `${esc(r.title || '-')}`) + `<span class="subline">Media mensal: ${fmtNum(avgMonthly(r).toFixed(1))} un | Preco atual: ${fmtMoney(r.currentPrice)} | Preco medio: ${fmtMoney(r.avgPrice)} | <span class="${cmpTone}">${cmpPct}</span> (${cmpVal}) vs periodo anterior</span>`, fmtNum(avgByMode(r).toFixed(1))];
         let prev = null;
         months.forEach((m) => {
           const val = r.months[m]?.[state.monthlyMetric] || 0;
@@ -2657,7 +2931,7 @@
       if (selected) {
         vals = displayMonths.map((m) => selected.months[m]?.[state.monthlyMetric] || 0);
         revenueVals = displayMonths.map((m) => selected.months[m]?.revenue || 0);
-        title = `<strong>${esc(selected.key)}</strong> <span class="muted">| ${state.monthlyMetric === 'revenue' ? 'Faturamento' : 'Unidades'} por mes</span>`;
+        title = `<strong>${esc(selected.key)}</strong> <span class="muted">| ${groupLabel(state.monthlyGroup)} | ${state.monthlyMetric === 'revenue' ? 'Faturamento' : 'Unidades'} por mes</span><div class="monthly-pie-note">${esc(rowHierarchyLines(selected, state.monthlyGroup).join(' | ') || selected.title || '')}</div>`;
       } else {
         vals = displayMonths.map((m) => rows.reduce((a, r) => a + (r.months[m]?.[state.monthlyMetric] || 0), 0));
         revenueVals = displayMonths.map((m) => rows.reduce((a, r) => a + (r.months[m]?.revenue || 0), 0));
@@ -2826,14 +3100,16 @@
             ? `${fmtNum(state.noSalesDays)} dias personalizados`
             : `${fmtNum(state.noSalesDays)} dias`;
       $('noSalesSummary').innerHTML = `<div class="notice">Leitura operacional com base em <strong>${thresholdLabel}</strong> sem venda. Rejeitados manualmente: <strong>${fmtNum(totalHidden)}</strong>.</div>`;
-      $('noSalesTable').innerHTML = tableWrap(['Codigo','Titulo','Ultima venda','Dias sem venda','Media mensal','Diagnostico','Acao'], rows.map((r) => [
-        esc(r.key),
-        esc(r.title || '-'),
+      $('noSalesTable').innerHTML = tableWrap([groupLabel(state.noSalesGroup),'Titulo','Ultima venda','Dias sem venda','Media mensal','Diagnostico','Acao'], rows.map((r) => [
+        aggregateIdentityCell(r, state.noSalesGroup),
+        `${esc(r.title || '-')}<span class="subline">${esc(r.catalogLabel || 'Sem catalogo identificado')}</span>`,
         r.currentDate.toLocaleDateString('pt-BR'),
         right(r.noSaleDays),
         right(fmtNum(avgMonthly(r).toFixed(1))),
         `Produto sem venda ha ${r.noSaleDays} dias. Verificar preco, promocao, estoque, catalogo ou anuncio.`,
-        `<button class="btn" onclick="__marketplaceApp.rejectNoSalesItem('${String(r.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')">Rejeitar SKU</button>`
+        state.noSalesGroup === 'sku'
+          ? `<button class="btn" onclick="__marketplaceApp.rejectNoSalesItem('${String(r.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')">Rejeitar SKU</button>`
+          : '<span class="muted">Troque para SKU para rejeitar</span>'
       ]), 'nosales');
     }
 
@@ -3390,6 +3666,10 @@
       dashboardSkuPage: (delta) => {
         state.dashboardSkuPage += delta;
         renderDashboard();
+      },
+      dashboardChartHover: (index) => {
+        state.dashboardChartHover = Number(index);
+        renderChart(itemSales());
       }
     };
 

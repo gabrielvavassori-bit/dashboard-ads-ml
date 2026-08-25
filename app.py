@@ -871,7 +871,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             ),
             "adsCampaigns": f"Campanha {campaign_id}" if campaign_id else "",
             "campaignStatus": campaign_status,
+            "familyId": str(raw.get("family_id") or raw.get("familyId") or "").strip(),
+            "familyName": str(raw.get("family_name") or raw.get("familyName") or "").strip(),
             "userProductId": str(raw.get("user_product_id") or raw.get("userProductId") or "").strip(),
+            "userProductName": str(raw.get("user_product_name") or raw.get("userProductName") or "").strip(),
             "catalogProductId": str(raw.get("catalog_product_id") or raw.get("catalogProductId") or "").strip(),
             "catalogListing": bool(raw.get("catalog_listing") or raw.get("catalogListing")),
             "thumbnailUrl": str(
