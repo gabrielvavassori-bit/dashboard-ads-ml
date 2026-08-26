@@ -1282,6 +1282,10 @@ def _sales_intelligence_collect_item_meta(latest_payload: dict) -> dict[str, dic
             "code": code,
             "sku": str(sale.get("sku") or sale.get("seller_sku") or sale.get("sellerSku") or "").strip(),
             "title": str(sale.get("title") or sale.get("item_title") or sale.get("itemTitle") or "").strip(),
+            "familyId": str(sale.get("family_id") or sale.get("familyId") or "").strip(),
+            "familyName": str(sale.get("family_name") or sale.get("familyName") or "").strip(),
+            "userProductId": str(sale.get("user_product_id") or sale.get("userProductId") or "").strip(),
+            "userProductName": str(sale.get("user_product_name") or sale.get("userProductName") or "").strip(),
         }
     for raw in ads_rows:
         if not isinstance(raw, dict):
@@ -1293,6 +1297,14 @@ def _sales_intelligence_collect_item_meta(latest_payload: dict) -> dict[str, dic
             meta[code]["sku"] = str(raw.get("sku") or "").strip()
         if not meta[code]["title"]:
             meta[code]["title"] = str(raw.get("title") or "").strip()
+        if not meta[code]["familyId"]:
+            meta[code]["familyId"] = str(raw.get("family_id") or raw.get("familyId") or "").strip()
+        if not meta[code]["familyName"]:
+            meta[code]["familyName"] = str(raw.get("family_name") or raw.get("familyName") or "").strip()
+        if not meta[code]["userProductId"]:
+            meta[code]["userProductId"] = str(raw.get("user_product_id") or raw.get("userProductId") or "").strip()
+        if not meta[code]["userProductName"]:
+            meta[code]["userProductName"] = str(raw.get("user_product_name") or raw.get("userProductName") or "").strip()
     return meta
 
 
@@ -1431,6 +1443,10 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
                 "fallback_aggregate": True,
                 "sku": str(meta.get("sku") or code).strip(),
                 "title": str(meta.get("title") or "").strip(),
+                "family_id": str(meta.get("familyId") or "").strip(),
+                "family_name": str(meta.get("familyName") or "").strip(),
+                "user_product_id": str(meta.get("userProductId") or "").strip(),
+                "user_product_name": str(meta.get("userProductName") or "").strip(),
             })
     sales_rows = []
     import_id = f"online:{client_id}:{period['dateFrom']}:{period['dateTo']}"
@@ -1481,6 +1497,10 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
             "sku": sku,
             "mlb": code,
             "title": title,
+            "familyId": str(daily.get("family_id") or meta.get("familyId") or "").strip(),
+            "familyName": str(daily.get("family_name") or meta.get("familyName") or "").strip(),
+            "userProductId": str(daily.get("user_product_id") or meta.get("userProductId") or "").strip(),
+            "userProductName": str(daily.get("user_product_name") or meta.get("userProductName") or "").strip(),
             "listingType": "",
             "deliveryMethod": "",
             "result": "",
