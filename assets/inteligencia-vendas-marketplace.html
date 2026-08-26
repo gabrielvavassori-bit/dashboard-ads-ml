@@ -365,6 +365,7 @@
     .badge.info { color: var(--blue); border-color: #b8cff4; background: #eef5ff; }
     .pos { color: var(--green); font-weight: 800; }
     .neg { color: var(--red); font-weight: 800; }
+    .price-above-avg { color: var(--amber); font-weight: 800; }
     .critical { background: #fff2f0; color: var(--red); font-weight: 900; }
     .up-strong { background: #eefaf1; color: var(--green); font-weight: 900; }
 
@@ -691,6 +692,9 @@
             <div class="filters">
               <label class="muted">Aliquota (%)</label>
               <input class="control" id="profitTaxInput" type="number" min="0" step="0.01" value="0" style="width:110px">
+              <button class="btn" id="exportCostTemplateBtn">Exportar custos</button>
+              <button class="btn" id="importCostTemplateBtn">Importar custos</button>
+              <input type="file" id="importCostInput" accept=".csv,.xlsx" style="display:none">
             </div>
           </div>
           <div class="section-body">
@@ -982,6 +986,9 @@
       $('globalSearchScope').onchange = (e) => { state.globalSearchScope = e.target.value || 'code'; renderAll(); };
       $('globalSearchInput').oninput = (e) => { state.globalSearch = e.target.value || ''; renderAll(); };
       $('profitTaxInput').oninput = (e) => { state.profitTaxRate = Math.max(0, Number(e.target.value || 0)); renderProfit(); };
+      $('exportCostTemplateBtn').onclick = exportCostTemplateCsv;
+      $('importCostTemplateBtn').onclick = () => $('importCostInput').click();
+      $('importCostInput').onchange = (e) => importCostTemplate(e.target.files[0]);
       $('avgMode').onchange = (e) => { state.avgMode = e.target.value; renderMonthly(); };
       $('clearBtn').onclick = clearBase;
       $('exportCsvBtn').onclick = exportCurrentCsv;
@@ -1626,6 +1633,49 @@
     }
     function colToIndex(col) { return [...col].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1; }
     function xml(text) { return new DOMParser().parseFromString(text, 'application/xml'); }
+    function parseDelimitedText(text) {
+      const src = String(text || '').replace(/^\uFEFF/, '');
+      const lines = src.split(/\r?\n/).filter((line) => line.trim());
+      if (!lines.length) return [];
+      const sample = lines.slice(0, 5).join('\n');
+      const candidates = [';', ',', '\t'];
+      const sep = candidates.map((token) => ({ token, count: (sample.match(new RegExp(token === '\t' ? '\\t' : '\\' + token, 'g')) || []).length }))
+        .sort((a, b) => b.count - a.count)[0]?.token || ';';
+      const parseLine = (line) => {
+        const out = [];
+        let cur = '';
+        let quoted = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            if (quoted && line[i + 1] === '"') {
+              cur += '"';
+              i++;
+            } else {
+              quoted = !quoted;
+            }
+            continue;
+          }
+          if (ch === sep && !quoted) {
+            out.push(cur);
+            cur = '';
+            continue;
+          }
+          cur += ch;
+        }
+        out.push(cur);
+        return out.map((v) => String(v || '').trim());
+      };
+      return lines.map(parseLine);
+    }
+    function normalizedHeader(v) {
+      return String(v || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    }
 
     function parseZip(buffer) {
       const bytes = new Uint8Array(buffer);
@@ -2648,6 +2698,28 @@
       return '<span class="badge ok">Baixo</span>';
     }
 
+    function priceAboveAverage(r, threshold = 0.05) {
+      return Number(r?.priceDiff || 0) > threshold;
+    }
+
+    function priceAverageCell(r) {
+      const cls = priceAboveAverage(r) ? 'price-above-avg' : '';
+      return `<span class="${cls}">${fmtMoney(r.avgPrice)}</span>`;
+    }
+
+    function priceAverageSubline(r) {
+      const cls = priceAboveAverage(r) ? 'price-above-avg' : '';
+      const note = priceAboveAverage(r) ? ` | medio ${fmtPct(r.priceDiff)} abaixo do atual` : '';
+      return `Preco atual ${fmtMoney(r.currentPrice)} | <span class="${cls}">Preco medio ${fmtMoney(r.avgPrice)}</span>${note}`;
+    }
+
+    function priceTrendRelation(r) {
+      const diff = Number(r?.priceDiff || 0);
+      if (diff >= 0.05) return `<span class="price-above-avg">Preco atual ${fmtPct(diff)} acima da media</span>`;
+      if (diff <= -0.05) return `<span class="pos">Preco atual ${fmtPct(Math.abs(diff))} abaixo da media</span>`;
+      return `<span class="muted">Preco alinhado com a media</span>`;
+    }
+
     function renderAnalysis() {
       let rows = aggregate(state.group).filter(rowMatchesGlobalSearch);
       $('analysisTable').innerHTML = tableWrap([groupLabel(state.group),'Titulo','Unid.','Receita','Preco atual','Preco medio','Dev.','Recl.','Queda','Causa provavel','Proxima acao'], rows.slice(0, 500).map((r) => [
@@ -2656,7 +2728,7 @@
         right(fmtNum(r.units)),
         right(fmtMoney(r.revenue)),
         right(fmtMoney(r.currentPrice)),
-        right(fmtMoney(r.avgPrice)),
+        right(priceAverageCell(r)),
         rateCell(r.returnRate),
         rateCell(r.complaintRate),
         trendCell(r.recentTrend?.change || 0),
@@ -2845,7 +2917,7 @@
         const cmpPct = cmp.prev === 0 ? (cmp.current > 0 ? '+100,0%' : '0,0%') : fmtPct(cmp.change);
         const cmpVal = state.monthlyMetric === 'revenue' ? fmtMoney(cmp.delta) : fmtNum(cmp.delta);
         const cmpTone = cmp.change > 0 ? 'pos' : cmp.change < 0 ? 'neg' : '';
-        const cells = [aggregateIdentityCell(r, state.monthlyGroup, `${esc(r.title || '-')}`) + `<span class="subline">Media mensal: ${fmtNum(avgMonthly(r).toFixed(1))} un | Preco atual: ${fmtMoney(r.currentPrice)} | Preco medio: ${fmtMoney(r.avgPrice)} | <span class="${cmpTone}">${cmpPct}</span> (${cmpVal}) vs periodo anterior</span>`, fmtNum(avgByMode(r).toFixed(1))];
+        const cells = [aggregateIdentityCell(r, state.monthlyGroup, `${esc(r.title || '-')}`) + `<span class="subline">Media mensal: ${fmtNum(avgMonthly(r).toFixed(1))} un | ${priceAverageSubline(r)} | <span class="${cmpTone}">${cmpPct}</span> (${cmpVal}) vs periodo anterior | ${priceTrendRelation(r)}</span>`, fmtNum(avgByMode(r).toFixed(1))];
         let prev = null;
         months.forEach((m) => {
           const val = r.months[m]?.[state.monthlyMetric] || 0;
@@ -2897,6 +2969,9 @@
         if (ch1 <= -0.10) {
           riskAlerts.push([`<strong>${esc(r.key)}</strong>`, `<span class="neg">${fmtPct(ch1)}</span>`, `${unitLabel} menor que ${prevMonth} em ${lastMonth}`]);
         }
+        if (ch1 <= -0.10 && priceAboveAverage(r)) {
+          riskAlerts.push([`<strong>${esc(r.key)}</strong>`, '<span class="price-above-avg">Preco alto</span>', `${unitLabel} caiu e o preco atual esta ${fmtPct(r.priceDiff)} acima da media`]);
+        }
         if (vals.length >= 3 && ch1 <= -0.10 && ch2 <= -0.10) {
           riskAlerts.push([`<strong>${esc(r.key)}</strong>`, '<span class="badge warn">2 meses</span>', `queda de ${unitLabel} por 2 meses seguidos`]);
         }
@@ -2905,6 +2980,9 @@
         }
         if (ch1 >= 0.10) {
           opportunityAlerts.push([`<strong>${esc(r.key)}</strong>`, `<span class="pos">${fmtPct(ch1)}</span>`, `aumento acima de 10% em ${lastMonth}`]);
+        }
+        if (ch1 >= 0.10 && Number(r.priceDiff || 0) <= -0.05) {
+          opportunityAlerts.push([`<strong>${esc(r.key)}</strong>`, '<span class="pos">Preco competitivo</span>', `${unitLabel} subiu com preco atual ${fmtPct(Math.abs(r.priceDiff || 0))} abaixo da media`]);
         }
       });
       const tab = state.monthlyAlertTab === 'opportunity' ? 'opportunity' : 'risk';
@@ -3128,9 +3206,10 @@
 
     function renderPromo() {
       const rows = aggregate('sku').filter(rowMatchesGlobalSearch).filter((r) => r.promo || (r.avgPrice && Math.abs(r.currentPrice / r.avgPrice - 1) > .05));
-      $('promoTable').innerHTML = tableWrap(['SKU','Unid.','Preco atual','Preco medio','Variacao','Indicios promo','Diagnostico'], rows.map((r) => {
+      $('promoTable').innerHTML = tableWrap(['SKU','Unid.','Preco atual','Preco medio','Variacao','Acima da media','Indicios promo','Diagnostico'], rows.map((r) => {
         const diff = r.priceDiff || 0;
-        return [esc(r.key), right(fmtNum(r.units)), right(fmtMoney(r.currentPrice)), right(fmtMoney(r.avgPrice)), `<span class="${diff >= 0 ? 'pos':'neg'}">${fmtPct(diff)}</span>`, right(fmtNum(r.promo)), esc(r.diagnosis)];
+        const aboveAvg = priceAboveAverage(r) ? `<span class="price-above-avg">${fmtPct(diff)}</span>` : '-';
+        return [esc(r.key), right(fmtNum(r.units)), right(fmtMoney(r.currentPrice)), right(priceAverageCell(r)), `<span class="${diff >= 0 ? 'pos':'neg'}">${fmtPct(diff)}</span>`, aboveAvg, right(fmtNum(r.promo)), esc(r.diagnosis)];
       }), 'promo');
     }
 
@@ -3292,6 +3371,106 @@
         r.loss ? 'prejuizo' : (r.margin < 0.08 ? 'margem baixa' : 'saudavel')
       ]));
       downloadCsv(`lucro_prejuizo_${state.profitGroup}.csv`, rows);
+    }
+    function exportCostTemplateCsv() {
+      const salesScope = profitWindowedSales();
+      if (!Array.isArray(salesScope) || !salesScope.length) return alert('Nao ha vendas na janela atual para gerar a planilha de custos.');
+      const rows = [[
+        'familia',
+        'variacao',
+        'sku',
+        'mlb',
+        'mlbu',
+        'produto',
+        'campanha',
+        'unidades_periodo',
+        'receita_periodo',
+        'preco_medio',
+        'custo_unitario',
+        'observacao'
+      ]];
+      const map = new Map();
+      salesScope.filter((s) => s.sku && rowMatchesGlobalSearch(s)).forEach((s) => {
+        const key = normKey(s.sku);
+        if (!key) return;
+        const row = map.get(key) || {
+          sku: s.sku,
+          produto: s.title || '',
+          familia: s.familyName || s.familyId || '',
+          variacao: s.userProductName || '',
+          mlb: s.mlb || '',
+          mlbu: s.userProductId || '',
+          campanha: saleCampaignLabel(s),
+          unidades: 0,
+          receita: 0,
+          precoMedio: 0
+        };
+        row.unidades += Number(s.units || 0);
+        row.receita += Number(s.productRevenue || 0);
+        row.precoMedio = row.unidades ? row.receita / row.unidades : 0;
+        if (!row.produto || ((s.title || '').length && (s.title || '').length < row.produto.length)) row.produto = s.title || row.produto;
+        if (!row.familia) row.familia = s.familyName || s.familyId || '';
+        if (!row.variacao) row.variacao = s.userProductName || '';
+        if (!row.mlb) row.mlb = s.mlb || '';
+        if (!row.mlbu) row.mlbu = s.userProductId || '';
+        if (!row.campanha) row.campanha = saleCampaignLabel(s);
+        map.set(key, row);
+      });
+      [...map.values()]
+        .sort((a, b) => String(a.sku).localeCompare(String(b.sku), 'pt-BR'))
+        .forEach((r) => rows.push([
+          r.familia,
+          r.variacao,
+          r.sku,
+          r.mlb,
+          r.mlbu,
+          r.produto,
+          r.campanha,
+          Number(r.unidades || 0).toFixed(0),
+          Number(r.receita || 0).toFixed(2),
+          Number(r.precoMedio || 0).toFixed(2),
+          Number(state.costBySku[normKey(r.sku)] || 0).toFixed(2),
+          ''
+        ]));
+      downloadCsv(`base_custos_${norm($('clientName').value || 'cliente')}.csv`, rows);
+    }
+    async function importCostTemplate(file) {
+      try {
+        if (!file) return;
+        const name = String(file.name || '').toLowerCase();
+        let rows = [];
+        if (name.endsWith('.xlsx')) {
+          const sheets = await readXlsx(await file.arrayBuffer());
+          const firstKey = Object.keys(sheets)[0];
+          rows = firstKey ? (sheets[firstKey] || []) : [];
+        } else {
+          rows = parseDelimitedText(await file.text());
+        }
+        if (!rows.length) throw new Error('Planilha vazia.');
+        const header = rows[0].map(normalizedHeader);
+        const skuIndex = header.findIndex((h) => ['sku', 'codigo_sku', 'codigo', 'seller_sku'].includes(h));
+        const costIndex = header.findIndex((h) => ['custo_unitario', 'custo', 'custo_un', 'valor_custo', 'preco_custo'].includes(h));
+        if (skuIndex < 0 || costIndex < 0) throw new Error('A planilha precisa ter as colunas SKU e custo_unitario.');
+        let updated = 0;
+        let ignored = 0;
+        rows.slice(1).forEach((row) => {
+          const sku = normKey(row[skuIndex]);
+          if (!sku) return;
+          const rawCost = money(row[costIndex]);
+          if (!Number.isFinite(rawCost) || rawCost < 0) {
+            ignored++;
+            return;
+          }
+          state.costBySku[sku] = rawCost;
+          updated++;
+        });
+        if ($('importCostInput')) $('importCostInput').value = '';
+        renderProfit();
+        alert(`Custos importados com sucesso. SKU(s) atualizados: ${updated}. Linha(s) ignoradas: ${ignored}.`);
+      } catch (err) {
+        if ($('importCostInput')) $('importCostInput').value = '';
+        alert('Nao foi possivel importar a planilha de custos: ' + err.message);
+      }
     }
 
     function exportNoSalesCsv() {
