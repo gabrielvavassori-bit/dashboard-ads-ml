@@ -1824,12 +1824,15 @@
       return /^https?:\/\//i.test(value) ? value : '';
     }
 
+    function productThumb(r) {
+      const image = safeImageUrl(r?.thumbnailUrl);
+      return image ? `<img class="identity-thumb" src="${esc(image)}" alt="${esc(r?.title || r?.key || 'Produto')}" loading="lazy" referrerpolicy="no-referrer">` : '';
+    }
+
     function aggregateIdentityCell(r, group, extraLine = '') {
       const lines = rowHierarchyLines(r, group).map((line) => `<span class="subline">${esc(line)}</span>`);
       if (extraLine) lines.push(`<span class="subline">${extraLine}</span>`);
-      const image = safeImageUrl(r.thumbnailUrl);
-      const thumb = image ? `<img class="identity-thumb" src="${esc(image)}" alt="${esc(r.title || r.key || 'Produto')}" loading="lazy" referrerpolicy="no-referrer">` : '';
-      return `<div class="identity-main">${thumb}<div class="identity-text"><strong>${esc(r.key)}</strong>${lines.join('')}</div></div>`;
+      return `<div class="identity-main">${productThumb(r)}<div class="identity-text"><strong>${esc(r.key)}</strong>${lines.join('')}</div></div>`;
     }
 
     function aggregateFromSales(salesList, group = 'sku', previousSalesList = []) {
@@ -2344,7 +2347,7 @@
         .slice(0, 12);
       $('alertsPanel').innerHTML = alerts.length ? `<div class="alert-list">${alerts.map((a) => {
         const severe = (a.recentTrend?.change || 0) < -0.30 || a.priceDiff > 0.10;
-        return `<div class="alert-item"><span class="alert-ico ${severe ? 'bad':''}">!</span><div><div class="alert-code">${esc(a.key)}</div><div class="muted"><strong>${esc(a.primaryCause || a.diagnosis)}</strong></div><div class="alert-meta">Confianca ${esc(a.confidence || 'media')} | Score ${fmtNum(a.priorityScore || 0)} | Receita ${fmtMoney(a.revenue)}</div><div class="alert-meta">${esc((a.secondarySignals || []).slice(0, 3).join(' | ') || a.diagnosis)}</div><div class="alert-meta"><strong>Acao do dia:</strong> ${esc(a.nextAction || 'Monitorar e revisar em 7 dias.')}</div></div><span class="alert-time">${severe ? 'Critico' : 'Atencao'}</span></div>`;
+        return `<div class="alert-item"><span class="alert-ico ${severe ? 'bad':''}">!</span><div><div class="alert-code">${productThumb(a)}${esc(a.key)}</div><div class="muted"><strong>${esc(a.primaryCause || a.diagnosis)}</strong></div><div class="alert-meta">Confianca ${esc(a.confidence || 'media')} | Score ${fmtNum(a.priorityScore || 0)} | Receita ${fmtMoney(a.revenue)}</div><div class="alert-meta">${esc((a.secondarySignals || []).slice(0, 3).join(' | ') || a.diagnosis)}</div><div class="alert-meta"><strong>Acao do dia:</strong> ${esc(a.nextAction || 'Monitorar e revisar em 7 dias.')}</div></div><span class="alert-time">${severe ? 'Critico' : 'Atencao'}</span></div>`;
       }).join('')}</div><div class="notice" style="margin-top:8px">Fonte dos alertas: ultimos 7 dias (dinamico).</div>` : '<div class="empty">Sem alertas com a base atual (ultimos 7 dias).</div>';
       renderDashboardSkuTable(agSku);
       renderSellMorePlan(agSku);
@@ -2583,7 +2586,7 @@
       state.dashboardSkuPage = Math.min(Math.max(1, state.dashboardSkuPage), totalPages);
       const start = (state.dashboardSkuPage - 1) * pageSize;
       const rows = ranked.slice(start, start + pageSize).map((r) => [
-        `<strong>${esc(r.key)}</strong><span class="subline">${esc(r.title || '-')}</span><span class="subline">Preco atual ${fmtMoney(r.currentPrice)} | medio ${fmtMoney(r.avgPrice)} | causa principal: ${esc(r.primaryCause || '-')}</span>${governanceTraceLabel(r) ? `<span class="subline">${esc(governanceTraceLabel(r))}</span>` : ''}`,
+        `<div class="identity-main">${productThumb(r)}<div class="identity-text"><strong>${esc(r.key)}</strong><span class="subline">${esc(r.title || '-')}</span><span class="subline">Preco atual ${fmtMoney(r.currentPrice)} | medio ${fmtMoney(r.avgPrice)} | causa principal: ${esc(r.primaryCause || '-')}</span>${governanceTraceLabel(r) ? `<span class="subline">${esc(governanceTraceLabel(r))}</span>` : ''}</div></div>`,
         right(fmtNum(r.units)),
         right(fmtMoney(r.revenue)),
         right(fmtMoney(r.avgPrice)),
@@ -2645,7 +2648,7 @@
         rows.map((x) => [
           right(`<span class="prio-dot ${x.priority >= 80 ? 'prio-high' : x.priority >= 60 ? 'prio-mid' : 'prio-low'}">${x.priority >= 80 ? '!' : x.priority >= 60 ? '•' : '✓'}</span><span class="badge ${x.priority >= 80 ? 'bad' : x.priority >= 60 ? 'warn' : 'ok'}">${x.priority}</span>`),
           esc(x.r.key),
-          esc(x.r.title || '-'),
+          `<div class="identity-main">${productThumb(x.r)}<div class="identity-text">${esc(x.r.title || '-')}</div></div>`,
           `${esc(x.reason)}<span class="subline">Confianca ${esc(x.r.confidence || 'media')} | ${esc((x.r.secondarySignals || []).slice(0, 2).join(' | ') || 'sem sinais secundarios')}</span>`,
           `<strong>${x.priority >= 80 ? 'Hoje:' : x.priority >= 60 ? 'Esta semana:' : 'Rotina:'}</strong> ${esc(x.action)}`,
           planStatusCell(x.r.key, x.r.title || '-', x.reason, x.action)
