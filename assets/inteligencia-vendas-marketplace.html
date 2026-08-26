@@ -359,6 +359,40 @@
       flex: 0 0 42px;
     }
     .identity-text { min-width: 0; }
+    .copy-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid #b8cff4;
+      background: #eef5ff;
+      color: var(--blue);
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      margin: 2px 6px 0 0;
+      cursor: pointer;
+    }
+    .copy-chip.ghost {
+      background: #fff;
+      border-color: var(--line);
+      color: var(--muted);
+    }
+    .copy-chip:hover { filter: brightness(.98); }
+    .curve-ref-title {
+      display: block;
+      margin-top: 4px;
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.25;
+      color: var(--ink);
+    }
+    .curve-ref-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 4px;
+    }
     .right { text-align: right; }
     .nowrap { white-space: nowrap; }
     .badge {
@@ -608,8 +642,12 @@
         <div class="dashboard-grid">
           <div class="dash-left">
             <div class="section">
-              <div class="section-head"><h2 class="section-title">Vendas por periodo</h2><div class="filters"><div class="seg" id="dashboardMetricSeg"><button class="active" data-metric="revenue">Receita</button><button data-metric="units">Unidades</button><button data-metric="orders">Pedidos</button><button data-metric="avgPrice">Preco medio</button></div><div class="seg" id="dashboardGranularitySeg" style="display:none"><button class="active" data-granularity="day">Diaria</button><button data-granularity="month">Mensal</button></div></div></div>
+              <div class="section-head"><h2 class="section-title">Vendas por periodo</h2><div class="filters"><select class="control" id="dashboardSearchScope" style="min-width:190px"><option value="code">Codigo/SKU/MLB/MLBU/Familia</option><option value="title">Titulo</option><option value="campaign">Campanha</option></select><input class="control" id="dashboardSearchInput" placeholder="Filtrar grafico..." style="min-width:230px"><div class="seg" id="dashboardMetricSeg"><button class="active" data-metric="revenue">Receita</button><button data-metric="units">Unidades</button><button data-metric="orders">Pedidos</button><button data-metric="avgPrice">Preco medio</button></div><div class="seg" id="dashboardGranularitySeg" style="display:none"><button class="active" data-granularity="day">Diaria</button><button data-granularity="month">Mensal</button></div></div></div>
               <div class="section-body"><div class="chart" id="salesChart"></div></div>
+            </div>
+            <div class="section">
+              <div class="section-head"><h2 class="section-title">Curva ABC</h2><div class="filters"><button class="btn" id="exportCurveBtn">Exportar curva ABC</button><div class="seg" id="dashboardCurveGroupSeg"><button class="active" data-group="hybrid">Mista</button><button data-group="family">Familia</button><button data-group="mlb">MLB</button><button data-group="sku">SKU</button></div><div class="seg" id="dashboardCurveModeSeg"><button class="active" data-mode="mixed">ABC mista</button><button data-mode="revenue">Faturamento</button><button data-mode="units">Unidades</button></div></div></div>
+              <div class="section-body"><div id="dashboardCurveTable"></div></div>
             </div>
             <div class="section">
             <div class="section-head"><h2 class="section-title">Analise por SKU</h2></div>
@@ -778,7 +816,7 @@
     const DB_NAME = 'un_clic_marketplace_intelligence_v1';
     const DB_VERSION = 1;
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
-    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
+    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
 
     const $ = (id) => document.getElementById(id);
@@ -989,18 +1027,23 @@
       document.querySelectorAll('#metricSeg button').forEach((b) => b.onclick = () => setSeg('metricSeg', b, () => { state.monthlyMetric = b.dataset.metric; renderMonthly(); }));
       document.querySelectorAll('#dashboardMetricSeg button').forEach((b) => b.onclick = () => setSeg('dashboardMetricSeg', b, () => { state.dashboardMetric = b.dataset.metric; renderDashboard(); }));
       document.querySelectorAll('#dashboardGranularitySeg button').forEach((b) => b.onclick = () => setSeg('dashboardGranularitySeg', b, () => { state.dashboardGranularity = b.dataset.granularity === 'month' ? 'month' : 'day'; renderDashboard(); }));
+      document.querySelectorAll('#dashboardCurveGroupSeg button').forEach((b) => b.onclick = () => setSeg('dashboardCurveGroupSeg', b, () => { state.dashboardCurveGroup = b.dataset.group || 'hybrid'; renderDashboard(); }));
+      document.querySelectorAll('#dashboardCurveModeSeg button').forEach((b) => b.onclick = () => setSeg('dashboardCurveModeSeg', b, () => { state.dashboardCurveMode = b.dataset.mode || 'mixed'; renderDashboard(); }));
       document.querySelectorAll('#monthlyGroupSeg button').forEach((b) => b.onclick = () => setSeg('monthlyGroupSeg', b, () => { state.monthlyGroup = b.dataset.group; state.selectedMonthlySku = ''; renderMonthly(); }));
       document.querySelectorAll('#noSalesGroupSeg button').forEach((b) => b.onclick = () => setSeg('noSalesGroupSeg', b, () => { state.noSalesGroup = b.dataset.group; renderNoSales(); }));
       document.querySelectorAll('#noSalesModeSeg button').forEach((b) => b.onclick = () => setSeg('noSalesModeSeg', b, () => { state.noSalesMode = b.dataset.mode === 'rejected' ? 'rejected' : 'active'; renderNoSales(); }));
       document.querySelectorAll('#reportWindowSeg button').forEach((b) => b.onclick = () => setGlobalReportWindow(b.dataset.win || '30d'));
       $('reportDateStart').onchange = (e) => { state.reportDateStart = e.target.value || ''; syncDerivedWindowsFromReport(); syncWindowControls(); renderAll(); };
       $('reportDateEnd').onchange = (e) => { state.reportDateEnd = e.target.value || ''; syncDerivedWindowsFromReport(); syncWindowControls(); renderAll(); };
-      $('globalSearchScope').onchange = (e) => { state.globalSearchScope = e.target.value || 'code'; renderAll(); };
-      $('globalSearchInput').oninput = (e) => { state.globalSearch = e.target.value || ''; renderAll(); };
+      $('globalSearchScope').onchange = (e) => applyGlobalSearch(e.target.value || 'code');
+      $('globalSearchInput').oninput = (e) => applyGlobalSearch(undefined, e.target.value || '');
+      if ($('dashboardSearchScope')) $('dashboardSearchScope').onchange = (e) => applyGlobalSearch(e.target.value || 'code');
+      if ($('dashboardSearchInput')) $('dashboardSearchInput').oninput = (e) => applyGlobalSearch(undefined, e.target.value || '');
       $('profitTaxInput').oninput = (e) => { state.profitTaxRate = Math.max(0, Number(e.target.value || 0)); renderProfit(); };
       $('exportCostTemplateBtn').onclick = exportCostTemplateCsv;
       $('importCostTemplateBtn').onclick = () => $('importCostInput').click();
       $('importCostInput').onchange = (e) => importCostTemplate(e.target.files[0]);
+      $('exportCurveBtn').onclick = exportDashboardCurveCsv;
       $('avgMode').onchange = (e) => { state.avgMode = e.target.value; renderMonthly(); };
       $('clearBtn').onclick = clearBase;
       $('exportCsvBtn').onclick = exportCurrentCsv;
@@ -1077,9 +1120,22 @@
       if ($('reportDateEnd')) $('reportDateEnd').style.display = state.reportWindow === 'custom' ? '' : 'none';
       if ($('reportDateStart')) $('reportDateStart').value = state.reportDateStart || '';
       if ($('reportDateEnd')) $('reportDateEnd').value = state.reportDateEnd || '';
+      syncSearchControls();
+      updateReportScopeNotice();
+    }
+
+    function syncSearchControls() {
       if ($('globalSearchScope')) $('globalSearchScope').value = state.globalSearchScope || 'code';
       if ($('globalSearchInput')) $('globalSearchInput').value = state.globalSearch || '';
-      updateReportScopeNotice();
+      if ($('dashboardSearchScope')) $('dashboardSearchScope').value = state.globalSearchScope || 'code';
+      if ($('dashboardSearchInput')) $('dashboardSearchInput').value = state.globalSearch || '';
+    }
+
+    function applyGlobalSearch(scope, value) {
+      if (scope !== undefined) state.globalSearchScope = scope || 'code';
+      if (value !== undefined) state.globalSearch = value || '';
+      syncSearchControls();
+      renderAll();
     }
 
     function reportWindowDays() {
@@ -1798,6 +1854,11 @@
       if (group === 'variation') return String(sale.userProductId || '').trim();
       if (group === 'campaign') return saleCampaignLabel(sale);
       if (group === 'mlb') return String(sale.mlb || '').trim();
+      if (group === 'hybrid') {
+        if (sale.familyId) return `family:${String(sale.familyId).trim()}`;
+        if (sale.mlb) return `mlb:${String(sale.mlb).trim()}`;
+        return `sku:${String(sale.sku || '').trim()}`;
+      }
       return String(sale.sku || '').trim();
     }
 
@@ -1833,6 +1894,131 @@
       const lines = rowHierarchyLines(r, group).map((line) => `<span class="subline">${esc(line)}</span>`);
       if (extraLine) lines.push(`<span class="subline">${extraLine}</span>`);
       return `<div class="identity-main">${productThumb(r)}<div class="identity-text"><strong>${esc(r.key)}</strong>${lines.join('')}</div></div>`;
+    }
+
+    function dashboardCurveDisplayMeta(row) {
+      const group = state.dashboardCurveGroup || 'hybrid';
+      if (group === 'family') return { type: 'Familia', code: row.familyLabel || row.key, cellGroup: 'family' };
+      if (group === 'mlb') return { type: 'MLB', code: row.mlbLabel || row.key, cellGroup: 'mlb' };
+      if (group === 'sku') return { type: 'SKU', code: row.skuLabel || row.key, cellGroup: 'sku' };
+      if (row.familyLabel && row.familyLabel !== 'Familia nao informada') return { type: 'Familia', code: row.familyLabel, cellGroup: 'family' };
+      if (row.mlbLabel && row.mlbLabel !== 'Sem MLB') return { type: 'MLB', code: row.mlbLabel, cellGroup: 'mlb' };
+      return { type: 'SKU', code: row.skuLabel || row.key, cellGroup: 'sku' };
+    }
+
+    function jsStr(value) {
+      return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+    }
+
+    function copyChip(label, value, tone = 'info') {
+      const v = String(value || '').trim();
+      if (!v) return '';
+      return `<button type="button" class="copy-chip ${tone === 'ghost' ? 'ghost' : ''}" title="Clique para copiar" onclick="__marketplaceApp.copyText('${jsStr(v)}')">${esc(label)}: ${esc(v)}</button>`;
+    }
+
+    function dashboardCurveReferenceCell(row, meta, detailLine = '') {
+      const title = row.title || meta.code || row.key || '-';
+      const skuText = row.skuLabel || row.sku || [...(row.skus || [])].join(', ');
+      const mlbText = row.mlbLabel || row.mlb || [...(row.mlbs || [])].join(', ');
+      const familyText = row.familyLabel && row.familyLabel !== 'Familia nao informada' ? row.familyLabel : '';
+      const variationText = row.variationLabel && row.variationLabel !== 'Sem variacao' ? row.variationLabel : '';
+      const extraTokens = [
+        meta.type !== 'MLB' ? copyChip('MLB', mlbText, 'ghost') : '',
+        meta.type !== 'SKU' ? copyChip('SKU', skuText, 'ghost') : '',
+        meta.type !== 'Familia' ? copyChip('Familia', familyText, 'ghost') : '',
+        copyChip('Variacao', variationText, 'ghost')
+      ].filter(Boolean).join('');
+      return `<div class="identity-main">${productThumb(row)}<div class="identity-text">${copyChip(meta.type, meta.code)}<button type="button" class="copy-chip ghost curve-ref-title" title="Clique para copiar o nome" onclick="__marketplaceApp.copyText('${jsStr(title)}')">${esc(title)}</button>${skuText ? `<span class="subline"><strong>SKU:</strong> ${esc(skuText)}</span>` : ''}${detailLine ? `<span class="subline">${detailLine}</span>` : ''}${extraTokens ? `<div class="curve-ref-meta">${extraTokens}</div>` : ''}</div></div>`;
+    }
+
+    function buildAbcRanking(rows, field) {
+      const list = (rows || []).slice().sort((a, b) => Number(b?.[field] || 0) - Number(a?.[field] || 0));
+      const total = list.reduce((sum, row) => sum + Math.max(0, Number(row?.[field] || 0)), 0);
+      let acc = 0;
+      return new Map(list.map((row) => {
+        const value = Math.max(0, Number(row?.[field] || 0));
+        acc += value;
+        const pct = total > 0 ? acc / total : 0;
+        const cls = total <= 0 ? 'C' : pct <= 0.80 ? 'A' : pct <= 0.95 ? 'B' : 'C';
+        return [row.key, { cls, pct, value }];
+      }));
+    }
+
+    function dashboardWindowScoped() {
+      const wnd = reportWindowData();
+      return {
+        ...wnd,
+        currentSales: (wnd.currentSales || []).filter(rowMatchesGlobalSearch),
+        previousSales: (wnd.previousSales || []).filter(rowMatchesGlobalSearch)
+      };
+    }
+
+    function currentDashboardCurveRows() {
+      const wnd = dashboardWindowScoped();
+      return aggregateFromSales(
+        wnd.currentSales,
+        state.dashboardCurveGroup === 'hybrid' ? 'hybrid' : state.dashboardCurveGroup,
+        wnd.previousSales
+      );
+    }
+
+    function curvePairLabel(unitsClass, revenueClass) {
+      return `${unitsClass}/${revenueClass}`;
+    }
+
+    function curvePairTone(pairLabel) {
+      if (pairLabel === 'A/A') return 'info';
+      if (pairLabel.startsWith('A/') || pairLabel.endsWith('/A')) return 'ok';
+      if (pairLabel.startsWith('B/') || pairLabel.endsWith('/B')) return 'warn';
+      return 'bad';
+    }
+
+    function renderDashboardCurve(rows) {
+      const revenueRank = buildAbcRanking(rows, 'revenue');
+      const unitsRank = buildAbcRanking(rows, 'units');
+      const mode = state.dashboardCurveMode || 'mixed';
+      const list = (rows || []).map((row) => {
+        const revenueInfo = revenueRank.get(row.key) || { cls: 'C', pct: 0 };
+        const unitsInfo = unitsRank.get(row.key) || { cls: 'C', pct: 0 };
+        const pairLabel = curvePairLabel(unitsInfo.cls, revenueInfo.cls);
+        return { row, revenueInfo, unitsInfo, pairLabel };
+      });
+      if (!list.length) {
+        $('dashboardCurveTable').innerHTML = '<div class="empty">Sem dados para montar a Curva ABC.</div>';
+        return;
+      }
+      const pairWeight = (pairLabel) => {
+        if (pairLabel === 'A/A') return 9;
+        if (pairLabel === 'B/A' || pairLabel === 'A/B') return 8;
+        if (pairLabel.startsWith('A/') || pairLabel.endsWith('/A')) return 7;
+        if (pairLabel === 'B/B') return 6;
+        if (pairLabel.startsWith('B/') || pairLabel.endsWith('/B')) return 5;
+        return 1;
+      };
+      list.sort((a, b) => {
+        if (mode === 'revenue') return (b.row.revenue - a.row.revenue) || (b.row.units - a.row.units);
+        if (mode === 'units') return (b.row.units - a.row.units) || (b.row.revenue - a.row.revenue);
+        return (pairWeight(b.pairLabel) - pairWeight(a.pairLabel))
+          || (b.row.revenue - a.row.revenue)
+          || (b.row.units - a.row.units);
+      });
+      const modeLabel = mode === 'revenue' ? 'ordem por faturamento' : mode === 'units' ? 'ordem por unidades' : 'ordem mista';
+      const tableRows = list.map((item, index) => {
+        const meta = dashboardCurveDisplayMeta(item.row);
+        const detailLine = `U/F ${item.pairLabel} | Receita ABC ${item.revenueInfo.cls} | Unidades ABC ${item.unitsInfo.cls}`;
+        return [
+          right(fmtNum(index + 1)),
+          `<span class="badge info">${esc(meta.type)}</span>`,
+          dashboardCurveReferenceCell(item.row, meta, detailLine),
+          right(fmtNum(item.row.units)),
+          right(fmtMoney(item.row.revenue)),
+          right(`<span class="badge ${curvePairTone(item.revenueInfo.cls + '/' + item.revenueInfo.cls)}">${item.revenueInfo.cls}</span><span class="subline">${fmtPct(item.revenueInfo.pct)}</span>`),
+          right(`<span class="badge ${curvePairTone(item.unitsInfo.cls + '/' + item.unitsInfo.cls)}">${item.unitsInfo.cls}</span><span class="subline">${fmtPct(item.unitsInfo.pct)}</span>`),
+          right(`<span class="badge ${curvePairTone(item.pairLabel)}">${item.pairLabel}</span><span class="subline">U/F | ${esc(modeLabel)}</span>`)
+        ];
+      });
+      $('dashboardCurveTable').innerHTML = tableWrap(['#','Tipo','Referencia','Unidades','Receita','ABC faturamento','ABC unidades','Curva U/F'], tableRows, 'dashboard_curve')
+        + `<div class="notice" style="margin-top:10px">Leitura da curva: <strong>U/F</strong> = <strong>Unidades/Faturamento</strong>. Exemplo: <strong>B/A</strong> significa Curva B em unidades e Curva A em faturamento. A ordem do ranking segue o modo ativo, sem perder a leitura completa da combinacao.</div>`;
     }
 
     function aggregateFromSales(salesList, group = 'sku', previousSalesList = []) {
@@ -2320,9 +2506,10 @@
     }
 
     function renderDashboard() {
-      const wnd = reportWindowData();
+      const wnd = dashboardWindowScoped();
       const rows = wnd.currentSales.filter((s) => s.sku && s.lineType === 'item_sale');
       const agSku = aggregateFromSales(wnd.currentSales, 'sku', wnd.previousSales);
+      const agCurve = aggregateFromSales(wnd.currentSales, state.dashboardCurveGroup === 'hybrid' ? 'hybrid' : state.dashboardCurveGroup, wnd.previousSales);
       const revenue = rows.reduce((a, s) => a + (s.productRevenue || 0), 0);
       const units = rows.reduce((a, s) => a + (s.units || 0), 0);
       const orders = sumOrderCount(rows);
@@ -2349,6 +2536,7 @@
         const severe = (a.recentTrend?.change || 0) < -0.30 || a.priceDiff > 0.10;
         return `<div class="alert-item"><span class="alert-ico ${severe ? 'bad':''}">!</span><div><div class="alert-code">${productThumb(a)}${esc(a.key)}</div><div class="muted"><strong>${esc(a.primaryCause || a.diagnosis)}</strong></div><div class="alert-meta">Confianca ${esc(a.confidence || 'media')} | Score ${fmtNum(a.priorityScore || 0)} | Receita ${fmtMoney(a.revenue)}</div><div class="alert-meta">${esc((a.secondarySignals || []).slice(0, 3).join(' | ') || a.diagnosis)}</div><div class="alert-meta"><strong>Acao do dia:</strong> ${esc(a.nextAction || 'Monitorar e revisar em 7 dias.')}</div></div><span class="alert-time">${severe ? 'Critico' : 'Atencao'}</span></div>`;
       }).join('')}</div><div class="notice" style="margin-top:8px">Fonte dos alertas: ultimos 7 dias (dinamico).</div>` : '<div class="empty">Sem alertas com a base atual (ultimos 7 dias).</div>';
+      renderDashboardCurve(agCurve);
       renderDashboardSkuTable(agSku);
       renderSellMorePlan(agSku);
       renderDashboardImportSummary();
@@ -2523,10 +2711,11 @@
     }
 
     function renderChart(rows) {
-      const wnd = reportWindowData();
+      const wnd = dashboardWindowScoped();
       const series = buildDashboardChartSeries(rows, wnd);
       renderDashboardChartControls();
       if (!series.length) { $('salesChart').innerHTML = '<div class="empty">Sem dados para grafico.</div>'; return; }
+      const prevScroll = $('salesChart')?.querySelector('.chart-scroll')?.scrollLeft || 0;
       const metric = dashboardMetricMeta(state.dashboardMetric);
       const vals = series.map((item) => dashboardMetricValue(item, state.dashboardMetric));
       const trendVals = movingAverage(vals, series.length > 45 ? 2 : 1);
@@ -2571,9 +2760,25 @@
       const totalOrders = series.reduce((a, item) => a + item.orders, 0);
       const avgPrice = totalUnits ? totalRevenue / totalUnits : 0;
       const hover = hoverIdx >= 0 ? series[hoverIdx] : null;
-      const tooltip = hover ? `<div class="chart-tooltip" style="left:${Math.min(Math.max(12, x(hoverIdx) - 90), plotW - 270)}px; top:12px"><div class="chart-tooltip-date">${esc(hover.title)}</div><div class="chart-tooltip-grid"><span>${metric.label}</span><strong>${metric.format(dashboardMetricValue(hover, state.dashboardMetric))}</strong><span>Receita</span><strong>${fmtMoney(hover.revenue)}</strong><span>Unidades</span><strong>${fmtNum(hover.units)}</strong><span>Pedidos</span><strong>${fmtNum(hover.orders)}</strong><span>Preco medio</span><strong>${fmtMoney(hover.avgPrice)}</strong></div></div>` : '';
+      const visibleWidth = Math.max(640, ($('salesChart')?.querySelector('.chart-panel')?.clientWidth || $('salesChart')?.querySelector('.chart-scroll')?.clientWidth || availableW));
+      const visibleX = hoverIdx >= 0 ? (x(hoverIdx) - prevScroll) : 0;
+      const tooltipWidth = 248;
+      const tooltipLeft = hoverIdx >= 0
+        ? Math.max(
+            12,
+            Math.min(
+              visibleX > (visibleWidth - tooltipWidth - 28) ? (visibleX - tooltipWidth - 24) : (visibleX + 18),
+              visibleWidth - tooltipWidth - 12
+            )
+          )
+        : 12;
+      const tooltip = hover ? `<div class="chart-tooltip" style="left:${tooltipLeft}px; top:12px"><div class="chart-tooltip-date">${esc(hover.title)}</div><div class="chart-tooltip-grid"><span>${metric.label}</span><strong>${metric.format(dashboardMetricValue(hover, state.dashboardMetric))}</strong><span>Receita</span><strong>${fmtMoney(hover.revenue)}</strong><span>Unidades</span><strong>${fmtNum(hover.units)}</strong><span>Pedidos</span><strong>${fmtNum(hover.orders)}</strong><span>Preco medio</span><strong>${fmtMoney(hover.avgPrice)}</strong></div></div>` : '';
       const avgLabel = `${metric.label} medio do periodo ${metric.format(avgVal)}`;
-      $('salesChart').innerHTML = `<div class="chart-note">${metric.label} | ${modeLabel}</div><div class="chart-kpis"><div class="chart-kpi"><div class="chart-kpi-label">Receita do periodo</div><div class="chart-kpi-value">${fmtMoney(totalRevenue)}</div></div><div class="chart-kpi"><div class="chart-kpi-label">Unidades</div><div class="chart-kpi-value">${fmtNum(totalUnits)}</div></div><div class="chart-kpi"><div class="chart-kpi-label">Pedidos</div><div class="chart-kpi-value">${fmtNum(totalOrders)}</div></div><div class="chart-kpi"><div class="chart-kpi-label">Preco medio</div><div class="chart-kpi-value">${fmtMoney(avgPrice)}</div></div></div><div class="chart-panel"><div class="chart-avg-note">${esc(avgLabel)}</div>${tooltip}<div class="chart-scroll"><svg viewBox="0 0 ${plotW} 250" aria-label="Vendas por periodo">${grid}<line x1="50" y1="${avgY}" x2="${plotW - 50}" y2="${avgY}" stroke="#f59e0b" stroke-width="2.5" stroke-dasharray="8 6"/><text x="${Math.max(260, plotW / 2 - 70)}" y="24" font-size="12" fill="${color}">${metric.label}</text><line x1="${Math.max(320, plotW / 2 - 10)}" y1="20" x2="${Math.max(360, plotW / 2 + 30)}" y2="20" stroke="${color}" stroke-width="4"/>${hoverLine}${bars}<polyline fill="none" stroke="${color}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" points="${points}"/>${dots}<line x1="50" y1="224" x2="${plotW - 50}" y2="224" stroke="#d9e1ea"/>${labels}</svg></div></div>`;
+      const activeFilter = (state.globalSearch || '').trim();
+      const filterNote = activeFilter ? ` | filtro ativo: ${activeFilter}` : '';
+      $('salesChart').innerHTML = `<div class="chart-note">${metric.label} | ${modeLabel}${esc(filterNote)}</div><div class="chart-kpis"><div class="chart-kpi"><div class="chart-kpi-label">Receita do periodo</div><div class="chart-kpi-value">${fmtMoney(totalRevenue)}</div></div><div class="chart-kpi"><div class="chart-kpi-label">Unidades</div><div class="chart-kpi-value">${fmtNum(totalUnits)}</div></div><div class="chart-kpi"><div class="chart-kpi-label">Pedidos</div><div class="chart-kpi-value">${fmtNum(totalOrders)}</div></div><div class="chart-kpi"><div class="chart-kpi-label">Preco medio</div><div class="chart-kpi-value">${fmtMoney(avgPrice)}</div></div></div><div class="chart-panel" onmouseleave="__marketplaceApp.dashboardChartHover(-1)"><div class="chart-avg-note">${esc(avgLabel)}</div>${tooltip}<div class="chart-scroll"><svg viewBox="0 0 ${plotW} 250" aria-label="Vendas por periodo">${grid}<line x1="50" y1="${avgY}" x2="${plotW - 50}" y2="${avgY}" stroke="#f59e0b" stroke-width="2.5" stroke-dasharray="8 6"/><text x="${Math.max(260, plotW / 2 - 70)}" y="24" font-size="12" fill="${color}">${metric.label}</text><line x1="${Math.max(320, plotW / 2 - 10)}" y1="20" x2="${Math.max(360, plotW / 2 + 30)}" y2="20" stroke="${color}" stroke-width="4"/>${hoverLine}${bars}<polyline fill="none" stroke="${color}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" points="${points}"/>${dots}<line x1="50" y1="224" x2="${plotW - 50}" y2="224" stroke="#d9e1ea"/>${labels}</svg></div></div>`;
+      const nextScroll = $('salesChart')?.querySelector('.chart-scroll');
+      if (nextScroll) nextScroll.scrollLeft = prevScroll;
     }
 
     function formatMonthShort(key) {
@@ -3378,6 +3583,56 @@
       downloadCsv(`analise_${state.group}.csv`, csvRows);
     }
 
+    function exportDashboardCurveCsv() {
+      const rows = currentDashboardCurveRows();
+      if (!rows.length) return alert('Nao ha dados na Curva ABC para exportar com o filtro atual.');
+      const revenueRank = buildAbcRanking(rows, 'revenue');
+      const unitsRank = buildAbcRanking(rows, 'units');
+      const mode = state.dashboardCurveMode || 'mixed';
+      const list = rows.map((row) => {
+        const revenueInfo = revenueRank.get(row.key) || { cls: 'C', pct: 0 };
+        const unitsInfo = unitsRank.get(row.key) || { cls: 'C', pct: 0 };
+        return { row, revenueInfo, unitsInfo, pairLabel: curvePairLabel(unitsInfo.cls, revenueInfo.cls) };
+      });
+      const pairWeight = (pairLabel) => {
+        if (pairLabel === 'A/A') return 9;
+        if (pairLabel === 'B/A' || pairLabel === 'A/B') return 8;
+        if (pairLabel.startsWith('A/') || pairLabel.endsWith('/A')) return 7;
+        if (pairLabel === 'B/B') return 6;
+        if (pairLabel.startsWith('B/') || pairLabel.endsWith('/B')) return 5;
+        return 1;
+      };
+      list.sort((a, b) => {
+        if (mode === 'revenue') return (b.row.revenue - a.row.revenue) || (b.row.units - a.row.units);
+        if (mode === 'units') return (b.row.units - a.row.units) || (b.row.revenue - a.row.revenue);
+        return (pairWeight(b.pairLabel) - pairWeight(a.pairLabel)) || (b.row.revenue - a.row.revenue) || (b.row.units - a.row.units);
+      });
+      const csvRows = [[
+        'posicao','tipo','referencia','titulo','familia','variacao','mlb','sku','unidades','receita','abc_faturamento','abc_unidades','curva_uf','modo_curva','agrupamento'
+      ]];
+      list.forEach((item, index) => {
+        const meta = dashboardCurveDisplayMeta(item.row);
+        csvRows.push([
+          index + 1,
+          meta.type,
+          meta.code || '',
+          item.row.title || '',
+          item.row.familyLabel || '',
+          item.row.variationLabel || '',
+          item.row.mlbLabel || item.row.mlb || [...(item.row.mlbs || [])].join(', '),
+          item.row.skuLabel || item.row.sku || [...(item.row.skus || [])].join(', '),
+          Number(item.row.units || 0).toFixed(2),
+          Number(item.row.revenue || 0).toFixed(2),
+          item.revenueInfo.cls,
+          item.unitsInfo.cls,
+          item.pairLabel,
+          mode,
+          state.dashboardCurveGroup || 'hybrid'
+        ]);
+      });
+      downloadCsv(`curva_abc_${state.dashboardCurveGroup || 'mista'}_${mode}.csv`, csvRows);
+    }
+
     function analysisCsvRow(r) {
       return [r.key, r.sku || '', r.mlb || [...(r.mlbs || [])].join(' '), r.title || '', r.units, r.revenue.toFixed(2), r.currentPrice.toFixed(2), r.avgPrice.toFixed(2), (r.priceDiff || 0).toFixed(4), (r.recentTrend?.change || 0).toFixed(4), r.returnRate.toFixed(4), r.complaintRate.toFixed(4), r.severity || '', r.primaryCause || '', r.nextAction || '', r.diagnosis];
     }
@@ -3894,7 +4149,29 @@
       },
       dashboardChartHover: (index) => {
         state.dashboardChartHover = Number(index);
-        renderChart(itemSales());
+        const wnd = dashboardWindowScoped();
+        renderChart(wnd.currentSales.filter((s) => s.sku && s.lineType === 'item_sale'));
+      },
+      copyText: async (value) => {
+        const text = String(value || '').trim();
+        if (!text) return;
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            const input = document.createElement('textarea');
+            input.value = text;
+            input.setAttribute('readonly', 'readonly');
+            input.style.position = 'fixed';
+            input.style.opacity = '0';
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            document.body.removeChild(input);
+          }
+        } catch (err) {
+          alert('Nao foi possivel copiar agora: ' + err.message);
+        }
       }
     };
 
