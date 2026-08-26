@@ -1728,9 +1728,10 @@ def render_dashboard(data):
           <div class="control-block">
             <label>Visualizar por</label>
             <div class="segmented" id="viewMode">
+              <button class="active" data-view-mode="hybrid" type="button">Híbrida</button>
               <button data-view-mode="family" type="button">Família</button>
               <button data-view-mode="variation" type="button">Variação/MLBU</button>
-              <button class="active" data-view-mode="mlb" type="button">MLB</button>
+              <button data-view-mode="mlb" type="button">MLB</button>
               <button data-view-mode="sku" type="button">SKU</button>
               <button data-view-mode="campaign" type="button">Campanha</button>
             </div>
@@ -1772,9 +1773,10 @@ def render_dashboard(data):
           </div>
           <div class="abc-controls">
             <span class="muted">Ver por</span>
+            <button data-abc-mode="hybrid" class="active" type="button">Híbrida</button>
             <button data-abc-mode="family" type="button">Familia</button>
             <button data-abc-mode="variation" type="button">Variacao/MLBU</button>
-            <button data-abc-mode="sku" class="active" type="button">SKU</button>
+            <button data-abc-mode="sku" type="button">SKU</button>
             <button data-abc-mode="product" type="button">Anuncio</button>
             <span class="muted">Ordenar por</span>
             <button data-abc-metric="units" type="button">Unidades vendidas</button>
@@ -1841,14 +1843,14 @@ def render_dashboard(data):
       return `${{weekday.charAt(0).toUpperCase() + weekday.slice(1)}}, ${{sale.day}} de ${{month}} de ${{sale.year}}`;
     }}
     let currentContext = 'all';
-    let currentViewMode = 'mlb';
+    let currentViewMode = 'hybrid';
     let tableZoom = (() => {{
       try {{ return Number(localStorage.getItem('dashboardAdsTableZoom')) || 1; }} catch (error) {{ return 1; }}
     }})();
     const detailExpanded = new Set();
     const dailyChartMetric = new Map();
     let sortState = {{ key:'investment', direction:1 }};
-    let abcMode = 'sku';
+    let abcMode = 'hybrid';
     let abcMetric = 'totalRevenue';
     let abcDirection = 'desc';
     const titles = {{
@@ -1861,7 +1863,7 @@ def render_dashboard(data):
       adsByProduct:'Anuncios por produto',
       finishedNoSku:'Anuncios finalizados sem SKU'
     }};
-    const viewLabels = {{ family:'Família', variation:'Variação/MLBU', mlb:'MLB', sku:'SKU', campaign:'Campanha' }};
+    const viewLabels = {{ hybrid:'Híbrida', family:'Família', variation:'Variação/MLBU', mlb:'MLB', sku:'SKU', campaign:'Campanha' }};
     const contextLabels = {{
       all:'Todos os itens', active:'Publicidade ativa', ended:'Publicidade encerrada',
       noReturn:'Gasto sem retorno ADS', highTacos:'TACOS fora da meta',
@@ -2053,6 +2055,44 @@ def render_dashboard(data):
     }}
     function abcSourceRows() {{
       const source = DATA.items || DATA.decisionItems || [];
+      if (abcMode === 'hybrid') {{
+        return splitHybrid(source).map(group => {{
+          const summary = productParentSummary(group.children);
+          const first = group.children[0];
+          if (group.kind === 'family') {{
+            return {{
+              ...first, ...summary,
+              familyId: group.familyId,
+              familyName: group.familyName,
+              code: group.familyId,
+              allCodes: group.children.map(item => item.code).filter(Boolean).join(', '),
+              title: group.familyName || `Familia ${{group.familyId}}`,
+              groupDetail: `Família · ${{new Set(group.children.map(item => item.userProductId).filter(Boolean)).size}} variação(ões) · ${{group.children.length}} anúncio(s)`
+            }};
+          }}
+          if (group.kind === 'variation') {{
+            return {{
+              ...first, ...summary,
+              userProductId: group.parentId,
+              code: group.parentId,
+              allCodes: group.children.map(item => item.code).filter(Boolean).join(', '),
+              title: first.userProductName || `Variação ${{group.parentId}}`,
+              groupDetail: `Variação/MLBU sem família · ${{group.children.length}} anúncio(s)`
+            }};
+          }}
+          if (group.kind === 'sku') {{
+            return {{
+              ...first, ...summary,
+              sku: group.sku,
+              code: group.sku,
+              allCodes: group.children.map(item => item.code).filter(Boolean).join(', '),
+              title: first.title || `SKU ${{group.sku}}`,
+              groupDetail: `SKU sem família, MLBU ou MLB · ${{group.children.length}} registro(s)`
+            }};
+          }}
+          return {{ ...first, ...summary, groupDetail: 'MLB antigo ou anúncio sem família/MLBU' }};
+        }});
+      }}
       if (abcMode === 'family') {{
         return splitByFamily(source).map(group => {{
           const summary = productParentSummary(group.children);
@@ -2159,7 +2199,7 @@ def render_dashboard(data):
       const searchInput = document.getElementById('abcSearch');
       const q = searchInput ? searchInput.value.toLowerCase() : '';
       const rows = abcRows().filter(item => itemSearchText(item).includes(q));
-      const groupLabel = abcMode === 'family' ? 'Familia' : abcMode === 'variation' ? 'Variacao/MLBU' : 'Anuncio';
+      const groupLabel = abcMode === 'hybrid' ? 'Híbrido' : abcMode === 'family' ? 'Familia' : abcMode === 'variation' ? 'Variacao/MLBU' : 'Anuncio';
       const total = rows.reduce((sum, item) => sum + item.abcValue, 0);
       const buckets = ['A','B','C'].map(label => {{
         const bucketRows = rows.filter(item => item.abcClassValue === label);
@@ -2908,6 +2948,48 @@ def render_dashboard(data):
       }});
       return [...groups.values()];
     }}
+    function splitHybrid(rows) {{
+      const groups = new Map();
+      rows.forEach((item, index) => {{
+        const familyId = item.familyId || '';
+        const parentId = item.userProductId || '';
+        const code = item.code || '';
+        const sku = item.sku || '';
+        const kind = familyId ? 'family' : parentId ? 'variation' : code ? 'mlb' : 'sku';
+        const identity = familyId || parentId || code || sku || String(index);
+        const key = `${{kind}}:${{identity}}`;
+        if (!groups.has(key)) groups.set(key, {{
+          kind,
+          familyId,
+          familyName:item.familyName || '',
+          parentId,
+          sku,
+          children:[]
+        }});
+        groups.get(key).children.push(item);
+      }});
+      return [...groups.values()];
+    }}
+    function compareTableItems(a, b) {{
+      if (!sortState.key || sortState.direction === 0) return 0;
+      const getter = sortKeys[sortState.key];
+      const av = getter(a); const bv = getter(b);
+      if (typeof av === 'number' || typeof bv === 'number') return sortState.direction === 1 ? (bv - av) : (av - bv);
+      return sortState.direction === 1 ? String(bv).localeCompare(String(av), 'pt-BR') : String(av).localeCompare(String(bv), 'pt-BR');
+    }}
+    function groupSortItem(group) {{
+      const first = group.children[0] || {{}};
+      const summary = productParentSummary(group.children);
+      return {{
+        ...first,
+        ...summary,
+        code: group.familyId || group.parentId || first.code || group.sku || '',
+        currentPrice: summary.lastPrice || first.currentPrice || first.lastPrice || 0
+      }};
+    }}
+    function sortedGroups(groups) {{
+      return [...groups].sort((a, b) => compareTableItems(groupSortItem(a), groupSortItem(b)));
+    }}
     function mlbuGroupRows(group, forceParent = false, includeNote = true) {{
       if (group.parentId && (forceParent || group.children.length > 1)) {{
         return productParentRow(productParentSummary(group.children))
@@ -2926,10 +3008,18 @@ def render_dashboard(data):
       return `<tbody class="product-group family-group">${{familyParentRow(group)}}${{variationGroups.map(item => mlbuGroupRows(item, true, false)).join('')}}</tbody>`;
     }}
     function groupedFamilyBodies(rows) {{
-      return splitByFamily(rows).map(familyGroupBody).join('');
+      return sortedGroups(splitByFamily(rows)).map(familyGroupBody).join('');
     }}
     function groupedVariationBodies(rows) {{
-      return splitByMlbu(rows).map(item => mlbuGroupBody(item, true)).join('');
+      return sortedGroups(splitByMlbu(rows)).map(item => mlbuGroupBody(item, true)).join('');
+    }}
+    function hybridGroupBody(group) {{
+      if (group.kind === 'family') return familyGroupBody(group);
+      if (group.kind === 'variation') return mlbuGroupBody(group, true);
+      return groupedMlbBodies(group.children);
+    }}
+    function groupedHybridBodies(rows) {{
+      return sortedGroups(splitHybrid(rows)).map(hybridGroupBody).join('');
     }}
     function groupedMlbBodies(rows) {{
       return rows.map(item => `<tbody>${{row(item)}}</tbody>`).join('');
@@ -2968,23 +3058,20 @@ def render_dashboard(data):
       const q = document.getElementById('search').value.toLowerCase();
       let rows = rowsByViewMode().filter(item => matchesContext(item) && itemSearchText(item).includes(q));
       if (sortState.key && sortState.direction !== 0) {{
-        const getter = sortKeys[sortState.key];
-        rows = [...rows].sort((a,b) => {{
-          const av = getter(a); const bv = getter(b);
-          if (typeof av === 'number' || typeof bv === 'number') return sortState.direction === 1 ? (bv - av) : (av - bv);
-          return sortState.direction === 1 ? String(bv).localeCompare(String(av), 'pt-BR') : String(av).localeCompare(String(bv), 'pt-BR');
-        }});
+        rows = [...rows].sort(compareTableItems);
       }}
       document.getElementById('tableTitle').textContent = `${{contextLabels[currentContext]}} - ${{viewLabels[currentViewMode]}} (${{rows.length}})`;
-      const renderedBodies = currentViewMode === 'family'
-        ? groupedFamilyBodies(rows)
-        : currentViewMode === 'variation'
-          ? groupedVariationBodies(rows)
-          : currentViewMode === 'mlb'
-            ? groupedMlbBodies(rows)
-            : currentViewMode === 'sku'
-              ? groupedSkuBodies(rows)
-              : `<tbody>${{rows.map(item => row(item)).join('')}}</tbody>`;
+      const renderedBodies = currentViewMode === 'hybrid'
+        ? groupedHybridBodies(rows)
+        : currentViewMode === 'family'
+          ? groupedFamilyBodies(rows)
+          : currentViewMode === 'variation'
+            ? groupedVariationBodies(rows)
+            : currentViewMode === 'mlb'
+              ? groupedMlbBodies(rows)
+              : currentViewMode === 'sku'
+                ? groupedSkuBodies(rows)
+                : `<tbody>${{rows.map(item => row(item)).join('')}}</tbody>`;
       document.getElementById('table').innerHTML = `<table class="ops-table">
         <colgroup><col style="width:72px"><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
         <thead><tr><th>Imagem</th><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
@@ -2993,6 +3080,8 @@ def render_dashboard(data):
       const helpMeta = document.getElementById('tableHelpMeta');
       if (currentViewMode === 'campaign') {{
         helpText.textContent = 'A visao de campanha preserva o agrupamento e os calculos proprios de cada campanha; o agrupamento visual por produto nao altera esta camada.';
+      }} else if (currentViewMode === 'hybrid') {{
+        helpText.textContent = 'A visão Híbrida usa a melhor estrutura disponível sem ocultar anúncios: Família; sem família, Variação/MLBU; sem ambos, MLB; e SKU apenas como último recurso. A ordenação usa o total consolidado de cada bloco.';
       }} else if (currentViewMode === 'sku') {{
         helpText.textContent = 'A aba SKU mantem cada SKU como contexto. Dentro dele, cada MLBU tem seu proprio quadro com o pai acima das condicoes; outro MLBU ou anuncio tradicional permanece separado.';
       }} else if (currentViewMode === 'family') {{
