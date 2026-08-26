@@ -2533,7 +2533,10 @@
       const maxVal = Math.max(...vals, 1);
       const isMonthly = series[0]?.bucketMode === 'month';
       const slot = isMonthly ? 130 : 48;
-      const plotW = Math.max(980, 120 + (Math.max(1, series.length - 1) * slot));
+      const availableW = Math.max(640, ($('salesChart')?.clientWidth || 980) - 24);
+      const plotW = series.length <= 20
+        ? availableW
+        : Math.max(980, 120 + (Math.max(1, series.length - 1) * slot));
       const x = (i) => 58 + i * ((plotW - 116) / Math.max(1, series.length - 1));
       const y = (v) => 222 - (v / maxVal) * 152;
       const points = trendVals.map((v, i) => `${x(i)},${y(v)}`).join(' ');
@@ -3064,7 +3067,10 @@
       const minRevIdx = revenueVals.findIndex((v) => v === minRev);
 
       const max = Math.max(...vals, 1);
-      const plotW = Math.max(1220, displayMonths.length * 220);
+      const availableW = Math.max(640, (target.clientWidth || 1560) - 340);
+      const plotW = displayMonths.length <= 6
+        ? availableW
+        : Math.max(1220, displayMonths.length * 220);
       const innerW = plotW - 140;
       const slotW = innerW / Math.max(1, displayMonths.length);
       const barW = Math.max(34, Math.min(72, slotW * 0.62));
