@@ -1286,6 +1286,15 @@ def _sales_intelligence_collect_item_meta(latest_payload: dict) -> dict[str, dic
             "familyName": str(sale.get("family_name") or sale.get("familyName") or "").strip(),
             "userProductId": str(sale.get("user_product_id") or sale.get("userProductId") or "").strip(),
             "userProductName": str(sale.get("user_product_name") or sale.get("userProductName") or "").strip(),
+            "campaignId": str(sale.get("campaign_id") or sale.get("campaignId") or "").strip(),
+            "campaignName": str(
+                sale.get("campaign_name")
+                or sale.get("campaignName")
+                or sale.get("campaign_title")
+                or sale.get("campaignTitle")
+                or sale.get("campaign")
+                or ""
+            ).strip(),
         }
     for raw in ads_rows:
         if not isinstance(raw, dict):
@@ -1305,6 +1314,17 @@ def _sales_intelligence_collect_item_meta(latest_payload: dict) -> dict[str, dic
             meta[code]["userProductId"] = str(raw.get("user_product_id") or raw.get("userProductId") or "").strip()
         if not meta[code]["userProductName"]:
             meta[code]["userProductName"] = str(raw.get("user_product_name") or raw.get("userProductName") or "").strip()
+        if not meta[code]["campaignId"]:
+            meta[code]["campaignId"] = str(raw.get("campaign_id") or raw.get("campaignId") or "").strip()
+        if not meta[code]["campaignName"]:
+            meta[code]["campaignName"] = str(
+                raw.get("campaign_name")
+                or raw.get("campaignName")
+                or raw.get("campaign_title")
+                or raw.get("campaignTitle")
+                or raw.get("campaign")
+                or ""
+            ).strip()
     return meta
 
 
@@ -1447,6 +1467,8 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
                 "family_name": str(meta.get("familyName") or "").strip(),
                 "user_product_id": str(meta.get("userProductId") or "").strip(),
                 "user_product_name": str(meta.get("userProductName") or "").strip(),
+                "campaign_id": str(meta.get("campaignId") or "").strip(),
+                "campaign_name": str(meta.get("campaignName") or "").strip(),
             })
     sales_rows = []
     import_id = f"online:{client_id}:{period['dateFrom']}:{period['dateTo']}"
@@ -1501,6 +1523,9 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
             "familyName": str(daily.get("family_name") or meta.get("familyName") or "").strip(),
             "userProductId": str(daily.get("user_product_id") or meta.get("userProductId") or "").strip(),
             "userProductName": str(daily.get("user_product_name") or meta.get("userProductName") or "").strip(),
+            "campaignId": str(daily.get("campaign_id") or meta.get("campaignId") or "").strip(),
+            "campaignName": str(daily.get("campaign_name") or meta.get("campaignName") or "").strip(),
+            "campaign": str(daily.get("campaign_name") or meta.get("campaignName") or "").strip(),
             "listingType": "",
             "deliveryMethod": "",
             "result": "",
