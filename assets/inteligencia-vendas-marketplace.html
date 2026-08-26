@@ -2627,6 +2627,10 @@
       if (!state.sales.length) return '<div class="notice">Base vazia. Importe relatorios para iniciar.</div>';
       const dates = state.sales.map((s) => s.date).filter(Boolean).sort((a,b) => a-b);
       if (!dates.length) return '<div class="notice">Base importada sem datas validas.</div>';
+      const wnd = reportWindowData();
+      if (wnd.valid && !wnd.currentSales.length) {
+        return `<div class="notice"><strong>Base carregada:</strong> historico local de ${dates[0].toLocaleDateString('pt-BR')} ate ${dates.at(-1).toLocaleDateString('pt-BR')}, mas sem vendas na janela selecionada (${wnd.label}).</div>`;
+      }
       const first = dates[0], last = dates.at(-1);
       const days = Math.max(1, Math.round((last - first) / 86400000) + 1);
       if (state.sales.length < 1000 || days < 60) {
