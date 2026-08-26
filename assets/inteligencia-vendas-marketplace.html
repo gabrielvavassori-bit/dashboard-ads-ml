@@ -553,6 +553,7 @@
           <select class="control" id="globalSearchScope">
             <option value="code">Codigo/SKU/MLB/MLBU/Familia</option>
             <option value="title">Titulo</option>
+            <option value="campaign">Campanha</option>
           </select>
           <input class="control" id="globalSearchInput" placeholder="Pesquisa global do relatorio..." style="min-width:280px">
         </div>
@@ -1938,6 +1939,14 @@
       const q = (state.globalSearch || '').trim().toLowerCase();
       if (!q) return true;
       if (state.globalSearchScope === 'title') return (r.title || '').toLowerCase().includes(q);
+      if (state.globalSearchScope === 'campaign') {
+        return [
+          r.campaignName,
+          r.campaignLabel,
+          ...(r.campaignIds ? [...r.campaignIds] : []),
+          ...(r.campaignNames ? [...r.campaignNames] : [])
+        ].join(' ').toLowerCase().includes(q);
+      }
       return [
         r.key,
         r.sku,
@@ -3685,7 +3694,7 @@
         state.reportDateStart = String(reportDateStart || '');
         state.reportDateEnd = String(reportDateEnd || '');
         state.dashboardGranularity = dashboardGranularity === 'month' ? 'month' : 'day';
-        state.globalSearchScope = globalSearchScope === 'title' ? 'title' : 'code';
+        state.globalSearchScope = ['title','campaign','code'].includes(globalSearchScope) ? globalSearchScope : 'code';
         state.globalSearch = String(globalSearch || '');
         state.noSalesRejected = noSalesRejected;
         syncDerivedWindowsFromReport();
@@ -3727,7 +3736,7 @@
         state.reportDateStart = String(reportDateStart || '');
         state.reportDateEnd = String(reportDateEnd || '');
         state.dashboardGranularity = dashboardGranularity === 'month' ? 'month' : 'day';
-        state.globalSearchScope = globalSearchScope === 'title' ? 'title' : 'code';
+        state.globalSearchScope = ['title','campaign','code'].includes(globalSearchScope) ? globalSearchScope : 'code';
         state.globalSearch = String(globalSearch || '');
         state.noSalesRejected = noSalesRejected && typeof noSalesRejected === 'object' ? noSalesRejected : {};
         state.onlineNotice = String(onlineNotice || '');
