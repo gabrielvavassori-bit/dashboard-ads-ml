@@ -1740,7 +1740,8 @@
     }
 
     function summarizeValues(values, fallback = '-', limit = 2) {
-      const list = [...new Set((values || []).map((value) => String(value || '').trim()).filter(Boolean))];
+      const source = values && typeof values[Symbol.iterator] === 'function' ? [...values] : [];
+      const list = [...new Set(source.map((value) => String(value || '').trim()).filter(Boolean))];
       if (!list.length) return fallback;
       return list.slice(0, limit).join(', ') + (list.length > limit ? ` +${list.length - limit}` : '');
     }
