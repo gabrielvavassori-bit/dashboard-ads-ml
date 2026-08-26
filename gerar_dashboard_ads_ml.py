@@ -563,19 +563,39 @@ def mark_possible_catalog(items):
 
 def mark_condition_context(items):
     condition_codes = {}
+    family_variations = {}
+    family_conditions = {}
     for item in items:
+        family_id = str(item.get("familyId") or item.get("family_id") or "").strip()
         user_product_id = str(item.get("userProductId") or item.get("user_product_id") or "").strip()
         code = str(item.get("code") or "").strip()
         if user_product_id and code:
             condition_codes.setdefault(user_product_id, set()).add(code)
+        if family_id and user_product_id:
+            family_variations.setdefault(family_id, set()).add(user_product_id)
+        if family_id and code:
+            family_conditions.setdefault(family_id, set()).add(code)
 
     for item in items:
+        family_id = str(item.get("familyId") or item.get("family_id") or "").strip()
+        family_name = str(item.get("familyName") or item.get("family_name") or "").strip()
         user_product_id = str(item.get("userProductId") or item.get("user_product_id") or "").strip()
+        user_product_name = str(item.get("userProductName") or item.get("user_product_name") or "").strip()
         catalog_product_id = str(item.get("catalogProductId") or item.get("catalog_product_id") or "").strip()
         codes = sorted(condition_codes.get(user_product_id, set())) if user_product_id else []
+        variations = sorted(family_variations.get(family_id, set())) if family_id else []
+        family_codes = sorted(family_conditions.get(family_id, set())) if family_id else []
+        item["familyId"] = family_id
+        item["familyName"] = family_name
         item["userProductId"] = user_product_id
+        item["userProductName"] = user_product_name
         item["catalogProductId"] = catalog_product_id
         item["catalogListing"] = bool(item.get("catalogListing") or item.get("catalog_listing"))
+        item["familyVariationIds"] = variations
+        item["familyVariationCount"] = len(variations)
+        item["familyConditionCodes"] = family_codes
+        item["familyConditionCount"] = len(family_codes)
+        item["familyLabel"] = f"Familia {family_id}" if family_id else "Familia nao informada"
         item["conditionCodes"] = codes
         item["conditionCount"] = len(codes)
         item["conditionLabel"] = (
@@ -805,6 +825,7 @@ def aggregate_by_sku(items):
             "campaign": "",
             "campaigns": set(),
             "children": [],
+            "family_ids": set(),
             "condition_keys": set(),
             "catalog_product_ids": set(),
             "thumbnailUrl": "",
@@ -860,6 +881,8 @@ def aggregate_by_sku(items):
             target["campaigns"].add(item["adsCampaigns"])
         if item.get("userProductId"):
             target["condition_keys"].add(item["userProductId"])
+        if item.get("familyId"):
+            target["family_ids"].add(item["familyId"])
         if item.get("catalogProductId"):
             target["catalog_product_ids"].add(item["catalogProductId"])
         if item.get("thumbnailUrl"):
@@ -906,6 +929,7 @@ def aggregate_by_sku(items):
     for item in grouped.values():
         codes = sorted(item.pop("codes"))
         campaigns = sorted(item.pop("campaigns"))
+        family_ids = sorted(item.pop("family_ids"))
         condition_keys = sorted(item.pop("condition_keys"))
         catalog_product_ids = sorted(item.pop("catalog_product_ids"))
         item.pop("thumbnailRevenue", None)
@@ -915,6 +939,7 @@ def aggregate_by_sku(items):
         item["code"] = ", ".join(codes[:4]) + ("..." if len(codes) > 4 else "")
         item["adCount"] = len(codes)
         item["campaign"] = ", ".join(campaigns[:3]) + ("..." if len(campaigns) > 3 else "")
+        item["familyLabel"] = ", ".join(family_ids[:2]) + ("..." if len(family_ids) > 2 else "") if family_ids else "Familia nao informada"
         item["conditionLabel"] = ", ".join(condition_keys[:2]) + ("..." if len(condition_keys) > 2 else "") if condition_keys else "Sem vinculo MLBU"
         item["catalogLabel"] = ", ".join(catalog_product_ids[:2]) + ("..." if len(catalog_product_ids) > 2 else "") if catalog_product_ids else "Sem catalogo identificado"
         item["tacos"] = item["investment"] / item["tacosBaseRevenue"] if item["tacosBaseRevenue"] else 0
@@ -955,6 +980,7 @@ def aggregate_by_campaign(items):
             "code": "",
             "skus": set(),
             "codes": set(),
+            "family_ids": set(),
             "condition_keys": set(),
             "catalog_product_ids": set(),
             "thumbnailUrl": "",
@@ -986,6 +1012,8 @@ def aggregate_by_campaign(items):
                 target["campaignRevenueAmbiguous"] = True
         if item.get("userProductId"):
             target["condition_keys"].add(item["userProductId"])
+        if item.get("familyId"):
+            target["family_ids"].add(item["familyId"])
         if item.get("catalogProductId"):
             target["catalog_product_ids"].add(item["catalogProductId"])
         if item.get("thumbnailUrl"):
@@ -1006,6 +1034,7 @@ def aggregate_by_campaign(items):
         item["children"].sort(key=lambda row: (-(row.get("investment", 0) or 0), -(row.get("totalRevenue", 0) or 0)))
         item["skus"] = sorted(item["skus"])
         item["codes"] = sorted(item["codes"])
+        family_ids = sorted(item.pop("family_ids"))
         condition_keys = sorted(item.pop("condition_keys"))
         catalog_product_ids = sorted(item.pop("catalog_product_ids"))
         item["skuCount"] = len(item["skus"])
@@ -1014,6 +1043,7 @@ def aggregate_by_campaign(items):
         item["code"] = ", ".join(item["codes"][:4]) + ("..." if len(item["codes"]) > 4 else "")
         item["allCodes"] = ", ".join(item["codes"])
         item["allSkus"] = ", ".join(item["skus"])
+        item["familyLabel"] = ", ".join(family_ids[:2]) + ("..." if len(family_ids) > 2 else "") if family_ids else "Familia nao informada"
         item["conditionLabel"] = ", ".join(condition_keys[:2]) + ("..." if len(condition_keys) > 2 else "") if condition_keys else "Sem vinculo MLBU"
         item["catalogLabel"] = ", ".join(catalog_product_ids[:2]) + ("..." if len(catalog_product_ids) > 2 else "") if catalog_product_ids else "Sem catalogo identificado"
         item["title"] = f"{item['skuCount']} SKU(s), {item['adCount']} anuncio(s)"
@@ -1548,6 +1578,7 @@ def render_dashboard(data):
     .status-ok {{ color:var(--green); font-weight:800; }}
     .status-warn {{ color:var(--orange); font-weight:800; }}
     .status-bad {{ color:var(--red); font-weight:800; }}
+    .price-above-avg {{ color:var(--orange); font-weight:800; }}
     .online-notice {{ margin:0 0 12px; padding:12px 14px; border:1px solid #fecdca; border-radius:10px; background:#fff7ed; color:#7a271a; font-weight:700; }}
     .decision-wrap {{ grid-template-columns:minmax(0,1fr) auto; align-items:center; }}
     .decision-summary-main, .decision-summary-side {{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }}
@@ -1689,6 +1720,7 @@ def render_dashboard(data):
               <option value="noReturn">Gasto sem retorno ADS</option>
               <option value="highTacos">TACOS fora da meta</option>
               <option value="adsDependency">Dependencia de Ads &gt; 50%</option>
+              <option value="priceAboveAvg">Preco acima da media &gt; 5%</option>
               <option value="attention">Requer atencao</option>
               <option value="opportunity">Oportunidade para anunciar</option>
             </select>
@@ -1696,13 +1728,15 @@ def render_dashboard(data):
           <div class="control-block">
             <label>Visualizar por</label>
             <div class="segmented" id="viewMode">
+              <button data-view-mode="family" type="button">Família</button>
+              <button data-view-mode="variation" type="button">Variação/MLBU</button>
               <button class="active" data-view-mode="mlb" type="button">MLB</button>
               <button data-view-mode="sku" type="button">SKU</button>
               <button data-view-mode="campaign" type="button">Campanha</button>
             </div>
           </div>
         </div>
-        <input id="search" placeholder="Buscar SKU, MLB, titulo ou campanha">
+        <input id="search" placeholder="Buscar família, MLBU, SKU, MLB, título ou campanha">
       </div>
       <section class="card table-card">
         <div class="table-card-head">
@@ -1738,6 +1772,8 @@ def render_dashboard(data):
           </div>
           <div class="abc-controls">
             <span class="muted">Ver por</span>
+            <button data-abc-mode="family" type="button">Familia</button>
+            <button data-abc-mode="variation" type="button">Variacao/MLBU</button>
             <button data-abc-mode="sku" class="active" type="button">SKU</button>
             <button data-abc-mode="product" type="button">Anuncio</button>
             <span class="muted">Ordenar por</span>
@@ -1751,7 +1787,7 @@ def render_dashboard(data):
         </div>
         <div class="abc-summary" id="abcSummary"></div>
         <div class="toolbar">
-          <input id="abcSearch" placeholder="Buscar SKU, MLB, titulo ou campanha">
+          <input id="abcSearch" placeholder="Buscar familia, MLBU, SKU, MLB, titulo ou campanha">
         </div>
         <div class="scroll-frame" id="abcTable"></div>
       </section>
@@ -1825,11 +1861,11 @@ def render_dashboard(data):
       adsByProduct:'Anuncios por produto',
       finishedNoSku:'Anuncios finalizados sem SKU'
     }};
-    const viewLabels = {{ mlb:'MLB', sku:'SKU', campaign:'Campanha' }};
+    const viewLabels = {{ family:'Família', variation:'Variação/MLBU', mlb:'MLB', sku:'SKU', campaign:'Campanha' }};
     const contextLabels = {{
       all:'Todos os itens', active:'Publicidade ativa', ended:'Publicidade encerrada',
       noReturn:'Gasto sem retorno ADS', highTacos:'TACOS fora da meta',
-      adsDependency:'Dependencia de Ads > 50%', attention:'Requer atencao',
+      adsDependency:'Dependencia de Ads > 50%', priceAboveAvg:'Preco acima da media > 5%', attention:'Requer atencao',
       opportunity:'Oportunidade para anunciar'
     }};
     function actionClass(action) {{ return (action || '').split(' ')[0].replace('/', ''); }}
@@ -1870,6 +1906,29 @@ def render_dashboard(data):
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
     }}
+    function currentOfferPrice(item) {{
+      return Number(item.currentPrice || item.lastPrice || 0);
+    }}
+    function priceAboveAverageRatio(item) {{
+      const current = currentOfferPrice(item);
+      const avg = Number(item.avgSalePrice || 0);
+      if (!(current > 0) || !(avg > 0)) return 0;
+      return (current / avg) - 1;
+    }}
+    function hasPriceAboveAverage(item, threshold = 0.05) {{
+      return priceAboveAverageRatio(item) > threshold;
+    }}
+    function priceMetaLine(item, avgLabel = 'media vendida') {{
+      const avg = Number(item.avgSalePrice || 0);
+      if (!(avg > 0)) return '';
+      const ratio = priceAboveAverageRatio(item);
+      const above = ratio > 0;
+      const diffText = above
+        ? ` (+${{(ratio * 100).toLocaleString('pt-BR', {{minimumFractionDigits:1, maximumFractionDigits:1}})}}%)`
+        : '';
+      const cls = above ? 'price-above-avg' : 'muted';
+      return `<div class="${{cls}}">${{avgLabel}}: ${{brl(avg)}}${{above ? diffText : ''}}</div>`;
+    }}
     function itemSearchText(item) {{
       const ownText = [
         item.sku,
@@ -1880,7 +1939,10 @@ def render_dashboard(data):
         item.allCampaigns,
         item.adsCampaigns,
         item.campaignStatus,
+        item.familyId,
+        item.familyName,
         item.userProductId,
+        item.userProductName,
         item.catalogProductId,
         item.conditionLabel,
         item.catalogLabel,
@@ -1889,7 +1951,8 @@ def render_dashboard(data):
       ].filter(Boolean).join(' ');
       const childText = (item.children || []).map(child => [
         child.sku, child.code, child.title, child.campaign, child.adsCampaigns,
-        child.userProductId, child.catalogProductId, child.conditionLabel, child.catalogLabel
+        child.familyId, child.familyName, child.userProductId, child.userProductName,
+        child.catalogProductId, child.conditionLabel, child.catalogLabel
       ].filter(Boolean).join(' ')).join(' ');
       return `${{ownText}} ${{childText}}`.toLowerCase();
     }}
@@ -1988,8 +2051,46 @@ def render_dashboard(data):
       const bytes = Uint8Array.from(zip, char => char.charCodeAt(0));
       return new Blob([bytes], {{ type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }});
     }}
+    function abcSourceRows() {{
+      const source = DATA.items || DATA.decisionItems || [];
+      if (abcMode === 'family') {{
+        return splitByFamily(source).map(group => {{
+          const summary = productParentSummary(group.children);
+          const familyId = group.familyId || '';
+          const familyName = group.familyName || '';
+          return {{
+            ...summary,
+            familyId,
+            familyName,
+            code: familyId || group.children[0].code || '',
+            allCodes: group.children.map(item => item.code).filter(Boolean).join(', '),
+            title: familyName || (familyId ? `Familia ${{familyId}}` : group.children[0].title || 'Familia nao informada'),
+            groupDetail: `${{new Set(group.children.map(item => item.userProductId).filter(Boolean)).size}} variacao(oes) · ${{group.children.length}} anuncio(s)`
+          }};
+        }});
+      }}
+      if (abcMode === 'variation') {{
+        return splitByMlbu(source).map(group => {{
+          const summary = productParentSummary(group.children);
+          const first = group.children[0];
+          const parentId = group.parentId || first.code || '';
+          return {{
+            ...summary,
+            familyId: first.familyId || '',
+            familyName: first.familyName || '',
+            userProductId: group.parentId || '',
+            userProductName: first.userProductName || '',
+            code: parentId,
+            allCodes: group.children.map(item => item.code).filter(Boolean).join(', '),
+            title: first.userProductName || (group.parentId ? `Variacao ${{group.parentId}}` : first.title || ''),
+            groupDetail: `${{group.children.length}} anuncio(s) nesta variacao`
+          }};
+        }});
+      }}
+      return abcMode === 'sku' ? DATA.skuAds : DATA.decisionItems;
+    }}
     function abcRows() {{
-      const rows = abcMode === 'sku' ? DATA.skuAds : DATA.decisionItems;
+      const rows = abcSourceRows();
       const total = rows.reduce((sum, item) => sum + (item[abcMetric] || 0), 0);
       let cumulative = 0;
       return [...rows]
@@ -2057,15 +2158,8 @@ def render_dashboard(data):
     function renderAbc() {{
       const searchInput = document.getElementById('abcSearch');
       const q = searchInput ? searchInput.value.toLowerCase() : '';
-      const rows = abcRows().filter(item => JSON.stringify({{
-        sku: item.sku,
-        code: item.code,
-        allCodes: item.allCodes,
-        title: item.title,
-        campaign: item.campaign,
-        allCampaigns: item.allCampaigns,
-        adsCampaigns: item.adsCampaigns
-      }}).toLowerCase().includes(q));
+      const rows = abcRows().filter(item => itemSearchText(item).includes(q));
+      const groupLabel = abcMode === 'family' ? 'Familia' : abcMode === 'variation' ? 'Variacao/MLBU' : 'Anuncio';
       const total = rows.reduce((sum, item) => sum + item.abcValue, 0);
       const buckets = ['A','B','C'].map(label => {{
         const bucketRows = rows.filter(item => item.abcClassValue === label);
@@ -2084,7 +2178,7 @@ def render_dashboard(data):
           <col style="width:120px"><col style="width:110px"><col style="width:110px"><col style="width:76px"><col style="width:120px"><col style="width:110px">
         </colgroup>
         <thead><tr>
-          <th class="num">#</th><th>ABC</th><th>SKU</th><th>Anuncio</th><th>Titulo</th>
+          <th class="num">#</th><th>ABC</th><th>SKU</th><th>${{groupLabel}}</th><th>Titulo / composicao</th>
           <th class="num">${{abcMetricLabels[abcMetric]}}</th><th class="num">Participacao</th><th class="num">Acumulado</th>
           <th class="num">Unid.</th><th class="num">Faturamento</th><th class="num">Invest.</th>
         </tr></thead>
@@ -2092,8 +2186,8 @@ def render_dashboard(data):
           <td class="num">${{item.abcRank}}</td>
           <td><span class="${{abcClass(item.abcClassValue)}}">${{item.abcClassValue}}</span></td>
           <td><div class="copyline"><span class="code">${{item.sku || '(sem SKU)'}}</span>${{copyButton(item.sku, 'SKU')}}</div></td>
-          <td><div class="copyline"><span class="code">${{item.allCodes || item.code || ''}}</span>${{copyButton(item.allCodes || item.code, 'MLB')}}</div></td>
-          <td class="text-cell"><div class="title">${{item.title || ''}}</div></td>
+          <td><div class="copyline"><span class="code">${{item.code || item.allCodes || ''}}</span>${{copyButton(item.code || item.allCodes, groupLabel)}}</div></td>
+          <td class="text-cell"><div class="title">${{item.title || ''}}</div>${{item.groupDetail ? `<div class="muted">${{item.groupDetail}}</div>` : ''}}</td>
           <td class="num">${{metricValue(item.abcValue)}}</td>
           <td class="num">${{pct(item.abcShare)}}</td>
           <td class="num">${{pct(item.abcCumulativeShare)}}</td>
@@ -2235,7 +2329,7 @@ def render_dashboard(data):
         <td class="text-cell"><div class="copyline"><span class="code">${{item.allCodes || item.code}}</span>${{copyButton(item.allCodes || item.code, 'MLB')}}</div><div class="title">${{item.title || ''}}</div></td>
         <td><span class="${{abcClass(item.abcSku)}}">SKU ${{item.abcSku || 'C'}}</span><div class="muted"><span class="${{abcClass(item.abcCode)}}">MLB ${{item.abcCode || '-'}}</span></div></td>
         <td class="text-cell">${{item.campaign || item.adsCampaigns || ''}}<div class="muted">${{item.campaignStatus || ''}}</div>${{campaignConfigInline(item)}}</td>
-        <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}<div class="muted">${{item.avgSalePrice ? 'media: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.priceMin && item.priceMax && item.priceMin !== item.priceMax ? 'menor/maior SKU: ' + brl(item.priceMin) + ' a ' + brl(item.priceMax) : (item.lastSaleDate ? 'ultima venda: ' + item.lastSaleDate : '')}}</div></td>
+        <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}${{priceMetaLine(item, 'media')}}<div class="muted">${{item.priceMin && item.priceMax && item.priceMin !== item.priceMax ? 'menor/maior SKU: ' + brl(item.priceMin) + ' a ' + brl(item.priceMax) : (item.lastSaleDate ? 'ultima venda: ' + item.lastSaleDate : '')}}</div></td>
         <td class="num">${{num(item.units || 0)}}</td>
         <td class="num">${{brl(item.totalRevenue || 0)}}</td>
         <td class="num">${{brl(item.adsRevenue || 0)}}</td>
@@ -2332,6 +2426,7 @@ def render_dashboard(data):
       if (context === 'noReturn') return (item.investment || 0) > 0 && (item.adsRevenue || 0) <= 0;
       if (context === 'highTacos') return (item.investment || 0) > 0 && (item.tacos || 0) > .03;
       if (context === 'adsDependency') return (item.adsDependencyRatio || 0) > .50;
+      if (context === 'priceAboveAvg') return hasPriceAboveAverage(item, 0.05);
       if (context === 'attention') return !String(item.action || '').startsWith('Manter') || (item.alerts || []).length > 1;
       if (context === 'opportunity') return (item.units || 0) > 0 && (item.investment || 0) === 0;
       return true;
@@ -2345,6 +2440,7 @@ def render_dashboard(data):
         ['Gasto sem retorno ADS', rows.filter(item => matchesContext(item, 'noReturn')).length, 'Houve gasto, mas nao houve receita ADS atribuida.'],
         ['TACOS fora da meta', rows.filter(item => matchesContext(item, 'highTacos')).length, 'Itens com TACOS acima da meta de 3%.'],
         ['Dependencia de Ads > 50%', rows.filter(item => matchesContext(item, 'adsDependency')).length, 'Mais de 50% da receita direta veio de ADS.'],
+        ['Preco acima da media > 5%', rows.filter(item => matchesContext(item, 'priceAboveAvg')).length, 'Preco atual acima da media vendida em mais de 5%; revisar elasticidade e impacto em conversao.'],
         ['Requer atencao', rows.filter(item => matchesContext(item, 'attention')).length, 'Itens com alerta relevante ou acao de revisao.'],
         ['Oportunidade para anunciar', rows.filter(item => matchesContext(item, 'opportunity')).length, 'Venda no periodo sem investimento ADS.']
       ];
@@ -2763,12 +2859,28 @@ def render_dashboard(data):
     function productParentRow(item) {{
       return `<tr class="product-parent-row">
         <td>${{productImage(item)}}</td>
-        <td><span class="code">${{safe(item.sku || '(sem SKU)')}}</span><div class="muted">Produto pai</div></td>
-        <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.parentId)}}</span>${{copyButton(item.parentId, 'MLBU')}}</div><div class="title">Resumo consolidado de ${{num(item.optionCount)}} opcoes</div></td>
-        <td><span class="summary-chip">PAI</span></td>
+        <td><span class="code">${{safe(item.sku || '(sem SKU)')}}</span><div class="muted">Variação / produto</div></td>
+        <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.parentId)}}</span>${{copyButton(item.parentId, 'MLBU')}}</div><div class="title">Resumo consolidado de ${{num(item.optionCount)}} condições</div></td>
+        <td><span class="summary-chip">MLBU</span></td>
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div>${{campaignConfigInline(item)}}</td>
         <td class="text-cell">${{safe(item.parentId)}} · ${{num(item.optionCount)}} opcao(oes)<div class="muted">${{safe(item.catalogLabel)}}</div></td>
-        <td class="num">${{(item.currentPrice || item.lastPrice) ? brl(item.currentPrice || item.lastPrice) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div><div class="muted">${{item.avgSalePrice ? 'media vendida: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
+        <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
+      </tr>`;
+    }}
+    function familyParentRow(group) {{
+      const item = productParentSummary(group.children);
+      const variationCount = new Set(group.children.map(child => child.userProductId).filter(Boolean)).size;
+      const familyLabel = group.familyName || `Família ${{group.familyId}}`;
+      return `<tr class="product-parent-row family-parent-row">
+        <td>${{productImage(item)}}</td>
+        <td><span class="code">${{safe(familyLabel)}}</span><div class="muted">Família do produto</div></td>
+        <td class="text-cell"><div class="copyline"><span class="code">${{safe(group.familyId)}}</span>${{copyButton(group.familyId, 'Família')}}</div><div class="title">Resumo de ${{num(variationCount)}} variação(ões) e ${{num(group.children.length)}} condição(ões)</div></td>
+        <td><span class="summary-chip">FAMÍLIA</span></td>
+        <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
+        <td class="text-cell">${{num(variationCount)}} MLBU(s)<div class="muted">${{num(group.children.length)}} MLB(s)</div></td>
+        <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
         <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
@@ -2786,14 +2898,41 @@ def render_dashboard(data):
       }});
       return [...groups.values()];
     }}
-    function mlbuGroupBody(group) {{
-      if (group.parentId && group.children.length > 1) {{
-        return `<tbody class="product-group">${{productParentRow(productParentSummary(group.children))}}${{group.children.map(item => row(item, 'product-child-row')).join('')}}${{productGroupNote(group.children.length)}}</tbody>`;
+    function splitByFamily(rows) {{
+      const groups = new Map();
+      rows.forEach((item, index) => {{
+        const familyId = item.familyId || '';
+        const key = familyId ? `family:${{familyId}}` : `item:${{item.code || index}}`;
+        if (!groups.has(key)) groups.set(key, {{ familyId, familyName:item.familyName || '', children:[] }});
+        groups.get(key).children.push(item);
+      }});
+      return [...groups.values()];
+    }}
+    function mlbuGroupRows(group, forceParent = false, includeNote = true) {{
+      if (group.parentId && (forceParent || group.children.length > 1)) {{
+        return productParentRow(productParentSummary(group.children))
+          + group.children.map(item => row(item, 'product-child-row')).join('')
+          + (includeNote ? productGroupNote(group.children.length) : '');
       }}
-      return `<tbody>${{group.children.map(item => row(item)).join('')}}</tbody>`;
+      return group.children.map(item => row(item)).join('');
+    }}
+    function mlbuGroupBody(group, forceParent = false) {{
+      const grouped = group.parentId && (forceParent || group.children.length > 1);
+      return `<tbody${{grouped ? ' class="product-group"' : ''}}>${{mlbuGroupRows(group, forceParent)}}</tbody>`;
+    }}
+    function familyGroupBody(group) {{
+      const variationGroups = splitByMlbu(group.children);
+      if (!group.familyId) return variationGroups.map(item => mlbuGroupBody(item, true)).join('');
+      return `<tbody class="product-group family-group">${{familyParentRow(group)}}${{variationGroups.map(item => mlbuGroupRows(item, true, false)).join('')}}</tbody>`;
+    }}
+    function groupedFamilyBodies(rows) {{
+      return splitByFamily(rows).map(familyGroupBody).join('');
+    }}
+    function groupedVariationBodies(rows) {{
+      return splitByMlbu(rows).map(item => mlbuGroupBody(item, true)).join('');
     }}
     function groupedMlbBodies(rows) {{
-      return splitByMlbu(rows).map(mlbuGroupBody).join('');
+      return rows.map(item => `<tbody>${{row(item)}}</tbody>`).join('');
     }}
     function groupedSkuBodies(rows) {{
       return rows.map(sku => splitByMlbu(sku.children || []).map(mlbuGroupBody).join('') || `<tbody>${{row(sku)}}</tbody>`).join('');
@@ -2803,15 +2942,16 @@ def render_dashboard(data):
       const expanded = detailExpanded.has(key);
       const campaignMode = currentViewMode === 'campaign';
       const abcValue = campaignMode ? item.abcCampaign : currentViewMode === 'sku' ? item.abcSku : item.abcCode;
+      const abcPrefix = campaignMode ? 'CAMP' : currentViewMode === 'sku' ? 'SKU' : 'MLB';
       const tacosNote = item.salesCoverageComplete === false ? 'vendas parciais' : item.campaignRevenueAmbiguous ? 'atribuicao ambigua' : '';
       return `<tr class="main-row ${{extraClass}}">
         <td>${{productImage(item)}}</td>
         <td><div class="copyline"><span class="code">${{safe(item.sku || '(sem SKU)')}}</span>${{copyButton(item.sku, 'SKU')}}</div><div class="muted">${{item.adCount ? item.adCount + ' anuncios' : ''}}</div>${{campaignMode ? '' : listingBadges(item)}}</td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.allCodes || item.code || '')}}</span>${{copyButton(item.allCodes || item.code, 'MLB')}}</div><div class="title">${{safe(campaignMode ? (item.topInvestmentLabel || item.title || '') : (item.title || ''))}}</div></td>
-        <td><span class="${{abcClass(abcValue)}}">${{campaignMode ? 'CAMP' : currentViewMode.toUpperCase()}} ${{abcValue || 'C'}}</span></td>
+        <td><span class="${{abcClass(abcValue)}}">${{abcPrefix}} ${{abcValue || 'C'}}</span></td>
         <td class="text-cell">${{safe(item.campaign || item.adsCampaigns || 'Sem campanha')}}<div class="muted">${{safe(item.campaignStatus || '')}}</div>${{campaignMode ? '' : campaignConfigInline(item)}}</td>
         <td class="text-cell">${{safe(item.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(item.catalogLabel || '')}}</div></td>
-        <td class="num">${{(item.currentPrice || item.lastPrice) ? brl(item.currentPrice || item.lastPrice) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div><div class="muted">${{item.avgSalePrice ? 'media vendida: ' + brl(item.avgSalePrice) : ''}}</div><div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
+        <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
         <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td>
         <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{safe(item.ctrClass || '')}}</div></td><td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{safe(item.cvrClass || '')}}</div></td>
@@ -2836,11 +2976,15 @@ def render_dashboard(data):
         }});
       }}
       document.getElementById('tableTitle').textContent = `${{contextLabels[currentContext]}} - ${{viewLabels[currentViewMode]}} (${{rows.length}})`;
-      const renderedBodies = currentViewMode === 'mlb'
-        ? groupedMlbBodies(rows)
-        : currentViewMode === 'sku'
-          ? groupedSkuBodies(rows)
-          : `<tbody>${{rows.map(item => row(item)).join('')}}</tbody>`;
+      const renderedBodies = currentViewMode === 'family'
+        ? groupedFamilyBodies(rows)
+        : currentViewMode === 'variation'
+          ? groupedVariationBodies(rows)
+          : currentViewMode === 'mlb'
+            ? groupedMlbBodies(rows)
+            : currentViewMode === 'sku'
+              ? groupedSkuBodies(rows)
+              : `<tbody>${{rows.map(item => row(item)).join('')}}</tbody>`;
       document.getElementById('table').innerHTML = `<table class="ops-table">
         <colgroup><col style="width:72px"><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
         <thead><tr><th>Imagem</th><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
@@ -2851,8 +2995,12 @@ def render_dashboard(data):
         helpText.textContent = 'A visao de campanha preserva o agrupamento e os calculos proprios de cada campanha; o agrupamento visual por produto nao altera esta camada.';
       }} else if (currentViewMode === 'sku') {{
         helpText.textContent = 'A aba SKU mantem cada SKU como contexto. Dentro dele, cada MLBU tem seu proprio quadro com o pai acima das condicoes; outro MLBU ou anuncio tradicional permanece separado.';
+      }} else if (currentViewMode === 'family') {{
+        helpText.textContent = 'A visao Família mostra a família acima, cada Variação/MLBU dentro dela e os respectivos MLBs/condições de venda abaixo. Os totais são recalculados em cada nível.';
+      }} else if (currentViewMode === 'variation') {{
+        helpText.textContent = 'Cada Variação/MLBU aparece como um quadro próprio, com o resumo consolidado acima e seus MLBs/condições de venda abaixo.';
       }} else {{
-        helpText.textContent = 'Cada MLBU aparece como um quadro: produto pai acima e condicoes de venda abaixo. O pai soma valores absolutos e recalcula TACOS, ROAS, CTR e CVR sobre os totais.';
+        helpText.textContent = 'A visão MLB mantém cada anúncio/condição de venda em uma linha independente, sem consolidá-lo como Variação/MLBU.';
       }}
       helpMeta.textContent = `${{num(rows.length)}} registro(s) no filtro atual`;
       applyTableZoom();
