@@ -348,6 +348,17 @@
     #monthlyTable th:nth-child(n+3), #monthlyTable td:nth-child(n+3) { min-width: 96px; width: 96px; }
     .muted { color: var(--muted); }
     .subline { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; line-height: 1.25; }
+    .identity-main { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+    .identity-thumb {
+      width: 42px;
+      height: 42px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 1px solid var(--line);
+      background: #fff;
+      flex: 0 0 42px;
+    }
+    .identity-text { min-width: 0; }
     .right { text-align: right; }
     .nowrap { white-space: nowrap; }
     .badge {
@@ -1808,10 +1819,17 @@
       return lines;
     }
 
+    function safeImageUrl(url) {
+      const value = String(url || '').trim();
+      return /^https?:\/\//i.test(value) ? value : '';
+    }
+
     function aggregateIdentityCell(r, group, extraLine = '') {
       const lines = rowHierarchyLines(r, group).map((line) => `<span class="subline">${esc(line)}</span>`);
       if (extraLine) lines.push(`<span class="subline">${extraLine}</span>`);
-      return `<strong>${esc(r.key)}</strong>${lines.join('')}`;
+      const image = safeImageUrl(r.thumbnailUrl);
+      const thumb = image ? `<img class="identity-thumb" src="${esc(image)}" alt="${esc(r.title || r.key || 'Produto')}" loading="lazy" referrerpolicy="no-referrer">` : '';
+      return `<div class="identity-main">${thumb}<div class="identity-text"><strong>${esc(r.key)}</strong>${lines.join('')}</div></div>`;
     }
 
     function aggregateFromSales(salesList, group = 'sku', previousSalesList = []) {
@@ -1838,6 +1856,7 @@
           userProductId: group === 'variation' ? key : '',
           campaignName: group === 'campaign' ? key : '',
           title: s.title,
+          thumbnailUrl: '',
           titleDate: null,
           units: 0,
           revenue: 0,
@@ -1869,6 +1888,7 @@
         if (s.campaignId) row.campaignIds.add(s.campaignId);
         const campaignLabel = saleCampaignLabel(s);
         if (campaignLabel) row.campaignNames.add(campaignLabel);
+        if (!row.thumbnailUrl && s.thumbnailUrl) row.thumbnailUrl = s.thumbnailUrl;
         if (s.title) {
           if (group === 'sku') {
             if (!row.title || s.title.length < row.title.length) row.title = s.title;
@@ -2776,7 +2796,8 @@
           userProducts: new Set(),
           catalogProducts: new Set(),
           campaignIds: new Set(),
-          campaignNames: new Set()
+          campaignNames: new Set(),
+          thumbnailUrl: ''
         };
         const skuCost = Number(state.costBySku[s.sku] || 0);
         const gross = Number(s.productRevenue || 0);
@@ -2798,6 +2819,7 @@
         if (s.campaignId) row.campaignIds.add(s.campaignId);
         const campaignLabel = saleCampaignLabel(s);
         if (campaignLabel) row.campaignNames.add(campaignLabel);
+        if (!row.thumbnailUrl && s.thumbnailUrl) row.thumbnailUrl = s.thumbnailUrl;
         if (!row.title || ((s.title || '').length < row.title.length)) row.title = s.title || row.title;
         map.set(key, row);
       });

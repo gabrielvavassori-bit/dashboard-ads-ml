@@ -1295,6 +1295,13 @@ def _sales_intelligence_collect_item_meta(latest_payload: dict) -> dict[str, dic
                 or sale.get("campaign")
                 or ""
             ).strip(),
+            "thumbnailUrl": str(
+                sale.get("thumbnail_url")
+                or sale.get("secure_thumbnail")
+                or sale.get("thumbnail")
+                or sale.get("picture")
+                or ""
+            ).strip(),
         }
     for raw in ads_rows:
         if not isinstance(raw, dict):
@@ -1323,6 +1330,14 @@ def _sales_intelligence_collect_item_meta(latest_payload: dict) -> dict[str, dic
                 or raw.get("campaign_title")
                 or raw.get("campaignTitle")
                 or raw.get("campaign")
+                or ""
+            ).strip()
+        if not meta[code]["thumbnailUrl"]:
+            meta[code]["thumbnailUrl"] = str(
+                raw.get("thumbnail_url")
+                or raw.get("secure_thumbnail")
+                or raw.get("thumbnail")
+                or raw.get("picture")
                 or ""
             ).strip()
     return meta
@@ -1469,6 +1484,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
                 "user_product_name": str(meta.get("userProductName") or "").strip(),
                 "campaign_id": str(meta.get("campaignId") or "").strip(),
                 "campaign_name": str(meta.get("campaignName") or "").strip(),
+                "thumbnail_url": str(meta.get("thumbnailUrl") or "").strip(),
             })
     sales_rows = []
     import_id = f"online:{client_id}:{period['dateFrom']}:{period['dateTo']}"
@@ -1526,6 +1542,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
             "campaignId": str(daily.get("campaign_id") or meta.get("campaignId") or "").strip(),
             "campaignName": str(daily.get("campaign_name") or meta.get("campaignName") or "").strip(),
             "campaign": str(daily.get("campaign_name") or meta.get("campaignName") or "").strip(),
+            "thumbnailUrl": str(daily.get("thumbnail_url") or meta.get("thumbnailUrl") or "").strip(),
             "listingType": "",
             "deliveryMethod": "",
             "result": "",
