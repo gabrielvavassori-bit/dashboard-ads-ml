@@ -826,6 +826,7 @@
     const $ = (id) => document.getElementById(id);
     const fmtNum = (n) => Number(n || 0).toLocaleString('pt-BR');
     const fmtMoney = (n) => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const money = fmtMoney;
     const fmtPct = (n) => Number(n || 0).toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
     const fmtCompact = (n) => Number(n || 0).toLocaleString('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
     const norm = (v) => String(v ?? '').trim();
