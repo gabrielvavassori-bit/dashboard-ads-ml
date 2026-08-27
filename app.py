@@ -1221,6 +1221,41 @@ def _sales_intelligence_default_period(now: datetime | None = None) -> dict:
     }
 
 
+def _sales_intelligence_period_from_payload(latest_payload: dict) -> dict | None:
+    if not isinstance(latest_payload, dict) or not latest_payload.get("ok"):
+        return None
+    latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
+    ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
+    sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
+    date_from = str(
+        latest.get("date_from")
+        or sales.get("date_from")
+        or ads.get("date_from")
+        or ""
+    ).strip()
+    date_to = str(
+        latest.get("date_to")
+        or sales.get("date_to")
+        or ads.get("date_to")
+        or ""
+    ).strip()
+    try:
+        if not date_from or not date_to:
+            return None
+        start = date.fromisoformat(date_from)
+        end = date.fromisoformat(date_to)
+    except ValueError:
+        return None
+    if start > end:
+        return None
+    return {
+        "mode": "bootstrap",
+        "dateFrom": start.isoformat(),
+        "dateTo": end.isoformat(),
+        "label": "Cobertura atual do cache online",
+    }
+
+
 def _sales_intelligence_parse_dt(value: str) -> datetime | None:
     text = str(value or "").strip()
     if not text:
@@ -1243,25 +1278,10 @@ def _sales_intelligence_fetch_latest(client: str, advertiser_id: str, date_from:
     latest_to = str(latest.get("date_to") or ads.get("date_to") or "").strip()
     if latest_from == date_from and latest_to == date_to:
         return latest_payload, ""
-
-    refresh_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-refresh", params)
-    refreshed_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-latest", params)
-    if refreshed_payload.get("ok"):
-        latest_payload = refreshed_payload
-        latest = refreshed_payload.get("latest") if isinstance(refreshed_payload.get("latest"), dict) else {}
-        ads = refreshed_payload.get("ads") if isinstance(refreshed_payload.get("ads"), dict) else {}
-        latest_from = str(latest.get("date_from") or ads.get("date_from") or "").strip()
-        latest_to = str(latest.get("date_to") or ads.get("date_to") or "").strip()
-    if latest_from == date_from and latest_to == date_to:
-        return latest_payload, ""
-    if refresh_payload.get("ok") and refresh_payload.get("status") == "running":
-        return None, (
-            f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {date_from} a {date_to}. "
-            "A pagina sera atualizada automaticamente quando a coleta terminar."
-        )
-    return None, (
-        f"Cache online fora do periodo solicitado ({latest_from or 'sem data'} a {latest_to or 'sem data'}). "
-        "Tente novamente em alguns minutos."
+    return latest_payload, (
+        "Leitura online em modo cache-first. "
+        "A Inteligencia de Vendas usou apenas a cobertura ja existente no cache da conta, "
+        f"sem disparar nova coleta nesta abertura ({latest_from or 'sem data'} a {latest_to or 'sem data'})."
     )
 
 
@@ -1420,7 +1440,11 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     if not client_id:
         return None, "Conta Mercado Livre vinculada sem client_id ativo."
     advertiser_id = str(link["advertiser_id"] or "").strip()
-    period = _sales_intelligence_default_period()
+    latest_hint = _fetch_dash_ads_json(
+        "/internal/dash-ads/online-cache-latest",
+        {"client": client_id, "advertiser_id": advertiser_id},
+    )
+    period = _sales_intelligence_period_from_payload(latest_hint) or _sales_intelligence_default_period()
     latest_payload, message = _sales_intelligence_fetch_latest(
         client_id,
         advertiser_id,
