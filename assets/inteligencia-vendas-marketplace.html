@@ -381,17 +381,21 @@
     .copy-chip:hover { filter: brightness(.98); }
     .curve-ref-title {
       display: block;
+      width: 100%;
+      text-align: left;
       margin-top: 4px;
-      font-size: 14px;
-      font-weight: 800;
+      font-size: 15px;
+      font-weight: 900;
       line-height: 1.25;
-      color: var(--ink);
+      color: #1e3a5f;
+      background: #f8fbff;
+      border-color: #c9d9ee;
     }
     .curve-ref-meta {
       display: flex;
       flex-wrap: wrap;
-      gap: 4px;
-      margin-top: 4px;
+      gap: 6px;
+      margin-top: 6px;
     }
     .right { text-align: right; }
     .nowrap { white-space: nowrap; }
@@ -814,7 +818,7 @@
 
   <script>
     const DB_NAME = 'un_clic_marketplace_intelligence_v1';
-    const DB_VERSION = 1;
+    const DB_VERSION = 2;
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
     const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
@@ -871,9 +875,10 @@
         const req = indexedDB.open(DB_NAME, DB_VERSION);
         req.onupgradeneeded = () => {
           const d = req.result;
-          d.createObjectStore('sales', { keyPath: 'dedupeKey' });
-          d.createObjectStore('imports', { keyPath: 'id' });
-          d.createObjectStore('events', { keyPath: 'id' });
+          if (!d.objectStoreNames.contains('sales')) d.createObjectStore('sales', { keyPath: 'dedupeKey' });
+          if (!d.objectStoreNames.contains('imports')) d.createObjectStore('imports', { keyPath: 'id' });
+          if (!d.objectStoreNames.contains('events')) d.createObjectStore('events', { keyPath: 'id' });
+          if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'id' });
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
@@ -904,12 +909,44 @@
         req.onerror = () => reject(req.error);
       });
     }
+    function getOne(name, key) {
+      return new Promise((resolve, reject) => {
+        const req = txStore(name).get(key);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    function putOne(name, row) {
+      return new Promise((resolve, reject) => {
+        const req = txStore(name, 'readwrite').put(row);
+        req.onsuccess = resolve;
+        req.onerror = () => reject(req.error);
+      });
+    }
+    function clientCostProfileId() {
+      return `cost_profile:${normKey($('clientName')?.value || 'CLIENTE_TESTE')}`;
+    }
+    async function loadClientCostProfile() {
+      const payload = await getOne('meta', clientCostProfileId());
+      if (!payload || typeof payload !== 'object') return;
+      state.costBySku = payload.costBySku && typeof payload.costBySku === 'object' ? payload.costBySku : {};
+      state.profitTaxRate = Number.isFinite(Number(payload.profitTaxRate)) ? Math.max(0, Number(payload.profitTaxRate)) : 0;
+    }
+    async function saveClientCostProfile() {
+      await putOne('meta', {
+        id: clientCostProfileId(),
+        costBySku: state.costBySku || {},
+        profitTaxRate: Number.isFinite(Number(state.profitTaxRate)) ? Math.max(0, Number(state.profitTaxRate)) : 0,
+        updatedAt: new Date().toISOString()
+      });
+    }
 
     async function boot() {
       db = await openDb();
       state.sales = await getAll('sales');
       state.imports = await getAll('imports');
       state.events = await getAll('events');
+      await loadClientCostProfile();
       await loadGovernanceSummary();
       bindUi();
       renderAll();
@@ -1039,7 +1076,7 @@
       $('globalSearchInput').oninput = (e) => applyGlobalSearch(undefined, e.target.value || '');
       if ($('dashboardSearchScope')) $('dashboardSearchScope').onchange = (e) => applyGlobalSearch(e.target.value || 'code');
       if ($('dashboardSearchInput')) $('dashboardSearchInput').oninput = (e) => applyGlobalSearch(undefined, e.target.value || '');
-      $('profitTaxInput').oninput = (e) => { state.profitTaxRate = Math.max(0, Number(e.target.value || 0)); renderProfit(); };
+      $('profitTaxInput').oninput = (e) => { state.profitTaxRate = Math.max(0, Number(e.target.value || 0)); saveClientCostProfile().catch(() => {}); renderProfit(); };
       $('exportCostTemplateBtn').onclick = exportCostTemplateCsv;
       $('importCostTemplateBtn').onclick = () => $('importCostInput').click();
       $('importCostInput').onchange = (e) => importCostTemplate(e.target.files[0]);
@@ -1744,6 +1781,18 @@
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_+|_+$/g, '');
     }
+    function parseMoneyValue(v) {
+      let txt = String(v ?? '').trim();
+      if (!txt) return NaN;
+      if (txt.includes(',') && txt.includes('.')) {
+        if (txt.lastIndexOf(',') > txt.lastIndexOf('.')) txt = txt.replace(/\./g, '').replace(',', '.');
+        else txt = txt.replace(/,/g, '');
+      } else if (txt.includes(',')) {
+        txt = txt.replace(/\./g, '').replace(',', '.');
+      }
+      const num = Number(txt.replace(/[^\d.-]/g, ''));
+      return Number.isFinite(num) ? num : NaN;
+    }
 
     function parseZip(buffer) {
       const bytes = new Uint8Array(buffer);
@@ -1922,11 +1971,13 @@
       const mlbText = row.mlbLabel || row.mlb || [...(row.mlbs || [])].join(', ');
       const familyText = row.familyLabel && row.familyLabel !== 'Familia nao informada' ? row.familyLabel : '';
       const variationText = row.variationLabel && row.variationLabel !== 'Sem variacao' ? row.variationLabel : '';
+      const campaignText = row.campaignLabel && row.campaignLabel !== 'Sem campanha identificada' ? row.campaignLabel : '';
       const extraTokens = [
         meta.type !== 'MLB' ? copyChip('MLB', mlbText, 'ghost') : '',
         meta.type !== 'SKU' ? copyChip('SKU', skuText, 'ghost') : '',
         meta.type !== 'Familia' ? copyChip('Familia', familyText, 'ghost') : '',
-        copyChip('Variacao', variationText, 'ghost')
+        copyChip('MLBU', variationText, 'ghost'),
+        copyChip('Campanha', campaignText, 'ghost')
       ].filter(Boolean).join('');
       return `<div class="identity-main">${productThumb(row)}<div class="identity-text">${copyChip(meta.type, meta.code)}<button type="button" class="copy-chip ghost curve-ref-title" title="Clique para copiar o nome" onclick="__marketplaceApp.copyText('${jsStr(title)}')">${esc(title)}</button>${skuText ? `<span class="subline"><strong>SKU:</strong> ${esc(skuText)}</span>` : ''}${detailLine ? `<span class="subline">${detailLine}</span>` : ''}${extraTokens ? `<div class="curve-ref-meta">${extraTokens}</div>` : ''}</div></div>`;
     }
@@ -3751,7 +3802,7 @@
         rows.slice(1).forEach((row) => {
           const sku = normKey(row[skuIndex]);
           if (!sku) return;
-          const rawCost = money(row[costIndex]);
+          const rawCost = parseMoneyValue(row[costIndex]);
           if (!Number.isFinite(rawCost) || rawCost < 0) {
             ignored++;
             return;
@@ -3759,6 +3810,7 @@
           state.costBySku[sku] = rawCost;
           updated++;
         });
+        await saveClientCostProfile();
         if ($('importCostInput')) $('importCostInput').value = '';
         renderProfit();
         alert(`Custos importados com sucesso. SKU(s) atualizados: ${updated}. Linha(s) ignoradas: ${ignored}.`);
@@ -4026,6 +4078,7 @@
         state.globalSearch = String(globalSearch || '');
         state.noSalesRejected = noSalesRejected && typeof noSalesRejected === 'object' ? noSalesRejected : {};
         state.onlineNotice = String(onlineNotice || '');
+        saveClientCostProfile().catch(() => {});
         syncDerivedWindowsFromReport();
         if ($('profitTaxInput')) $('profitTaxInput').value = String(state.profitTaxRate);
         if ($('profitDateStart')) $('profitDateStart').value = state.profitDateStart;
@@ -4051,6 +4104,7 @@
         if (!key) return;
         const v = Math.max(0, Number(value || 0));
         state.costBySku[key] = Number.isFinite(v) ? v : 0;
+        saveClientCostProfile().catch(() => {});
         renderProfit();
       },
       rejectNoSalesItem: (key) => {
