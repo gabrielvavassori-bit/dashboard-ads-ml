@@ -1517,7 +1517,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
         code = _normalize_mlb_code(daily.get("item_id"))
         if not code:
             continue
-        meta = item_meta.get(code) or {"sku": code, "title": ""}
+        meta = item_meta.get(code) or {"sku": "", "title": ""}
         row_number += 1
         qty = max(0, int(_number(daily.get("units_total"))))
         orders_count = max(0, int(_number(daily.get("orders_count"))))
