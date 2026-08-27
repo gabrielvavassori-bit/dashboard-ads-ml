@@ -3060,7 +3060,14 @@ def render_dashboard(data):
       if (sortState.key && sortState.direction !== 0) {{
         rows = [...rows].sort(compareTableItems);
       }}
-      document.getElementById('tableTitle').textContent = `${{contextLabels[currentContext]}} - ${{viewLabels[currentViewMode]}} (${{rows.length}})`;
+      const displayedCount = currentViewMode === 'hybrid'
+        ? splitHybrid(rows).length
+        : currentViewMode === 'family'
+          ? splitByFamily(rows).length
+          : currentViewMode === 'variation'
+            ? splitByMlbu(rows).length
+            : rows.length;
+      document.getElementById('tableTitle').textContent = `${{contextLabels[currentContext]}} - ${{viewLabels[currentViewMode]}} (${{displayedCount}})`;
       const renderedBodies = currentViewMode === 'hybrid'
         ? groupedHybridBodies(rows)
         : currentViewMode === 'family'

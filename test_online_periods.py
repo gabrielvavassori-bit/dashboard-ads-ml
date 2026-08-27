@@ -46,6 +46,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn('function abcSourceRows()', source)
         self.assertIn('function splitHybrid(rows)', source)
         self.assertIn('function groupedHybridBodies(rows)', source)
+        self.assertIn("const displayedCount = currentViewMode === 'hybrid'", source)
         self.assertIn('return sortedGroups(splitByFamily(rows))', source)
         self.assertIn('itemSearchText(item).includes(q)', source)
         self.assertIn('function groupedVariationBodies(rows)', source)
@@ -78,10 +79,6 @@ class OnlinePeriodTests(unittest.TestCase):
                         "item_id": "MLB5399002228",
                         "campaign_id": "CAMP-1",
                         "campaign_name": "Campanha principal",
-                        "family_id": "FAM-7X4",
-                        "user_product_id": "MLBU-7X4",
-                        "catalog_product_id": "CAT-7X4",
-                        "catalog_listing": True,
                         "thumbnail_url": "http://http2.mlstatic.com/condition-a.jpg",
                         "sku": "LAZ-7X4",
                         "title": "Condicao A",
@@ -99,10 +96,6 @@ class OnlinePeriodTests(unittest.TestCase):
                         "item_id": "MLB6689184622",
                         "campaign_id": "CAMP-2",
                         "campaign_name": "Campanha secundaria",
-                        "family_id": "FAM-7X4",
-                        "user_product_id": "MLBU-7X4",
-                        "catalog_product_id": "CAT-7X4",
-                        "catalog_listing": True,
                         "sku": "LAZ-7X4",
                         "title": "Condicao B",
                         "cost": 5,
@@ -119,8 +112,28 @@ class OnlinePeriodTests(unittest.TestCase):
                 "date_from": "2026-08-04",
                 "date_to": "2026-08-10",
                 "items": {
-                    "MLB5399002228": {"revenue_total": 500, "orders_count": 4, "units_total": 5},
-                    "MLB6689184622": {"revenue_total": 631.84, "orders_count": 1, "units_total": 8},
+                    "MLB5399002228": {
+                        "revenue_total": 500,
+                        "orders_count": 4,
+                        "units_total": 5,
+                        "family_id": "FAM-7X4",
+                        "family_name": "Familia 7x4",
+                        "user_product_id": "MLBU-7X4",
+                        "user_product_name": "Variacao 7x4",
+                        "catalog_product_id": "CAT-7X4",
+                        "catalog_listing": True,
+                    },
+                    "MLB6689184622": {
+                        "revenue_total": 631.84,
+                        "orders_count": 1,
+                        "units_total": 8,
+                        "family_id": "FAM-7X4",
+                        "family_name": "Familia 7x4",
+                        "user_product_id": "MLBU-7X4",
+                        "user_product_name": "Variacao 7x4",
+                        "catalog_product_id": "CAT-7X4",
+                        "catalog_listing": True,
+                    },
                 },
             },
         }
@@ -137,7 +150,9 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(error, "")
         self.assertEqual({item["campaignId"] for item in data["items"]}, {"CAMP-1", "CAMP-2"})
         self.assertTrue(all(item["familyId"] == "FAM-7X4" for item in data["items"]))
+        self.assertTrue(all(item["familyName"] == "Familia 7x4" for item in data["items"]))
         self.assertTrue(all(item["userProductId"] == "MLBU-7X4" for item in data["items"]))
+        self.assertTrue(all(item["userProductName"] == "Variacao 7x4" for item in data["items"]))
         self.assertTrue(all(item["conditionCount"] == 2 for item in data["items"]))
         self.assertTrue(all(item["catalogProductId"] == "CAT-7X4" for item in data["items"]))
         self.assertEqual(data["items"][0]["thumbnailUrl"], "http://http2.mlstatic.com/condition-a.jpg")

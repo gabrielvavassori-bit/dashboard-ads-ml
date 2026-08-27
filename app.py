@@ -871,12 +871,12 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             ),
             "adsCampaigns": f"Campanha {campaign_id}" if campaign_id else "",
             "campaignStatus": campaign_status,
-            "familyId": str(raw.get("family_id") or raw.get("familyId") or "").strip(),
-            "familyName": str(raw.get("family_name") or raw.get("familyName") or "").strip(),
-            "userProductId": str(raw.get("user_product_id") or raw.get("userProductId") or "").strip(),
-            "userProductName": str(raw.get("user_product_name") or raw.get("userProductName") or "").strip(),
-            "catalogProductId": str(raw.get("catalog_product_id") or raw.get("catalogProductId") or "").strip(),
-            "catalogListing": bool(raw.get("catalog_listing") or raw.get("catalogListing")),
+            "familyId": str(raw.get("family_id") or raw.get("familyId") or sale.get("family_id") or sale.get("familyId") or "").strip(),
+            "familyName": str(raw.get("family_name") or raw.get("familyName") or sale.get("family_name") or sale.get("familyName") or "").strip(),
+            "userProductId": str(raw.get("user_product_id") or raw.get("userProductId") or sale.get("user_product_id") or sale.get("userProductId") or "").strip(),
+            "userProductName": str(raw.get("user_product_name") or raw.get("userProductName") or sale.get("user_product_name") or sale.get("userProductName") or "").strip(),
+            "catalogProductId": str(raw.get("catalog_product_id") or raw.get("catalogProductId") or sale.get("catalog_product_id") or sale.get("catalogProductId") or "").strip(),
+            "catalogListing": bool(raw.get("catalog_listing") or raw.get("catalogListing") or sale.get("catalog_listing") or sale.get("catalogListing")),
             "thumbnailUrl": str(
                 raw.get("thumbnail_url")
                 or raw.get("secure_thumbnail")
@@ -1274,14 +1274,53 @@ def _sales_intelligence_fetch_latest(client: str, advertiser_id: str, date_from:
         return None, "Nao foi possivel ler o cache online desta conta agora."
     latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
     ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
+    sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
     latest_from = str(latest.get("date_from") or ads.get("date_from") or "").strip()
     latest_to = str(latest.get("date_to") or ads.get("date_to") or "").strip()
-    if latest_from == date_from and latest_to == date_to:
+    period_cache_hit = latest_payload.get("period_cache_hit") is not False
+    period_match = (
+        period_cache_hit
+        and latest_from == date_from
+        and latest_to == date_to
+        and str(ads.get("date_from") or "").strip() == date_from
+        and str(ads.get("date_to") or "").strip() == date_to
+        and str(sales.get("date_from") or "").strip() == date_from
+        and str(sales.get("date_to") or "").strip() == date_to
+    )
+    if period_match:
         return latest_payload, ""
-    return latest_payload, (
-        "Leitura online em modo cache-first. "
-        "A Inteligencia de Vendas usou apenas a cobertura ja existente no cache da conta, "
-        f"sem disparar nova coleta nesta abertura ({latest_from or 'sem data'} a {latest_to or 'sem data'})."
+    refresh_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-refresh", params)
+    refreshed_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-latest", params)
+    if refreshed_payload.get("ok"):
+        latest_payload = refreshed_payload
+        latest = refreshed_payload.get("latest") if isinstance(refreshed_payload.get("latest"), dict) else {}
+        ads = refreshed_payload.get("ads") if isinstance(refreshed_payload.get("ads"), dict) else {}
+        sales = refreshed_payload.get("sales") if isinstance(refreshed_payload.get("sales"), dict) else {}
+        latest_from = str(latest.get("date_from") or ads.get("date_from") or "").strip()
+        latest_to = str(latest.get("date_to") or ads.get("date_to") or "").strip()
+        period_cache_hit = refreshed_payload.get("period_cache_hit") is not False
+        period_match = (
+            period_cache_hit
+            and latest_from == date_from
+            and latest_to == date_to
+            and str(ads.get("date_from") or "").strip() == date_from
+            and str(ads.get("date_to") or "").strip() == date_to
+            and str(sales.get("date_from") or "").strip() == date_from
+            and str(sales.get("date_to") or "").strip() == date_to
+        )
+        if period_match:
+            return latest_payload, ""
+    refresh_running = refresh_payload.get("ok") and refresh_payload.get("status") == "running"
+    cached_status = latest_payload.get("status") if isinstance(latest_payload.get("status"), dict) else {}
+    if refresh_running or cached_status.get("status") == "running":
+        return None, (
+            f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {date_from} a {date_to}. "
+            "A pagina sera atualizada automaticamente quando a coleta terminar."
+        )
+    return None, (
+        f"Cache online da Inteligencia fora do periodo selecionado ({latest_from or 'sem data'} a "
+        f"{latest_to or 'sem data'}). Solicitado {date_from or 'sem data'} a "
+        f"{date_to or 'sem data'}. Atualize a coleta online e tente novamente."
     )
 
 
