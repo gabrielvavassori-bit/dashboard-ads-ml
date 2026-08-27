@@ -602,6 +602,42 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(data["sales"][0]["productRevenue"], 150)
         self.assertEqual(data["sales"][0]["sku"], "SKU-123")
 
+    def test_sales_intelligence_reports_pending_while_period_refresh_runs(self):
+        stale_payload = {
+            "ok": True,
+            "period_cache_hit": False,
+            "latest": {
+                "date_from": "2026-07-24",
+                "date_to": "2026-08-22",
+            },
+            "ads": {
+                "date_from": "2026-07-24",
+                "date_to": "2026-08-22",
+                "items": [],
+            },
+            "sales": {
+                "date_from": "2026-07-24",
+                "date_to": "2026-08-22",
+                "items": {},
+            },
+        }
+
+        def fake_fetch(path, _params):
+            if path.endswith("online-cache-refresh"):
+                return {"ok": True, "status": "running", "http_status": 202}
+            return stale_payload
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fake_fetch):
+            payload, message = app._sales_intelligence_fetch_latest(
+                "conta-ativa",
+                "adv-1",
+                "2026-04-30",
+                "2026-08-26",
+            )
+
+        self.assertIsNone(payload)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
+
     def test_sales_intelligence_falls_back_to_aggregate_cache_when_daily_snapshot_fails(self):
         latest = {
             "sales": {"items": {"MLB123": {
