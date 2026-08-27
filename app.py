@@ -1444,7 +1444,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
         "/internal/dash-ads/online-cache-latest",
         {"client": client_id, "advertiser_id": advertiser_id},
     )
-    period = _sales_intelligence_period_from_payload(latest_hint) or _sales_intelligence_default_period()
+    period = _sales_intelligence_default_period()
     latest_payload, message = _sales_intelligence_fetch_latest(
         client_id,
         advertiser_id,
