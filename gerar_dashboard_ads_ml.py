@@ -1494,6 +1494,17 @@ def render_dashboard(data):
     tbody.product-group tr.product-parent-row td {{ background:#eaf2ff; border-top:2px solid #5b8def; font-weight:700; }}
     tbody.product-group tr.product-child-row td {{ background:#fff; }}
     tbody.product-group tr.product-group-note td {{ background:#f5f8ff; border-bottom:2px solid #84adff; color:#344054; }}
+    tbody.product-group tr.family-parent-row td {{ background:#eaf2ff; border-top-color:#5b8def; }}
+    tbody.product-group.variation-group {{ outline-color:#e0b653; background:#fffdf6; }}
+    tbody.product-group.variation-group tr td:first-child {{ border-left-color:#e0b653; }}
+    tbody.product-group.variation-group tr td:last-child {{ border-right-color:#e0b653; }}
+    tbody.product-group tr.variation-parent-row td {{ background:#fff8e5; border-top-color:#dca72c; }}
+    tbody.product-group.variation-group tr.product-group-note td {{ background:#fff9e8; border-bottom-color:#e0b653; }}
+    tbody.product-group.sku-group {{ outline-color:#72c994; background:#f3fcf6; }}
+    tbody.product-group.sku-group tr td:first-child {{ border-left-color:#72c994; }}
+    tbody.product-group.sku-group tr td:last-child {{ border-right-color:#72c994; }}
+    tbody.product-group.sku-group tr.sku-parent-row td {{ background:#eafaf0; border-top-color:#2eaa61; }}
+    tbody.product-group.sku-group tr.product-group-note td {{ background:#f3fcf6; border-bottom-color:#72c994; }}
     tbody.product-group tr.product-parent-row td:first-child {{ border-top-left-radius:8px; }}
     tbody.product-group tr.product-parent-row td:last-child {{ border-top-right-radius:8px; }}
     tbody.product-group tr.product-group-note td:first-child {{ border-bottom-left-radius:8px; }}
@@ -1849,7 +1860,7 @@ def render_dashboard(data):
     }})();
     const detailExpanded = new Set();
     const dailyChartMetric = new Map();
-    let sortState = {{ key:'investment', direction:1 }};
+    let sortState = {{ key:'revenue', direction:1 }};
     let abcMode = 'hybrid';
     let abcMetric = 'totalRevenue';
     let abcDirection = 'desc';
@@ -1931,16 +1942,14 @@ def render_dashboard(data):
       const cls = above ? 'price-above-avg' : 'muted';
       return `<div class="${{cls}}">${{avgLabel}}: ${{brl(avg)}}${{above ? diffText : ''}}</div>`;
     }}
-    function itemSearchText(item) {{
+    function itemSearchText(item, viewMode = null) {{
+      const includeCampaign = viewMode === null || viewMode === 'campaign';
       const ownText = [
         item.sku,
         item.code,
         item.allCodes,
         item.title,
-        item.campaign,
-        item.allCampaigns,
-        item.adsCampaigns,
-        item.campaignStatus,
+        ...(includeCampaign ? [item.campaign, item.allCampaigns, item.adsCampaigns, item.campaignStatus] : []),
         item.familyId,
         item.familyName,
         item.userProductId,
@@ -1952,7 +1961,8 @@ def render_dashboard(data):
         item.alertText
       ].filter(Boolean).join(' ');
       const childText = (item.children || []).map(child => [
-        child.sku, child.code, child.title, child.campaign, child.adsCampaigns,
+        child.sku, child.code, child.title,
+        ...(includeCampaign ? [child.campaign, child.adsCampaigns, child.campaignStatus] : []),
         child.familyId, child.familyName, child.userProductId, child.userProductName,
         child.catalogProductId, child.conditionLabel, child.catalogLabel
       ].filter(Boolean).join(' ')).join(' ');
@@ -2897,7 +2907,7 @@ def render_dashboard(data):
       return `<div class="product-thumbnail"><img src="${{safe(url)}}" alt="${{safe(item.title || item.sku || 'Produto')}}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.parentElement.textContent='SEM FOTO'">${{badge}}</div>`;
     }}
     function productParentRow(item) {{
-      return `<tr class="product-parent-row">
+      return `<tr class="product-parent-row variation-parent-row">
         <td>${{productImage(item)}}</td>
         <td><span class="code">${{safe(item.sku || '(sem SKU)')}}</span><div class="muted">Variação / produto</div></td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.parentId)}}</span>${{copyButton(item.parentId, 'MLBU')}}</div><div class="title">Resumo consolidado de ${{num(item.optionCount)}} condições</div></td>
@@ -2921,6 +2931,25 @@ def render_dashboard(data):
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
         <td class="text-cell">${{num(variationCount)}} MLBU(s)<div class="muted">${{num(group.children.length)}} MLB(s)</div></td>
         <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
+      </tr>`;
+    }}
+    function skuParentRow(sku) {{
+      const children = sku.children || [];
+      const summary = children.length ? productParentSummary(children) : sku;
+      const familyCount = new Set(children.map(item => item.familyId).filter(Boolean)).size;
+      const variationCount = new Set(children.map(item => item.userProductId).filter(Boolean)).size;
+      const mlbCount = new Set(children.map(item => item.code).filter(Boolean)).size;
+      const item = {{ ...sku, ...summary, sku:sku.sku || summary.sku || '(sem SKU)' }};
+      return `<tr class="product-parent-row sku-parent-row">
+        <td>${{productImage(item)}}</td>
+        <td><span class="code">${{safe(item.sku)}}</span><div class="muted">SKU pai</div></td>
+        <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.sku)}}</span>${{copyButton(item.sku,'SKU')}}</div><div class="title">Resumo consolidado de ${{num(children.length)}} registro(s)</div></td>
+        <td><span class="summary-chip">SKU PAI</span></td>
+        <td class="text-cell">${{num(summary.campaignCount || 0)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
+        <td class="text-cell">${{num(familyCount)}} família(s) · ${{num(variationCount)}} MLBU(s)<div class="muted">${{num(mlbCount)}} MLB(s)</div></td>
+        <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item,'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
         <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
@@ -2977,6 +3006,11 @@ def render_dashboard(data):
       if (typeof av === 'number' || typeof bv === 'number') return sortState.direction === 1 ? (bv - av) : (av - bv);
       return sortState.direction === 1 ? String(bv).localeCompare(String(av), 'pt-BR') : String(av).localeCompare(String(bv), 'pt-BR');
     }}
+    function defaultTableSort(viewMode = currentViewMode) {{
+      return viewMode === 'hybrid'
+        ? {{ key:'revenue', direction:1 }}
+        : {{ key:'investment', direction:1 }};
+    }}
     function groupSortItem(group) {{
       const first = group.children[0] || {{}};
       const summary = productParentSummary(group.children);
@@ -3000,7 +3034,7 @@ def render_dashboard(data):
     }}
     function mlbuGroupBody(group, forceParent = false) {{
       const grouped = group.parentId && (forceParent || group.children.length > 1);
-      return `<tbody${{grouped ? ' class="product-group"' : ''}}>${{mlbuGroupRows(group, forceParent)}}</tbody>`;
+      return `<tbody${{grouped ? ' class="product-group variation-group"' : ''}}>${{mlbuGroupRows(group, forceParent)}}</tbody>`;
     }}
     function familyGroupBody(group) {{
       const variationGroups = splitByMlbu(group.children);
@@ -3025,7 +3059,13 @@ def render_dashboard(data):
       return rows.map(item => `<tbody>${{row(item)}}</tbody>`).join('');
     }}
     function groupedSkuBodies(rows) {{
-      return rows.map(sku => splitByMlbu(sku.children || []).map(mlbuGroupBody).join('') || `<tbody>${{row(sku)}}</tbody>`).join('');
+      return rows.map(sku => {{
+        const children = sku.children || [];
+        if (!children.length) return `<tbody>${{row(sku)}}</tbody>`;
+        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku)}}<tr class="product-group-note"><td colspan="17"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; detalhamento estrutural abaixo.</td></tr></tbody>`;
+        const details = sortedGroups(splitByFamily(children)).map(familyGroupBody).join('');
+        return summary + details;
+      }}).join('');
     }}
     function row(item, extraClass = '') {{
       const key = detailKey(item);
@@ -3056,7 +3096,7 @@ def render_dashboard(data):
     function renderTable() {{
       renderAlerts();
       const q = document.getElementById('search').value.toLowerCase();
-      let rows = rowsByViewMode().filter(item => matchesContext(item) && itemSearchText(item).includes(q));
+      let rows = rowsByViewMode().filter(item => matchesContext(item) && itemSearchText(item, currentViewMode).includes(q));
       if (sortState.key && sortState.direction !== 0) {{
         rows = [...rows].sort(compareTableItems);
       }}
@@ -3090,7 +3130,7 @@ def render_dashboard(data):
       }} else if (currentViewMode === 'hybrid') {{
         helpText.textContent = 'A visão Híbrida usa a melhor estrutura disponível sem ocultar anúncios: Família; sem família, Variação/MLBU; sem ambos, MLB; e SKU apenas como último recurso. A ordenação usa o total consolidado de cada bloco.';
       }} else if (currentViewMode === 'sku') {{
-        helpText.textContent = 'A aba SKU mantem cada SKU como contexto. Dentro dele, cada MLBU tem seu proprio quadro com o pai acima das condicoes; outro MLBU ou anuncio tradicional permanece separado.';
+        helpText.textContent = 'A aba SKU mostra primeiro o SKU pai consolidado. Abaixo, detalha Família, Variação/MLBU e respectivos MLBs sem misturar campanhas na busca.';
       }} else if (currentViewMode === 'family') {{
         helpText.textContent = 'A visao Família mostra a família acima, cada Variação/MLBU dentro dela e os respectivos MLBs/condições de venda abaixo. Os totais são recalculados em cada nível.';
       }} else if (currentViewMode === 'variation') {{
@@ -3190,7 +3230,7 @@ def render_dashboard(data):
         document.querySelectorAll('button[data-tab]').forEach(b => b.classList.remove('active'));
         button.classList.add('active');
         current = button.dataset.tab;
-        sortState = {{ key:'investment', direction:1 }};
+        sortState = defaultTableSort();
         renderTable();
       }});
     }});
@@ -3204,7 +3244,7 @@ def render_dashboard(data):
     }});
     document.getElementById('contextSelect').addEventListener('change', event => {{
       currentContext = event.target.value;
-      sortState = {{ key:'investment', direction:1 }};
+      sortState = defaultTableSort();
       renderTable();
     }});
     document.querySelectorAll('#viewMode button[data-view-mode]').forEach(button => {{
@@ -3213,7 +3253,7 @@ def render_dashboard(data):
         button.classList.add('active');
         currentViewMode = button.dataset.viewMode;
         detailExpanded.clear();
-        sortState = {{ key:'investment', direction:1 }};
+        sortState = defaultTableSort();
         renderTable();
       }});
     }});
