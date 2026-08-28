@@ -820,7 +820,7 @@
     const DB_NAME = 'un_clic_marketplace_intelligence_v1';
     const DB_VERSION = 2;
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
-    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
+    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, costBySku: {}, costByKey: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
 
     const $ = (id) => document.getElementById(id);
@@ -931,12 +931,14 @@
       const payload = await getOne('meta', clientCostProfileId());
       if (!payload || typeof payload !== 'object') return;
       state.costBySku = payload.costBySku && typeof payload.costBySku === 'object' ? payload.costBySku : {};
+      state.costByKey = payload.costByKey && typeof payload.costByKey === 'object' ? payload.costByKey : {};
       state.profitTaxRate = Number.isFinite(Number(payload.profitTaxRate)) ? Math.max(0, Number(payload.profitTaxRate)) : 0;
     }
     async function saveClientCostProfile() {
       await putOne('meta', {
         id: clientCostProfileId(),
         costBySku: state.costBySku || {},
+        costByKey: state.costByKey || {},
         profitTaxRate: Number.isFinite(Number(state.profitTaxRate)) ? Math.max(0, Number(state.profitTaxRate)) : 0,
         updatedAt: new Date().toISOString()
       });
@@ -1584,7 +1586,7 @@
       const unitPrice = toNum(field(obj, 'Preço unitário de venda do anúncio (BRL)', 'Preco unitario de venda do anuncio (BRL)'));
       const total = toNum(field(obj, 'Total (BRL)'));
       const status = norm(field(obj, 'Estado'));
-      const lineType = classifyLine(obj, sku, status);
+      const lineType = classifyLine(obj, sku || mlb, status);
       const dedupeParts = [saleNumber, date ? date.toISOString() : '', sku, mlb, units, unitPrice, productRevenue, total].map((x) => norm(x));
       return {
         dedupeKey: dedupeParts.join('|'),
@@ -1596,9 +1598,14 @@
         packageMulti: norm(field(obj, 'Pacote de diversos produtos')),
         isKit: norm(field(obj, 'Pertence a um kit')),
         units, productRevenue, unitPrice, total,
-        sellingFee: toNum(field(obj, 'Tarifa de venda e impostos (BRL)')),
-        shippingRevenue: toNum(field(obj, 'Receita por envio (BRL)')),
-        shippingFee: toNum(field(obj, 'Tarifas de envio (BRL)')),
+    buyerPriceIncrease: toNum(field(obj, 'Receita por acréscimo no preço (pago pelo comprador)', 'Receita por acrescimo no preco (pago pelo comprador)')),
+    sellingFee: toNum(field(obj, 'Tarifa de venda e impostos (BRL)')),
+    installmentFee: toNum(field(obj, 'Taxa de parcelamento equivalente ao acréscimo', 'Taxa de parcelamento equivalente ao acrescimo')),
+    shippingRevenue: toNum(field(obj, 'Receita por envio (BRL)')),
+    shippingFee: toNum(field(obj, 'Tarifas de envio (BRL)')),
+    shippingExchangeCost: toNum(field(obj, 'Custo de envio por troca de produto (BRL)', 'Custo de envio por troca de produto')),
+    shippingMeasurementCost: toNum(field(obj, 'Custo de envio com base nas medidas e peso declarados (BRL)', 'Custo de envio com base nas medidas e peso declarados')),
+    shippingWeightDifferenceCost: toNum(field(obj, 'Custo por diferenças nas medidas e no peso do pacote (BRL)', 'Custo por diferencas nas medidas e no peso do pacote')),
         discounts: toNum(field(obj, 'Descontos e bônus', 'Descontos e bonus')),
         refunds: toNum(field(obj, 'Cancelamentos e reembolsos (BRL)')),
         billingMonth: norm(field(obj, 'Mês de faturamento das suas tarifas', 'Mes de faturamento das suas tarifas')),
@@ -1795,6 +1802,41 @@
       return Number.isFinite(num) ? num : NaN;
     }
 
+    function saleCostKeyCandidates(sale) {
+      const values = [
+        ['sku', sale?.sku],
+        ['mlbu', sale?.userProductId],
+        ['variation', sale?.userProductId],
+        ['mlb', sale?.mlb],
+        ['family', sale?.familyId]
+      ];
+      return values.filter(([, value]) => normKey(value)).map(([kind, value]) => `${kind}:${normKey(value)}`);
+    }
+
+    function costForSale(sale) {
+      const candidates = saleCostKeyCandidates(sale);
+      for (const key of candidates) {
+        const value = Number(state.costByKey?.[key]);
+        if (Number.isFinite(value) && value >= 0) return { value, key };
+      }
+      const legacy = Number(state.costBySku?.[normKey(sale?.sku)]);
+      return Number.isFinite(legacy) && legacy >= 0 ? { value: legacy, key: `sku:${normKey(sale?.sku)}` } : { value: 0, key: '' };
+    }
+
+    function financialBase(sale) {
+      return Number(sale?.productRevenue || 0)
+        + Number(sale?.buyerPriceIncrease || 0)
+        + Number(sale?.shippingRevenue || 0)
+        + Number(sale?.sellingFee || 0)
+        + Number(sale?.installmentFee || 0)
+        + Number(sale?.shippingFee || 0)
+        + Number(sale?.shippingExchangeCost || 0)
+        + Number(sale?.shippingMeasurementCost || 0)
+        + Number(sale?.shippingWeightDifferenceCost || 0)
+        + Number(sale?.discounts || 0)
+        + Number(sale?.refunds || 0);
+    }
+
     function parseZip(buffer) {
       const bytes = new Uint8Array(buffer);
       const view = new DataView(buffer);
@@ -1909,7 +1951,7 @@
         if (sale.mlb) return `mlb:${String(sale.mlb).trim()}`;
         return `sku:${String(sale.sku || '').trim()}`;
       }
-      return String(sale.sku || '').trim();
+      return String(sale.sku || sale.mlb || sale.userProductId || sale.familyId || '').trim();
     }
 
     function summarizeValues(values, fallback = '-', limit = 2) {
@@ -3029,12 +3071,27 @@
       ]), 'analysis');
     }
 
+    function costForProfitRow(row, group) {
+      const values = group === 'sku' ? [['sku', row.key]]
+        : group === 'mlb' ? [['mlb', [...row.mlbs][0]]]
+        : group === 'variation' ? [['mlbu', [...row.userProducts][0]]]
+        : group === 'family' ? [['family', [...row.familyIds][0]]]
+        : [];
+      for (const [kind, value] of values) {
+        const key = value ? `${kind}:${normKey(value)}` : '';
+        const amount = Number(key ? state.costByKey?.[key] : NaN);
+        if (key && Number.isFinite(amount) && amount >= 0) return { value: amount, key };
+      }
+      const legacy = Number(state.costBySku?.[normKey(row.key)]);
+      return Number.isFinite(legacy) && legacy >= 0 ? { value: legacy, key: `sku:${normKey(row.key)}` } : { value: 0, key: '' };
+    }
+
     function profitRows(group = 'sku', salesScope = null) {
       const taxRate = Math.max(0, Number(state.profitTaxRate || 0)) / 100;
       const salesList = Array.isArray(salesScope) ? salesScope : state.sales;
       const returnedSaleNumbers = new Set(salesList.filter((s) => isReturnEvent(s)).map((s) => s.saleNumber || s.dedupeKey));
       const baseRows = salesList.filter((s) =>
-        s.sku &&
+        (s.sku || s.mlb || s.userProductId || s.familyId) &&
         s.lineType === 'item_sale' &&
         !returnedSaleNumbers.has(s.saleNumber || s.dedupeKey) &&
         s.eventClass !== 'cancelamento'
@@ -3062,9 +3119,9 @@
           campaignNames: new Set(),
           thumbnailUrl: ''
         };
-        const skuCost = Number(state.costBySku[s.sku] || 0);
+        const skuCost = costForSale(s).value;
         const gross = Number(s.productRevenue || 0);
-        const netBeforeCostTax = gross + Number(s.shippingRevenue || 0) + Number(s.sellingFee || 0) + Number(s.shippingFee || 0) + Number(s.discounts || 0) + Number(s.refunds || 0);
+        const netBeforeCostTax = financialBase(s);
         const cost = Number(s.units || 0) * skuCost;
         const tax = gross * taxRate;
         row.units += Number(s.units || 0);
@@ -3074,7 +3131,7 @@
         row.tax += tax;
         row.profit += netBeforeCostTax - cost - tax;
         row.orders.add(s.saleNumber || s.dedupeKey);
-        row.skus.add(s.sku);
+        if (s.sku) row.skus.add(s.sku);
         if (s.mlb) row.mlbs.add(s.mlb);
         if (s.familyId) row.familyIds.add(s.familyId);
         if (s.userProductId) row.userProducts.add(s.userProductId);
@@ -3129,9 +3186,10 @@
       ];
       const tableRows = rows.map((r) => {
         const safeKey = String(r.key || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        const costCell = state.profitGroup === 'sku'
-          ? `<input class="control" type="number" min="0" step="0.01" value="${Number(state.costBySku[r.key] || 0).toFixed(2)}" style="width:110px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onfocus="event.stopPropagation()" onchange="__marketplaceApp.setSkuCost('${safeKey}', this.value)">`
-          : right(fmtMoney(r.avgSkuCost));
+        const rowCost = costForProfitRow(r, state.profitGroup);
+        const costCell = state.profitGroup === 'campaign'
+          ? right(fmtMoney(r.avgSkuCost))
+          : `<input class="control" type="number" min="0" step="0.01" value="${Number(rowCost.value || 0).toFixed(2)}" style="width:110px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onfocus="event.stopPropagation()" onchange="__marketplaceApp.setCost('${state.profitGroup}', '${safeKey}', this.value)">`;
         const alert = r.cost === 0 && r.gross > 0
           ? '<span class="badge info">Custo nao informado</span>'
           : r.loss ? '<span class="badge bad">Prejuizo</span>' : r.margin < 0.08 ? '<span class="badge warn">Margem baixa</span>' : '<span class="badge ok">Saudavel</span>';
@@ -3166,7 +3224,7 @@
       const salesList = Array.isArray(salesScope) ? salesScope : profitWindowedSales();
       const returnedSaleNumbers = new Set(salesList.filter((s) => isReturnEvent(s)).map((s) => s.saleNumber || s.dedupeKey));
       const filtered = salesList.filter((s) =>
-        s.sku &&
+        (s.sku || s.mlb || s.userProductId || s.familyId) &&
         s.lineType === 'item_sale' &&
         !returnedSaleNumbers.has(s.saleNumber || s.dedupeKey) &&
         s.eventClass !== 'cancelamento' &&
@@ -3178,8 +3236,8 @@
       }
       const rows = filtered.slice().sort((a, b) => (b.date || 0) - (a.date || 0)).map((s) => {
         const gross = Number(s.productRevenue || 0);
-        const base = gross + Number(s.shippingRevenue || 0) + Number(s.sellingFee || 0) + Number(s.shippingFee || 0) + Number(s.discounts || 0) + Number(s.refunds || 0);
-        const unitCost = Number(state.costBySku[s.sku] || 0);
+        const base = financialBase(s);
+        const unitCost = costForSale(s).value;
         const cost = Number(s.units || 0) * unitCost;
         const tax = gross * taxRate;
         const profit = base - cost - tax;
@@ -3737,11 +3795,11 @@
         'observacao'
       ]];
       const map = new Map();
-      salesScope.filter((s) => s.sku && rowMatchesGlobalSearch(s)).forEach((s) => {
-        const key = normKey(s.sku);
+      salesScope.filter((s) => (s.sku || s.mlb || s.userProductId || s.familyId) && rowMatchesGlobalSearch(s)).forEach((s) => {
+        const key = saleCostKeyCandidates(s)[0] || '';
         if (!key) return;
         const row = map.get(key) || {
-          sku: s.sku,
+          sku: s.sku || '',
           produto: s.title || '',
           familia: s.familyName || s.familyId || '',
           variacao: s.userProductName || '',
@@ -3776,7 +3834,7 @@
           Number(r.unidades || 0).toFixed(0),
           Number(r.receita || 0).toFixed(2),
           Number(r.precoMedio || 0).toFixed(2),
-          Number(state.costBySku[normKey(r.sku)] || 0).toFixed(2),
+          Number(costForSale({ sku: r.sku, mlb: r.mlb, userProductId: r.mlbu, familyId: r.familia }).value || 0).toFixed(2),
           ''
         ]));
       downloadCsv(`base_custos_${norm($('clientName').value || 'cliente')}.csv`, rows);
@@ -3795,26 +3853,37 @@
         }
         if (!rows.length) throw new Error('Planilha vazia.');
         const header = rows[0].map(normalizedHeader);
-        const skuIndex = header.findIndex((h) => ['sku', 'codigo_sku', 'codigo', 'seller_sku'].includes(h));
+        const indexes = {
+          sku: header.findIndex((h) => ['sku', 'codigo_sku', 'seller_sku'].includes(h)),
+          mlb: header.findIndex((h) => ['mlb', 'anuncio', 'codigo_mlb'].includes(h)),
+          mlbu: header.findIndex((h) => ['mlbu', 'variacao', 'variacao_id'].includes(h)),
+          family: header.findIndex((h) => ['familia', 'familia_id', 'catalogo', 'catalogo_id'].includes(h))
+        };
         const costIndex = header.findIndex((h) => ['custo_unitario', 'custo', 'custo_un', 'valor_custo', 'preco_custo'].includes(h));
-        if (skuIndex < 0 || costIndex < 0) throw new Error('A planilha precisa ter as colunas SKU e custo_unitario.');
+        if (costIndex < 0 || !Object.values(indexes).some((index) => index >= 0)) throw new Error('A planilha precisa ter custo_unitario e ao menos um identificador: SKU, MLB, MLBU ou familia.');
         let updated = 0;
         let ignored = 0;
         rows.slice(1).forEach((row) => {
-          const sku = normKey(row[skuIndex]);
-          if (!sku) return;
           const rawCost = parseMoneyValue(row[costIndex]);
           if (!Number.isFinite(rawCost) || rawCost < 0) {
             ignored++;
             return;
           }
-          state.costBySku[sku] = rawCost;
-          updated++;
+          let rowUpdated = false;
+          for (const [kind, index] of Object.entries(indexes)) {
+            const value = index >= 0 ? normKey(row[index]) : '';
+            if (!value) continue;
+            state.costByKey[`${kind}:${value}`] = rawCost;
+            if (kind === 'sku') state.costBySku[value] = rawCost;
+            rowUpdated = true;
+          }
+          if (rowUpdated) updated++;
+          else ignored++;
         });
         await saveClientCostProfile();
         if ($('importCostInput')) $('importCostInput').value = '';
         renderProfit();
-        alert(`Custos importados com sucesso. SKU(s) atualizados: ${updated}. Linha(s) ignoradas: ${ignored}.`);
+        alert(`Custos importados com sucesso. Linha(s) atualizadas: ${updated}. Linha(s) ignoradas: ${ignored}.`);
       } catch (err) {
         if ($('importCostInput')) $('importCostInput').value = '';
         alert('Nao foi possivel importar a planilha de custos: ' + err.message);
@@ -3887,6 +3956,7 @@
         planStatus: state.planStatus || {},
         planJournal: state.planJournal || [],
         costBySku: state.costBySku || {},
+        costByKey: state.costByKey || {},
         profitTaxRate: Number(state.profitTaxRate || 0),
         profitWindow: state.profitWindow || '30d',
         profitDateStart: state.profitDateStart || '',
@@ -3923,6 +3993,7 @@
         planStatus: state.planStatus || {},
         planJournal: state.planJournal || [],
         costBySku: state.costBySku || {},
+        costByKey: state.costByKey || {},
         profitTaxRate: Number(state.profitTaxRate || 0),
         profitWindow: state.profitWindow || '30d',
         profitDateStart: state.profitDateStart || '',
@@ -3949,8 +4020,9 @@
         imports: Array.isArray(data.imports) ? data.imports : [],
         events: Array.isArray(data.events) ? data.events : [],
         planStatus: data.planStatus && typeof data.planStatus === 'object' ? data.planStatus : {},
-        planJournal: Array.isArray(data.planJournal) ? data.planJournal : [],
-        costBySku: data.costBySku && typeof data.costBySku === 'object' ? data.costBySku : {},
+         planJournal: Array.isArray(data.planJournal) ? data.planJournal : [],
+         costBySku: data.costBySku && typeof data.costBySku === 'object' ? data.costBySku : {},
+         costByKey: data.costByKey && typeof data.costByKey === 'object' ? data.costByKey : {},
         profitTaxRate: Number(data.profitTaxRate || 0),
         profitWindow: data.profitWindow || '30d',
         profitDateStart: data.profitDateStart || '',
@@ -4002,6 +4074,7 @@
         const planStatus = payload.planStatus && typeof payload.planStatus === 'object' ? payload.planStatus : {};
         const planJournal = Array.isArray(payload.planJournal) ? payload.planJournal : [];
         const costBySku = payload.costBySku && typeof payload.costBySku === 'object' ? payload.costBySku : {};
+        const costByKey = payload.costByKey && typeof payload.costByKey === 'object' ? payload.costByKey : {};
         const profitTaxRate = Number(payload.profitTaxRate || 0);
         const profitWindow = payload.profitWindow || '30d';
         const profitDateStart = payload.profitDateStart || '';
@@ -4025,6 +4098,7 @@
         state.planStatus = planStatus;
         state.planJournal = planJournal;
         state.costBySku = costBySku;
+        state.costByKey = costByKey;
         state.profitTaxRate = Number.isFinite(profitTaxRate) ? Math.max(0, profitTaxRate) : 0;
         state.profitWindow = ['1d','7d','15d','30d','quarter','total','custom'].includes(profitWindow) ? profitWindow : '30d';
         state.profitDateStart = String(profitDateStart || '');
@@ -4060,13 +4134,14 @@
 
     window.__marketplaceApp = {
       getState: () => state,
-      setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku = {}, profitTaxRate = 0, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', dashboardGranularity = 'day', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
+      setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku = {}, costByKey = {}, profitTaxRate = 0, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', dashboardGranularity = 'day', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
         state.sales = (sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
         state.imports = imports;
         state.events = events;
         state.planStatus = planStatus && typeof planStatus === 'object' ? planStatus : {};
         state.planJournal = Array.isArray(planJournal) ? planJournal : [];
         state.costBySku = costBySku && typeof costBySku === 'object' ? costBySku : {};
+        state.costByKey = costByKey && typeof costByKey === 'object' ? costByKey : {};
         state.profitTaxRate = Number.isFinite(Number(profitTaxRate)) ? Math.max(0, Number(profitTaxRate)) : 0;
         state.profitWindow = ['1d','7d','15d','30d','quarter','total','custom'].includes(profitWindow) ? profitWindow : '30d';
         state.profitDateStart = String(profitDateStart || '');
@@ -4100,11 +4175,24 @@
       monthSummary,
       renderImportPreview,
       renderAll,
+      setCost: (group, identifier, value) => {
+        const key = normKey(identifier);
+        if (!key) return;
+        const kind = group === 'variation' ? 'mlbu' : (['sku', 'mlb', 'family'].includes(group) ? group : 'sku');
+        const v = Math.max(0, Number(String(value ?? 0).replace(',', '.')));
+        const amount = Number.isFinite(v) ? v : 0;
+        state.costByKey[`${kind}:${key}`] = amount;
+        if (kind === 'sku') state.costBySku[key] = amount;
+        saveClientCostProfile().catch(() => {});
+        renderProfit();
+      },
       setSkuCost: (sku, value) => {
         const key = normKey(sku);
         if (!key) return;
-        const v = Math.max(0, Number(value || 0));
-        state.costBySku[key] = Number.isFinite(v) ? v : 0;
+        const v = Math.max(0, Number(String(value ?? 0).replace(',', '.')));
+        const amount = Number.isFinite(v) ? v : 0;
+        state.costBySku[key] = amount;
+        state.costByKey[`sku:${key}`] = amount;
         saveClientCostProfile().catch(() => {});
         renderProfit();
       },
