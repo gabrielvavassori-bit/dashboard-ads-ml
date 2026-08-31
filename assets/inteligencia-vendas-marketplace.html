@@ -1015,10 +1015,11 @@
       state.imports = await getAll('imports');
       state.events = await getAll('events');
       await loadClientCostProfile();
+      bindUi();
+      renderAll();
       await loadRemoteFinanceCache();
       await persistSaleCostLedger(state.sales);
       await loadGovernanceSummary();
-      bindUi();
       renderAll();
     }
 
