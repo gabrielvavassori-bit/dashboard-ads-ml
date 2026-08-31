@@ -970,6 +970,26 @@
         catch (err) { remoteFinancePendingRows = [...toSend, ...remoteFinancePendingRows].slice(-10000); }
       }, 500);
     }
+    async function mergeRemoteSaleCostsIntoSales(rows) {
+      const detailed = (rows || []).map((row) => {
+        const raw = row && typeof row.raw === 'object' ? row.raw : {};
+        return {
+          ...raw,
+          ...row,
+          date: raw.date || row.date || '',
+          raw: undefined
+        };
+      }).filter((sale) => sale.dedupeKey && sale.lineType === 'item_sale' && sale.saleNumber && !String(sale.saleNumber).startsWith('daily:'));
+      if (!detailed.length) return;
+      await putMany('sales', detailed);
+      const detailedDays = new Set(detailed.map((sale) => `${normKey(sale.mlb)}|${String(sale.date || '').slice(0, 10)}`));
+      state.sales = (state.sales || []).filter((sale) => {
+        if (!String(sale.saleNumber || '').startsWith('daily:')) return true;
+        return !detailedDays.has(`${normKey(sale.mlb)}|${String(sale.date || '').slice(0, 10)}`);
+      });
+      const existing = new Set(state.sales.map((sale) => sale.dedupeKey));
+      detailed.forEach((sale) => { if (!existing.has(sale.dedupeKey)) state.sales.push(sale); });
+    }
     async function loadRemoteFinanceCache() {
       if (location.protocol === 'file:') return;
       const localProfile = financeProfilePayload();
@@ -991,7 +1011,10 @@
         if (Object.prototype.hasOwnProperty.call(profile, 'flexCarrierCost')) state.flexCarrierCost = Number(profile.flexCarrierCost) || 0;
         await putOne('meta', { id: clientCostProfileId(), ...financeProfilePayload(), updatedAt: new Date().toISOString() });
         const rows = Array.isArray(payload.saleCosts) ? payload.saleCosts : [];
-        if (rows.length) await putMany('saleCosts', rows);
+        if (rows.length) {
+          await putMany('saleCosts', rows);
+          await mergeRemoteSaleCostsIntoSales(rows);
+        }
         if (!hasRemoteProfile && (Object.keys(localProfile.costBySku).length || Object.keys(localProfile.costByKey).length || localProfile.profitTaxRate || localProfile.flexCarrierCost)) {
           queueRemoteFinanceSync();
         }
