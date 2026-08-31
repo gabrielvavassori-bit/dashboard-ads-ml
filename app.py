@@ -43,6 +43,7 @@ Variaveis de ambiente:
 import html as _html
 import calendar
 import json
+import math
 import os
 import pathlib
 import secrets
@@ -134,6 +135,16 @@ def _parse_form(handler):
     body = handler.rfile.read(length).decode("utf-8", errors="replace")
     parsed = parse_qs(body, keep_blank_values=True)
     return {k: v[0] for k, v in parsed.items()}
+
+
+def _parse_json_body(handler):
+    length = int(handler.headers.get("Content-Length", "0") or 0)
+    if length <= 0 or length > MAX_BODY_BYTES:
+        raise ValueError("Corpo da requisicao invalido ou muito grande.")
+    payload = json.loads(handler.rfile.read(length).decode("utf-8", errors="replace"))
+    if not isinstance(payload, dict):
+        raise ValueError("Payload JSON invalido.")
+    return payload
 
 
 def _parse_multipart(handler):
@@ -1749,6 +1760,100 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):  # noqa: A002
         return
 
+    def _intelligence_finance_context(self):
+        user, token = _current_user(self)
+        if not user:
+            _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+            return None
+        if not _sales_access_allowed(user):
+            _send_json(self, {"ok": False, "error": "sales_access_blocked"}, 403)
+            return None
+        link, _, _ = _current_ml_account(user, token)
+        if not link:
+            _send_json(self, {"ok": False, "error": "ml_account_not_selected"}, 404)
+            return None
+        return user, link
+
+    def _get_intelligence_finance_cache(self):
+        context = self._intelligence_finance_context()
+        if not context:
+            return
+        user, link = context
+        payload = db.get_intelligence_finance_cache(user["id"], link["client_id"])
+        payload.update({"ok": True, "clientId": link["client_id"]})
+        _send_json(self, payload)
+
+    def _post_intelligence_finance_cache(self):
+        context = self._intelligence_finance_context()
+        if not context:
+            _read_and_discard_body(self)
+            return
+        user, link = context
+        try:
+            payload = _parse_json_body(self)
+            profile = payload.get("costProfile") or {}
+            rows = payload.get("saleCosts") or []
+            if not isinstance(profile, dict) or not isinstance(rows, list) or len(rows) > 10000:
+                raise ValueError("Dados financeiros invalidos.")
+
+            def number(value):
+                value = float(value or 0)
+                if not math.isfinite(value) or abs(value) > 1e15:
+                    raise ValueError("Valor financeiro invalido.")
+                return value
+
+            def clean_map(value):
+                if not isinstance(value, dict):
+                    return {}
+                result = {}
+                for key, value in value.items():
+                    key = str(key or "").strip()[:300]
+                    if key:
+                        result[key] = number(value)
+                return result
+
+            clean_profile = {
+                "costBySku": clean_map(profile.get("costBySku")),
+                "costByKey": clean_map(profile.get("costByKey")),
+                "profitTaxRate": number(profile.get("profitTaxRate")),
+                "flexCarrierCost": number(profile.get("flexCarrierCost")),
+            }
+            fields = (
+                "productRevenue", "buyerPriceIncrease", "shippingRevenue", "sellingFee",
+                "installmentFee", "shippingFee", "shippingExchangeCost",
+                "shippingMeasurementCost", "shippingWeightDifferenceCost", "discounts", "refunds",
+            )
+            clean_rows = []
+            for raw_row in rows:
+                if not isinstance(raw_row, dict):
+                    continue
+                order_key = str(raw_row.get("orderKey") or raw_row.get("saleNumber") or "").strip()[:200]
+                line_key = str(raw_row.get("lineKey") or raw_row.get("id") or order_key).strip()[:300]
+                if not order_key or not line_key:
+                    continue
+                row = {
+                    "orderKey": order_key, "lineKey": line_key,
+                    "saleNumber": str(raw_row.get("saleNumber") or "").strip()[:200],
+                    "date": str(raw_row.get("date") or "").strip()[:80],
+                    "sku": str(raw_row.get("sku") or "").strip()[:300],
+                    "mlb": str(raw_row.get("mlb") or "").strip()[:300],
+                    "mlbu": str(raw_row.get("mlbu") or "").strip()[:300],
+                    "family": str(raw_row.get("family") or "").strip()[:300],
+                    "isFlex": bool(raw_row.get("isFlex")),
+                    "source": str(raw_row.get("source") or "").strip()[:100],
+                    "capturedAt": str(raw_row.get("capturedAt") or "").strip()[:80],
+                    "raw": raw_row.get("raw") if isinstance(raw_row.get("raw"), dict) else {},
+                }
+                row.update({field: number(raw_row.get(field)) for field in fields})
+                clean_rows.append(row)
+            saved = db.upsert_intelligence_finance_cache(user["id"], link["client_id"], clean_profile, clean_rows)
+            _send_json(self, {"ok": True, "clientId": link["client_id"], "saved": saved})
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _send_json(self, {"ok": False, "error": str(exc)}, 400)
+        except Exception:
+            traceback.print_exc()
+            _send_json(self, {"ok": False, "error": "Nao foi possivel salvar o cache financeiro."}, 500)
+
     # ----------- GET -----------
     def do_GET(self):
         url = urlparse(self.path)
@@ -1927,6 +2032,9 @@ class Handler(BaseHTTPRequestHandler):
                         _send_html(self, templates.render_error_page(message), 503)
                         return
                 _send_html(self, html)
+                return
+            if path == "/api/inteligencia/finance-cache":
+                self._get_intelligence_finance_cache()
                 return
             if path == "/online":
                 user, token = _current_user(self)
@@ -2107,6 +2215,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/admin/users/bind_ml_link":
                 self._post_admin_bind_ml_link()
+                return
+            if path == "/api/inteligencia/finance-cache":
+                self._post_intelligence_finance_cache()
                 return
             if path == "/admin/beta-sync-all":
                 self._post_admin_beta_sync_all()

@@ -824,6 +824,8 @@
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
     const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, flexCarrierCost: 0, costBySku: {}, costByKey: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
+    let remoteFinanceSyncTimer = null;
+    let remoteFinancePendingRows = [];
 
     const $ = (id) => document.getElementById(id);
     const fmtNum = (n) => Number(n || 0).toLocaleString('pt-BR');
@@ -937,7 +939,58 @@
       state.costByKey = payload.costByKey && typeof payload.costByKey === 'object' ? payload.costByKey : {};
       state.profitTaxRate = Number.isFinite(Number(payload.profitTaxRate)) ? Math.max(0, Number(payload.profitTaxRate)) : 0;
       state.flexCarrierCost = Number.isFinite(Number(payload.flexCarrierCost)) ? Math.max(0, Number(payload.flexCarrierCost)) : 0;
+      if ($('profitTaxInput')) $('profitTaxInput').value = String(state.profitTaxRate);
       if ($('profitFlexInput')) $('profitFlexInput').value = String(state.flexCarrierCost);
+    }
+    function financeProfilePayload() {
+      return {
+        costBySku: state.costBySku || {},
+        costByKey: state.costByKey || {},
+        profitTaxRate: Number(state.profitTaxRate) || 0,
+        flexCarrierCost: Number(state.flexCarrierCost) || 0
+      };
+    }
+    async function syncRemoteFinanceCache(rows = []) {
+      if (location.protocol === 'file:') return;
+      const response = await fetch('/api/inteligencia/finance-cache', {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ costProfile: financeProfilePayload(), saleCosts: rows })
+      });
+      if (!response.ok) throw new Error(`finance cache ${response.status}`);
+    }
+    function queueRemoteFinanceSync(rows = []) {
+      if (location.protocol === 'file:') return;
+      remoteFinancePendingRows = [...remoteFinancePendingRows, ...(rows || [])].slice(-10000);
+      clearTimeout(remoteFinanceSyncTimer);
+      remoteFinanceSyncTimer = setTimeout(async () => {
+        const toSend = remoteFinancePendingRows;
+        remoteFinancePendingRows = [];
+        try { await syncRemoteFinanceCache(toSend); }
+        catch (err) { remoteFinancePendingRows = [...toSend, ...remoteFinancePendingRows].slice(-10000); }
+      }, 500);
+    }
+    async function loadRemoteFinanceCache() {
+      if (location.protocol === 'file:') return;
+      const localProfile = financeProfilePayload();
+      try {
+        const response = await fetch('/api/inteligencia/finance-cache', { credentials: 'same-origin', cache: 'no-store' });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const profile = payload?.profile || {};
+        const hasRemoteProfile = ['costBySku', 'costByKey', 'profitTaxRate', 'flexCarrierCost']
+          .some((key) => Object.prototype.hasOwnProperty.call(profile, key));
+        if (Object.prototype.hasOwnProperty.call(profile, 'costBySku')) state.costBySku = profile.costBySku || {};
+        if (Object.prototype.hasOwnProperty.call(profile, 'costByKey')) state.costByKey = profile.costByKey || {};
+        if (Object.prototype.hasOwnProperty.call(profile, 'profitTaxRate')) state.profitTaxRate = Number(profile.profitTaxRate) || 0;
+        if (Object.prototype.hasOwnProperty.call(profile, 'flexCarrierCost')) state.flexCarrierCost = Number(profile.flexCarrierCost) || 0;
+        await putOne('meta', { id: clientCostProfileId(), ...financeProfilePayload(), updatedAt: new Date().toISOString() });
+        const rows = Array.isArray(payload.saleCosts) ? payload.saleCosts : [];
+        if (rows.length) await putMany('saleCosts', rows);
+        if (!hasRemoteProfile && (Object.keys(localProfile.costBySku).length || Object.keys(localProfile.costByKey).length || localProfile.profitTaxRate || localProfile.flexCarrierCost)) {
+          queueRemoteFinanceSync();
+        }
+      } catch (err) {}
     }
     async function saveClientCostProfile() {
       await putOne('meta', {
@@ -948,6 +1001,7 @@
         flexCarrierCost: Number.isFinite(Number(state.flexCarrierCost)) ? Math.max(0, Number(state.flexCarrierCost)) : 0,
         updatedAt: new Date().toISOString()
       });
+      queueRemoteFinanceSync();
     }
 
     async function boot() {
@@ -956,6 +1010,7 @@
       state.imports = await getAll('imports');
       state.events = await getAll('events');
       await loadClientCostProfile();
+      await loadRemoteFinanceCache();
       await persistSaleCostLedger(state.sales);
       await loadGovernanceSummary();
       bindUi();
@@ -1879,7 +1934,8 @@
     const orderKey = saleOrderKey(sale);
     const lineKey = sale?.id || sale?.dedupeKey || `${sale?.sku || ''}|${sale?.mlb || ''}|${sale?.date || ''}|${sale?.units || ''}|${sale?.productRevenue || ''}`;
     return {
-      id: `${normKey($('clientName')?.value || 'CLIENTE_TESTE')}|${orderKey}|${normKey(lineKey)}`,
+        id: `${normKey($('clientName')?.value || 'CLIENTE_TESTE')}|${orderKey}|${normKey(lineKey)}`,
+        lineKey: normKey(lineKey),
         client: norm($('clientName')?.value || 'CLIENTE_TESTE'),
         orderKey,
         saleNumber: sale?.saleNumber || '',
@@ -1901,13 +1957,15 @@
         discounts: Number(sale?.discounts || 0),
         refunds: Number(sale?.refunds || 0),
         source: 'mercado_livre',
-        capturedAt: new Date().toISOString()
+        capturedAt: new Date().toISOString(),
+        raw: { ...sale, date: sale?.date instanceof Date ? sale.date.toISOString() : sale?.date }
       };
     }
 
     async function persistSaleCostLedger(sales) {
       const rows = (sales || []).filter((sale) => sale?.lineType === 'item_sale').map(saleCostRecord);
       if (rows.length) await putMany('saleCosts', rows);
+      queueRemoteFinanceSync(rows);
     }
 
     function parseZip(buffer) {
@@ -4233,15 +4291,15 @@
 
     window.__marketplaceApp = {
       getState: () => state,
-      setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku = {}, costByKey = {}, profitTaxRate = 0, flexCarrierCost = null, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', dashboardGranularity = 'day', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
+      setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku, costByKey, profitTaxRate, flexCarrierCost = null, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', dashboardGranularity = 'day', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
         state.sales = (sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
         state.imports = imports;
         state.events = events;
         state.planStatus = planStatus && typeof planStatus === 'object' ? planStatus : {};
         state.planJournal = Array.isArray(planJournal) ? planJournal : [];
-        state.costBySku = costBySku && typeof costBySku === 'object' ? costBySku : {};
-        state.costByKey = costByKey && typeof costByKey === 'object' ? costByKey : {};
-        state.profitTaxRate = Number.isFinite(Number(profitTaxRate)) ? Math.max(0, Number(profitTaxRate)) : 0;
+        if (costBySku !== undefined) state.costBySku = costBySku && typeof costBySku === 'object' ? costBySku : {};
+        if (costByKey !== undefined) state.costByKey = costByKey && typeof costByKey === 'object' ? costByKey : {};
+        if (profitTaxRate !== undefined) state.profitTaxRate = Number.isFinite(Number(profitTaxRate)) ? Math.max(0, Number(profitTaxRate)) : 0;
         if (flexCarrierCost !== null && flexCarrierCost !== undefined) state.flexCarrierCost = Number.isFinite(Number(flexCarrierCost)) ? Math.max(0, Number(flexCarrierCost)) : 0;
         state.profitWindow = ['1d','7d','15d','30d','quarter','total','custom'].includes(profitWindow) ? profitWindow : '30d';
         state.profitDateStart = String(profitDateStart || '');

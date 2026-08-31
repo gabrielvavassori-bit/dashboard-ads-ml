@@ -14,6 +14,7 @@ import sqlite3
 import threading
 import time
 import hashlib
+import json
 
 # Em Render/Railway, monte um disco persistente apontando para /var/data.
 # Localmente cai em ./data/app.db
@@ -167,6 +168,57 @@ CREATE TABLE IF NOT EXISTS beta_handoffs (
     expires_at INTEGER NOT NULL,
     used_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS intelligence_cost_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    client_id TEXT NOT NULL,
+    cost_by_sku_json TEXT NOT NULL DEFAULT '{}',
+    cost_by_key_json TEXT NOT NULL DEFAULT '{}',
+    profit_tax_rate REAL NOT NULL DEFAULT 0,
+    flex_carrier_cost REAL NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(user_id, client_id),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_intelligence_cost_profiles_account
+    ON intelligence_cost_profiles(user_id, client_id);
+
+CREATE TABLE IF NOT EXISTS intelligence_sale_costs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    client_id TEXT NOT NULL,
+    order_key TEXT NOT NULL,
+    line_key TEXT NOT NULL,
+    sale_number TEXT,
+    sale_date TEXT,
+    sku TEXT,
+    mlb TEXT,
+    mlbu TEXT,
+    family TEXT,
+    is_flex INTEGER NOT NULL DEFAULT 0,
+    product_revenue REAL NOT NULL DEFAULT 0,
+    buyer_price_increase REAL NOT NULL DEFAULT 0,
+    shipping_revenue REAL NOT NULL DEFAULT 0,
+    selling_fee REAL NOT NULL DEFAULT 0,
+    installment_fee REAL NOT NULL DEFAULT 0,
+    shipping_fee REAL NOT NULL DEFAULT 0,
+    shipping_exchange_cost REAL NOT NULL DEFAULT 0,
+    shipping_measurement_cost REAL NOT NULL DEFAULT 0,
+    shipping_weight_difference_cost REAL NOT NULL DEFAULT 0,
+    discounts REAL NOT NULL DEFAULT 0,
+    refunds REAL NOT NULL DEFAULT 0,
+    source TEXT,
+    raw_json TEXT NOT NULL DEFAULT '{}',
+    captured_at TEXT,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(user_id, client_id, order_key, line_key),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_intelligence_sale_costs_account
+    ON intelligence_sale_costs(user_id, client_id);
 """
 
 
@@ -274,6 +326,126 @@ def init_db():
 
 def now() -> int:
     return int(time.time())
+
+
+def _json_object(value):
+    if isinstance(value, dict):
+        return value
+    try:
+        parsed = json.loads(value or "{}")
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+def get_intelligence_finance_cache(user_id, client_id):
+    client_id = str(client_id or "").strip()
+    if not client_id:
+        return {"profile": {}, "saleCosts": []}
+    conn = get_conn()
+    try:
+        profile = conn.execute(
+            "SELECT * FROM intelligence_cost_profiles WHERE user_id=? AND client_id=?",
+            (user_id, client_id),
+        ).fetchone()
+        rows = conn.execute(
+            """SELECT * FROM intelligence_sale_costs
+               WHERE user_id=? AND client_id=? ORDER BY sale_date, id""",
+            (user_id, client_id),
+        ).fetchall()
+        result_profile = {}
+        if profile:
+            result_profile = {
+                "costBySku": _json_object(profile["cost_by_sku_json"]),
+                "costByKey": _json_object(profile["cost_by_key_json"]),
+                "profitTaxRate": float(profile["profit_tax_rate"] or 0),
+                "flexCarrierCost": float(profile["flex_carrier_cost"] or 0),
+                "updatedAt": profile["updated_at"] or 0,
+            }
+        sale_costs = []
+        for row in rows:
+            sale_costs.append({
+                "id": row["line_key"], "orderKey": row["order_key"], "lineKey": row["line_key"],
+                "saleNumber": row["sale_number"] or "", "date": row["sale_date"] or "",
+                "sku": row["sku"] or "", "mlb": row["mlb"] or "", "mlbu": row["mlbu"] or "",
+                "family": row["family"] or "", "isFlex": bool(row["is_flex"]),
+                "productRevenue": row["product_revenue"], "buyerPriceIncrease": row["buyer_price_increase"],
+                "shippingRevenue": row["shipping_revenue"], "sellingFee": row["selling_fee"],
+                "installmentFee": row["installment_fee"], "shippingFee": row["shipping_fee"],
+                "shippingExchangeCost": row["shipping_exchange_cost"],
+                "shippingMeasurementCost": row["shipping_measurement_cost"],
+                "shippingWeightDifferenceCost": row["shipping_weight_difference_cost"],
+                "discounts": row["discounts"], "refunds": row["refunds"],
+                "source": row["source"] or "", "raw": _json_object(row["raw_json"]),
+                "capturedAt": row["captured_at"] or "",
+            })
+        return {"profile": result_profile, "saleCosts": sale_costs}
+    finally:
+        conn.close()
+
+
+def upsert_intelligence_finance_cache(user_id, client_id, profile, rows):
+    client_id = str(client_id or "").strip()
+    if not client_id:
+        raise ValueError("Conta Mercado Livre nao identificada.")
+    profile = profile if isinstance(profile, dict) else {}
+    rows = rows if isinstance(rows, list) else []
+    ts = now()
+    conn = get_conn()
+    try:
+        with _lock:
+            conn.execute("BEGIN")
+            conn.execute(
+                """INSERT INTO intelligence_cost_profiles
+                   (user_id, client_id, cost_by_sku_json, cost_by_key_json,
+                    profit_tax_rate, flex_carrier_cost, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(user_id, client_id) DO UPDATE SET
+                    cost_by_sku_json=excluded.cost_by_sku_json,
+                    cost_by_key_json=excluded.cost_by_key_json,
+                    profit_tax_rate=excluded.profit_tax_rate,
+                    flex_carrier_cost=excluded.flex_carrier_cost,
+                    updated_at=excluded.updated_at""",
+                (user_id, client_id, json.dumps(profile.get("costBySku") or {}, ensure_ascii=True),
+                 json.dumps(profile.get("costByKey") or {}, ensure_ascii=True),
+                 float(profile.get("profitTaxRate") or 0), float(profile.get("flexCarrierCost") or 0), ts),
+            )
+            for row in rows:
+                conn.execute(
+                    """INSERT INTO intelligence_sale_costs
+                       (user_id, client_id, order_key, line_key, sale_number, sale_date,
+                        sku, mlb, mlbu, family, is_flex, product_revenue, buyer_price_increase,
+                        shipping_revenue, selling_fee, installment_fee, shipping_fee,
+                        shipping_exchange_cost, shipping_measurement_cost,
+                        shipping_weight_difference_cost, discounts, refunds, source, raw_json,
+                        captured_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(user_id, client_id, order_key, line_key) DO UPDATE SET
+                        sale_number=excluded.sale_number, sale_date=excluded.sale_date,
+                        sku=excluded.sku, mlb=excluded.mlb, mlbu=excluded.mlbu, family=excluded.family,
+                        is_flex=excluded.is_flex, product_revenue=excluded.product_revenue,
+                        buyer_price_increase=excluded.buyer_price_increase, shipping_revenue=excluded.shipping_revenue,
+                        selling_fee=excluded.selling_fee, installment_fee=excluded.installment_fee,
+                        shipping_fee=excluded.shipping_fee, shipping_exchange_cost=excluded.shipping_exchange_cost,
+                        shipping_measurement_cost=excluded.shipping_measurement_cost,
+                        shipping_weight_difference_cost=excluded.shipping_weight_difference_cost,
+                        discounts=excluded.discounts, refunds=excluded.refunds, source=excluded.source,
+                        raw_json=excluded.raw_json, captured_at=excluded.captured_at, updated_at=excluded.updated_at""",
+                    (user_id, client_id, row["orderKey"], row["lineKey"], row.get("saleNumber", ""), row.get("date", ""),
+                     row.get("sku", ""), row.get("mlb", ""), row.get("mlbu", ""), row.get("family", ""),
+                     1 if row.get("isFlex") else 0, row.get("productRevenue", 0), row.get("buyerPriceIncrease", 0),
+                     row.get("shippingRevenue", 0), row.get("sellingFee", 0), row.get("installmentFee", 0),
+                     row.get("shippingFee", 0), row.get("shippingExchangeCost", 0), row.get("shippingMeasurementCost", 0),
+                     row.get("shippingWeightDifferenceCost", 0), row.get("discounts", 0), row.get("refunds", 0),
+                     row.get("source", ""), json.dumps(row.get("raw") or {}, ensure_ascii=True), row.get("capturedAt", ""), ts),
+                )
+            conn.commit()
+        return {"profile": 1, "saleCosts": len(rows)}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 # ---------- USERS ----------
