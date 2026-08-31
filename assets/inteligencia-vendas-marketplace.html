@@ -974,7 +974,12 @@
       if (location.protocol === 'file:') return;
       const localProfile = financeProfilePayload();
       try {
-        const response = await fetch('/api/inteligencia/finance-cache', { credentials: 'same-origin', cache: 'no-store' });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const response = await fetch('/api/inteligencia/finance-cache', {
+          credentials: 'same-origin', cache: 'no-store', signal: controller.signal
+        });
+        clearTimeout(timeout);
         if (!response.ok) return;
         const payload = await response.json();
         const profile = payload?.profile || {};
