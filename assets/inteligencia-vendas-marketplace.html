@@ -908,6 +908,15 @@
         tx.onerror = () => reject(tx.error);
       });
     }
+    function deleteMany(name, keys) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(name, 'readwrite');
+        const store = tx.objectStore(name);
+        (keys || []).forEach((key) => store.delete(key));
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    }
     function clearStore(name) {
       return new Promise((resolve, reject) => {
         const req = txStore(name, 'readwrite').clear();
@@ -1014,10 +1023,16 @@
       if (!payload.ok || !rows.length) { state.remoteFinancialsLoaded = true; return; }
       const detailed = rows.map(remoteFinancialSale).filter((sale) => sale.saleNumber && sale.mlb);
       if (!detailed.length) { state.remoteFinancialsLoaded = true; return; }
-      state.sales = state.sales.filter((sale) => !String(sale.saleNumber || '').startsWith('daily:'));
+      const detailedMlbs = new Set(detailed.map((sale) => normKey(sale.mlb)));
+      const legacyKeys = state.sales
+        .filter((sale) => String(sale.saleNumber || '').startsWith('daily:') && detailedMlbs.has(normKey(sale.mlb)))
+        .map((sale) => sale.dedupeKey)
+        .filter(Boolean);
+      state.sales = state.sales.filter((sale) => !legacyKeys.includes(sale.dedupeKey));
       const existing = new Set(state.sales.map((sale) => sale.dedupeKey));
       detailed.forEach((sale) => { if (!existing.has(sale.dedupeKey)) state.sales.push(sale); });
       state.remoteFinancialsLoaded = true;
+      if (legacyKeys.length) await deleteMany('sales', legacyKeys);
       await putMany('sales', detailed);
       renderProfit();
     }
