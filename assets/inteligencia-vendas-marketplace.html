@@ -983,9 +983,18 @@
       const order = raw.order || {};
       const orderItem = raw.order_item || {};
       const item = orderItem.item || {};
-      const amount = (name) => {
-        const values = Array.isArray(components[name]) ? components[name] : [];
-        return values.reduce((sum, value) => sum + (Number.isFinite(Number(value.numeric_value)) ? Number(value.numeric_value) : 0), 0);
+      const amount = (name, sign = 'raw') => {
+        let values = Array.isArray(components[name]) ? components[name] : [];
+        if (name === 'selling_fee') {
+          const itemIndex = String(row.line_id || '').match(/:(\d+)$/)?.[1];
+          const canonicalPath = itemIndex === undefined ? '' : `order.order_items[${itemIndex}].sale_fee`;
+          const canonical = values.filter((value) => String(value.path || '') === canonicalPath);
+          if (canonical.length) values = canonical;
+        }
+        const total = values.reduce((sum, value) => sum + (Number.isFinite(Number(value.numeric_value)) ? Number(value.numeric_value) : 0), 0);
+        if (sign === 'expense') return total > 0 ? -total : total;
+        if (sign === 'benefit') return total < 0 ? -total : total;
+        return total;
       };
       const units = Math.max(0, Number(orderItem.quantity || 0));
       const unitPrice = Number(orderItem.unit_price || orderItem.full_unit_price || 0);
@@ -998,17 +1007,17 @@
         saleNumber: row.order_id || '', date: dateValue ? new Date(dateValue) : null,
         month: String(dateValue).slice(0, 7), status: String(order.status || 'paid'),
         lineType: 'item_sale', eventClass: 'venda', units, productRevenue: units * unitPrice,
-        unitPrice, total: units * unitPrice, sellingFee: amount('selling_fee'),
-        shippingRevenue: amount('shipping_buyer_paid'), shippingFee: amount('shipping_fee'),
-        discounts: amount('promotion_discount') + amount('promotion_subsidy') + amount('bonus'),
-        refunds: amount('refund_or_reversal'), installmentFee: amount('installment_fee'),
-        shippingExchangeCost: amount('shipping_exchange'), shippingMeasurementCost: amount('shipping_measurement'),
-        shippingWeightDifferenceCost: amount('shipping_weight'), shippingSubsidy: amount('shipping_subsidy'),
+        unitPrice, total: units * unitPrice, sellingFee: amount('selling_fee', 'expense'),
+        shippingRevenue: amount('shipping_buyer_paid', 'benefit'), shippingFee: amount('shipping_fee', 'expense'),
+        discounts: amount('promotion_discount', 'benefit') + amount('promotion_subsidy', 'benefit') + amount('bonus', 'benefit'),
+        refunds: amount('refund_or_reversal', 'expense'), installmentFee: amount('installment_fee', 'expense'),
+        shippingExchangeCost: amount('shipping_exchange', 'expense'), shippingMeasurementCost: amount('shipping_measurement', 'expense'),
+        shippingWeightDifferenceCost: amount('shipping_weight', 'expense'), shippingSubsidy: amount('shipping_subsidy', 'benefit'),
         financialComponents: components, sku: normKey(row.sku || item.seller_sku || item.seller_custom_field || ''),
         mlb: normKey(row.item_id || item.id || ''), title: norm(item.title || ''),
         userProductId: norm(item.user_product_id || ''), categoryId: norm(item.category_id || ''),
         deliveryMethod: norm(order.shipping?.logistic_type || order.shipping?.mode || ''),
-        adsSale: '', promoClass: 'indefinido'
+        packId: order.pack_id || '', adsSale: '', promoClass: 'indefinido'
       };
     }
 
@@ -1345,6 +1354,7 @@
     function applyGlobalSearch(scope, value) {
       if (scope !== undefined) state.globalSearchScope = scope || 'code';
       if (value !== undefined) state.globalSearch = value || '';
+      state.selectedProfitKey = '';
       syncSearchControls();
       renderAll();
     }
@@ -2005,6 +2015,7 @@
         + Number(sale?.sellingFee || 0)
         + Number(sale?.installmentFee || 0)
         + Number(sale?.shippingFee || 0)
+        + Number(sale?.shippingSubsidy || 0)
         + Number(sale?.shippingExchangeCost || 0)
         + Number(sale?.shippingMeasurementCost || 0)
         + Number(sale?.shippingWeightDifferenceCost || 0)
@@ -2505,6 +2516,7 @@
         ...(r.familyIds ? [...r.familyIds] : []),
         ...(r.userProducts ? [...r.userProducts] : []),
         ...(r.catalogProducts ? [...r.catalogProducts] : []),
+        ...(r.saleNumbers ? [...r.saleNumbers] : []),
         ...(r.campaignIds ? [...r.campaignIds] : []),
         ...(r.campaignNames ? [...r.campaignNames] : [])
       ].join(' ').toLowerCase().includes(q);
@@ -3350,6 +3362,7 @@
           tax: 0,
           profit: 0,
           orders: new Set(),
+          saleNumbers: new Set(),
           skus: new Set(),
           mlbs: new Set(),
           familyIds: new Set(),
@@ -3374,6 +3387,7 @@
         row.flexCost += flexCost;
         row.profit += netBeforeCostTax - cost - tax - flexCost;
         row.orders.add(s.saleNumber || s.dedupeKey);
+        if (s.saleNumber) row.saleNumbers.add(s.saleNumber);
         if (s.sku) row.skus.add(s.sku);
         if (s.mlb) row.mlbs.add(s.mlb);
         if (s.familyId) row.familyIds.add(s.familyId);
