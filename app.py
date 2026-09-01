@@ -1783,6 +1783,23 @@ class Handler(BaseHTTPRequestHandler):
         payload.update({"ok": True, "clientId": link["client_id"]})
         _send_json(self, payload)
 
+    def _get_intelligence_order_financials(self):
+        context = self._intelligence_finance_context()
+        if not context:
+            return
+        _, link = context
+        qs = parse_qs(urlparse(self.path).query or "")
+        date_from = (qs.get("date_from", [""])[0] or "").strip()
+        date_to = (qs.get("date_to", [""])[0] or "").strip()
+        if not date_from or not date_to:
+            _send_json(self, {"ok": False, "error": "periodo_obrigatorio"}, 400)
+            return
+        payload = _fetch_dash_ads_json(
+            "/internal/dash-ads/order-financials",
+            {"client": link["client_id"], "date_from": date_from, "date_to": date_to},
+        )
+        _send_json(self, payload, 200 if payload.get("ok") else 502)
+
     def _post_intelligence_finance_cache(self):
         context = self._intelligence_finance_context()
         if not context:
@@ -2035,6 +2052,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/inteligencia/finance-cache":
                 self._get_intelligence_finance_cache()
+                return
+            if path == "/api/inteligencia/order-financials":
+                self._get_intelligence_order_financials()
                 return
             if path == "/online":
                 user, token = _current_user(self)

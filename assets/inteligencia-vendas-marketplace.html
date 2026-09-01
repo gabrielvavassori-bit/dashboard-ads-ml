@@ -822,7 +822,7 @@
     const DB_NAME = 'un_clic_marketplace_intelligence_v1';
     const DB_VERSION = 3;
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
-    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, flexCarrierCost: 0, costBySku: {}, costByKey: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
+    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, flexCarrierCost: 0, costBySku: {}, costByKey: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', remoteFinancialsLoaded: false, governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
     let remoteFinanceSyncTimer = null;
     let remoteFinancePendingRows = [];
@@ -964,6 +964,62 @@
         body: JSON.stringify({ costProfile: financeProfilePayload(), saleCosts: rows })
       });
       if (!response.ok) throw new Error(`finance cache ${response.status}`);
+    }
+
+    function remoteFinancialSale(row) {
+      let raw = {};
+      let components = {};
+      try { raw = JSON.parse(row.raw_payload_json || '{}'); } catch (_) {}
+      try { components = JSON.parse(row.components_json || '{}'); } catch (_) {}
+      const order = raw.order || {};
+      const orderItem = raw.order_item || {};
+      const item = orderItem.item || {};
+      const amount = (name) => {
+        const values = Array.isArray(components[name]) ? components[name] : [];
+        return values.reduce((sum, value) => sum + (Number.isFinite(Number(value.numeric_value)) ? Number(value.numeric_value) : 0), 0);
+      };
+      const units = Math.max(0, Number(orderItem.quantity || 0));
+      const unitPrice = Number(orderItem.unit_price || orderItem.full_unit_price || 0);
+      const dateValue = order.date_closed || order.date_created || row.order_date || '';
+      return {
+        dedupeKey: `remote:${row.line_id}:${row.snapshot_date}`,
+        importId: `remote-financial:${row.client_id}`,
+        fileName: 'Snapshot financeiro Mercado Livre', rowNumber: 0,
+        client: norm($('clientName')?.value || 'CLIENTE_TESTE'), channel: 'Mercado Livre',
+        saleNumber: row.order_id || '', date: dateValue ? new Date(dateValue) : null,
+        month: String(dateValue).slice(0, 7), status: String(order.status || 'paid'),
+        lineType: 'item_sale', eventClass: 'venda', units, productRevenue: units * unitPrice,
+        unitPrice, total: units * unitPrice, sellingFee: amount('selling_fee'),
+        shippingRevenue: amount('shipping_buyer_paid'), shippingFee: amount('shipping_fee'),
+        discounts: amount('promotion_discount') + amount('promotion_subsidy') + amount('bonus'),
+        refunds: amount('refund_or_reversal'), installmentFee: amount('installment_fee'),
+        shippingExchangeCost: amount('shipping_exchange'), shippingMeasurementCost: amount('shipping_measurement'),
+        shippingWeightDifferenceCost: amount('shipping_weight'), shippingSubsidy: amount('shipping_subsidy'),
+        financialComponents: components, sku: normKey(row.sku || item.seller_sku || item.seller_custom_field || ''),
+        mlb: normKey(row.item_id || item.id || ''), title: norm(item.title || ''),
+        userProductId: norm(item.user_product_id || ''), categoryId: norm(item.category_id || ''),
+        deliveryMethod: norm(order.shipping?.logistic_type || order.shipping?.mode || ''),
+        adsSale: '', promoClass: 'indefinido'
+      };
+    }
+
+    async function loadRemoteOrderFinancials() {
+      if (state.remoteFinancialsLoaded || location.protocol === 'file:') return;
+      const dates = state.sales.map((sale) => sale.date).filter(Boolean).map((date) => dateOnly(date)).sort((a, b) => a - b);
+      if (!dates.length) return;
+      const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      const response = await fetch(`/api/inteligencia/order-financials?date_from=${iso(dates[0])}&date_to=${iso(dates.at(-1))}`);
+      const payload = await response.json();
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      if (!payload.ok || !rows.length) { state.remoteFinancialsLoaded = true; return; }
+      const detailed = rows.map(remoteFinancialSale).filter((sale) => sale.saleNumber && sale.mlb);
+      if (!detailed.length) { state.remoteFinancialsLoaded = true; return; }
+      state.sales = state.sales.filter((sale) => !String(sale.saleNumber || '').startsWith('daily:'));
+      const existing = new Set(state.sales.map((sale) => sale.dedupeKey));
+      detailed.forEach((sale) => { if (!existing.has(sale.dedupeKey)) state.sales.push(sale); });
+      state.remoteFinancialsLoaded = true;
+      await putMany('sales', detailed);
+      renderProfit();
     }
     function queueRemoteFinanceSync(rows = []) {
       if (location.protocol === 'file:') return;
@@ -4422,6 +4478,7 @@
         const k = String(key || '');
         state.selectedProfitKey = state.selectedProfitKey === k ? '' : k;
         renderProfit();
+        loadRemoteOrderFinancials().catch(() => {});
       },
       sortTable: (tableKey, index) => {
         const prev = state.tableSort[tableKey] || { index: -1, dir: 'asc' };
