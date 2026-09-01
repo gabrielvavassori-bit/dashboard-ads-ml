@@ -2742,6 +2742,7 @@
     }
 
     function dateOnly(date) {
+      if (!(date instanceof Date)) date = new Date(date);
       return new Date(date.getFullYear(), date.getMonth(), date.getDate());
     }
 
