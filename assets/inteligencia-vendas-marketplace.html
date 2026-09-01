@@ -999,6 +999,9 @@
       const units = Math.max(0, Number(orderItem.quantity || 0));
       const unitPrice = Number(orderItem.unit_price || orderItem.full_unit_price || 0);
       const dateValue = order.date_closed || order.date_created || row.order_date || '';
+      const shippingFeeIndividual = ['shipping_fee', 'shipping_buyer_paid'].some((name) =>
+        (Array.isArray(components[name]) ? components[name] : []).some((value) => /^order\.order_items\[\d+\]\./.test(String(value.path || '')))
+      );
       return {
         dedupeKey: `remote:${row.line_id}:${row.snapshot_date}`,
         importId: `remote-financial:${row.client_id}`,
@@ -1017,8 +1020,30 @@
         mlb: normKey(row.item_id || item.id || ''), title: norm(item.title || ''),
         userProductId: norm(item.user_product_id || ''), categoryId: norm(item.category_id || ''),
         deliveryMethod: norm(order.shipping?.logistic_type || order.shipping?.mode || ''),
-        packId: order.pack_id || '', adsSale: '', promoClass: 'indefinido'
+        packId: row.pack_id || order.pack_id || row.order_id || '', packRole: 'child',
+        shippingFeeIndividual, shippingAllocation: 'source', adsSale: '', promoClass: 'indefinido'
       };
+    }
+
+    function allocatePackShipping(sales) {
+      const groups = new Map();
+      (sales || []).forEach((sale) => {
+        const key = String(sale.packId || sale.saleNumber || '');
+        if (!key) return;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(sale);
+      });
+      groups.forEach((lines) => {
+        if (lines.length < 2 || lines.some((line) => line.shippingFeeIndividual)) return;
+        const totalFee = Math.max(...lines.map((line) => Math.abs(Number(line.shippingFee || 0))));
+        const totalRevenue = Math.max(...lines.map((line) => Math.max(0, Number(line.shippingRevenue || 0))));
+        lines.forEach((line) => {
+          line.shippingFee = totalFee ? -totalFee / lines.length : 0;
+          line.shippingRevenue = totalRevenue ? totalRevenue / lines.length : 0;
+          line.shippingAllocation = 'equal_by_child_order';
+        });
+      });
+      return sales;
     }
 
     async function loadRemoteOrderFinancials() {
@@ -1030,7 +1055,7 @@
       const payload = await response.json();
       const rows = Array.isArray(payload.rows) ? payload.rows : [];
       if (!payload.ok || !rows.length) { state.remoteFinancialsLoaded = true; return; }
-      const detailed = rows.map(remoteFinancialSale).filter((sale) => sale.saleNumber && sale.mlb);
+      const detailed = allocatePackShipping(rows.map(remoteFinancialSale).filter((sale) => sale.saleNumber && sale.mlb));
       if (!detailed.length) { state.remoteFinancialsLoaded = true; return; }
       const detailedMlbs = new Set(detailed.map((sale) => normKey(sale.mlb)));
       const legacyKeys = state.sales
