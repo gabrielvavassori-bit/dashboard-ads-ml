@@ -950,6 +950,12 @@
         flexCarrierCost: Number(state.flexCarrierCost) || 0
       };
     }
+    function normalizeStoredSales(rows) {
+      return (rows || []).map((sale) => ({
+        ...sale,
+        date: sale?.date instanceof Date ? sale.date : (sale?.date ? new Date(sale.date) : null)
+      }));
+    }
     async function syncRemoteFinanceCache(rows = []) {
       if (location.protocol === 'file:') return;
       const response = await fetch('/api/inteligencia/finance-cache', {
@@ -1035,7 +1041,7 @@
 
     async function boot() {
       db = await openDb();
-      state.sales = await getAll('sales');
+      state.sales = normalizeStoredSales(await getAll('sales'));
       state.imports = await getAll('imports');
       state.events = await getAll('events');
       await loadClientCostProfile();
@@ -1489,7 +1495,7 @@
       await clearStore('events');
       await putMany('sales', demo);
       await putMany('imports', [demoImport]);
-      state.sales = await getAll('sales');
+      state.sales = normalizeStoredSales(await getAll('sales'));
       state.imports = await getAll('imports');
       state.events = [];
       await persistSaleCostLedger(state.sales);
@@ -1645,7 +1651,7 @@
       if (newSales.length) await putMany('sales', newSales);
       if (importRows.length) await putMany('imports', importRows);
       state.pendingImports = [];
-      state.sales = await getAll('sales');
+      state.sales = normalizeStoredSales(await getAll('sales'));
       state.imports = await getAll('imports');
       await persistSaleCostLedger(state.sales);
       renderAll();
