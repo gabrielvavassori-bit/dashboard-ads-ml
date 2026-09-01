@@ -1007,7 +1007,7 @@
       if (state.remoteFinancialsLoaded || location.protocol === 'file:') return;
       const dates = state.sales.map((sale) => sale.date).filter(Boolean).map((date) => dateOnly(date)).sort((a, b) => a - b);
       if (!dates.length) return;
-      const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      const iso = (date) => { const value = date instanceof Date ? date : new Date(date); return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`; };
       const response = await fetch(`/api/inteligencia/order-financials?date_from=${iso(dates[0])}&date_to=${iso(dates.at(-1))}`);
       const payload = await response.json();
       const rows = Array.isArray(payload.rows) ? payload.rows : [];
