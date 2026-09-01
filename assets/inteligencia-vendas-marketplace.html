@@ -973,10 +973,11 @@
     async function mergeRemoteSaleCostsIntoSales(rows) {
       const detailed = (rows || []).map((row) => {
         const raw = row && typeof row.raw === 'object' ? row.raw : {};
+        const dateValue = raw.date || row.date || '';
         return {
           ...raw,
           ...row,
-          date: raw.date || row.date || '',
+          date: dateValue ? new Date(dateValue) : null,
           raw: undefined
         };
       }).filter((sale) => sale.dedupeKey && sale.lineType === 'item_sale' && sale.saleNumber && !String(sale.saleNumber).startsWith('daily:'));
