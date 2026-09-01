@@ -1104,6 +1104,7 @@
       bindUi();
       renderAll();
       await loadRemoteFinanceCache();
+      await loadRemoteOrderFinancials();
       await persistSaleCostLedger(state.sales);
       await loadGovernanceSummary();
       renderAll();
