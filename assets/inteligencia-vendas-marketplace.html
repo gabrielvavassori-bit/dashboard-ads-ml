@@ -1058,7 +1058,12 @@
       const rows = Array.isArray(payload.rows) ? payload.rows
         : (Array.isArray(payload.data?.rows) ? payload.data.rows : []);
       if (!response.ok || payload.ok === false || !rows.length) return;
-      const detailed = allocatePackShipping(rows.map(remoteFinancialSale).filter((sale) => sale.saleNumber && sale.mlb));
+      const skuByMlb = new Map(state.sales
+        .filter((sale) => sale.mlb && sale.sku)
+        .map((sale) => [normKey(sale.mlb), sale.sku]));
+      const detailed = allocatePackShipping(rows.map(remoteFinancialSale)
+        .filter((sale) => sale.saleNumber && sale.mlb)
+        .map((sale) => ({ ...sale, sku: skuByMlb.get(normKey(sale.mlb)) || sale.sku })));
       if (!detailed.length) return;
       const detailedMlbs = new Set(detailed.map((sale) => normKey(sale.mlb)));
       const legacyKeys = state.sales
