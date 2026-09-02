@@ -1051,12 +1051,15 @@
       const dates = state.sales.map((sale) => sale.date).filter(Boolean).map((date) => dateOnly(date)).sort((a, b) => a - b);
       if (!dates.length) return;
       const iso = (date) => { const value = date instanceof Date ? date : new Date(date); return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`; };
-      const response = await fetch(`/api/inteligencia/order-financials?date_from=${iso(dates[0])}&date_to=${iso(dates.at(-1))}`);
+      const response = await fetch(`/api/inteligencia/order-financials?date_from=${iso(dates[0])}&date_to=${iso(dates.at(-1))}`, {
+        credentials: 'same-origin', cache: 'no-store'
+      });
       const payload = await response.json();
-      const rows = Array.isArray(payload.rows) ? payload.rows : [];
-      if (!payload.ok || !rows.length) { state.remoteFinancialsLoaded = true; return; }
+      const rows = Array.isArray(payload.rows) ? payload.rows
+        : (Array.isArray(payload.data?.rows) ? payload.data.rows : []);
+      if (!response.ok || payload.ok === false || !rows.length) return;
       const detailed = allocatePackShipping(rows.map(remoteFinancialSale).filter((sale) => sale.saleNumber && sale.mlb));
-      if (!detailed.length) { state.remoteFinancialsLoaded = true; return; }
+      if (!detailed.length) return;
       const detailedMlbs = new Set(detailed.map((sale) => normKey(sale.mlb)));
       const legacyKeys = state.sales
         .filter((sale) => String(sale.saleNumber || '').startsWith('daily:') && detailedMlbs.has(normKey(sale.mlb)))
