@@ -261,11 +261,12 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
         method="GET",
     )
     try:
+        max_response_bytes = 64_000_000 if path.endswith('/order-financials') else 8_000_000
         with urlopen(req, timeout=45) as response:
-            raw = response.read(8_000_000)
+            raw = response.read(max_response_bytes)
             status = response.status
     except HTTPError as exc:
-        raw = exc.read(8_000_000)
+        raw = exc.read(max_response_bytes)
         status = exc.code
     except (URLError, TimeoutError) as exc:
         return {
