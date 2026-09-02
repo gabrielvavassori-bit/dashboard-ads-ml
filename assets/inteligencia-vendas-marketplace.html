@@ -4450,7 +4450,12 @@
     window.__marketplaceApp = {
       getState: () => state,
       setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku, costByKey, profitTaxRate, flexCarrierCost = null, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', dashboardGranularity = 'day', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
-        state.sales = (sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
+        const detailedSales = (state.sales || []).filter((s) =>
+          s && s.lineType === 'item_sale' && !String(s.saleNumber || '').startsWith('daily:')
+        );
+        const incomingSales = (sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
+        const incomingKeys = new Set(incomingSales.map((s) => s.dedupeKey).filter(Boolean));
+        state.sales = [...incomingSales, ...detailedSales.filter((s) => !incomingKeys.has(s.dedupeKey))];
         state.imports = imports;
         state.events = events;
         state.planStatus = planStatus && typeof planStatus === 'object' ? planStatus : {};
