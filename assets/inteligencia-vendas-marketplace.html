@@ -1056,7 +1056,9 @@
       });
       const payload = await response.json();
       const rows = Array.isArray(payload.rows) ? payload.rows
-        : (Array.isArray(payload.data?.rows) ? payload.data.rows : []);
+        : (Array.isArray(payload.data?.rows) ? payload.data.rows
+          : (Array.isArray(payload.financials) ? payload.financials
+            : (Array.isArray(payload.order_financials) ? payload.order_financials : [])));
       if (!response.ok || payload.ok === false || !rows.length) return;
       const skuByMlb = new Map(state.sales
         .filter((sale) => sale.mlb && sale.sku)
@@ -1076,7 +1078,7 @@
       state.remoteFinancialsLoaded = true;
       if (legacyKeys.length) await deleteMany('sales', legacyKeys);
       await putMany('sales', detailed);
-      renderProfit();
+      renderAll();
     }
     function queueRemoteFinanceSync(rows = []) {
       if (location.protocol === 'file:') return;
