@@ -692,6 +692,7 @@ class OnlinePeriodTests(unittest.TestCase):
     def test_financial_view_uses_billing_components_and_exposes_pack_relationship(self):
         source = Path(__file__).with_name("assets").joinpath("inteligencia-vendas-marketplace.html").read_text(encoding="utf-8")
         mapper = source.split("function remoteFinancialSale(row)", 1)[1].split("function allocatePackShipping", 1)[0]
+        financial_base = source.split("function financialBase(sale)", 1)[1].split("function saleOrderKey", 1)[0]
         detail = source.split("function renderProfitDetail", 1)[1].split("function renderMonthly", 1)[0]
 
         self.assertIn("selling_fee_gross", mapper)
@@ -699,6 +700,8 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("shipping_fee_allocated", mapper)
         self.assertIn("commissionRate", mapper)
         self.assertIn("categoryPath", mapper)
+        self.assertIn("shippingSubsidy", mapper)
+        self.assertNotIn("shippingSubsidy", financial_base)
         self.assertIn("Pacote/carrinho", detail)
         self.assertIn("Venda/item", detail)
         self.assertIn("Comissão %", detail)
