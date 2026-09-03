@@ -1019,6 +1019,7 @@
       const shippingFee = componentValues('shipping_fee_allocated').length
         ? amount('shipping_fee_allocated', 'expense')
         : amount('shipping_fee', 'expense');
+      const installmentEquivalent = Math.abs(amount('installment_fee'));
       const shippingRevenue = amount('shipping_buyer_paid', 'benefit', 'billing_summary.receiver_shipping_cost');
       const dateValue = order.date_closed || order.date_created || row.order_date || '';
       const shippingFeeIndividual = componentValues('shipping_fee_allocated').length > 0 || ['shipping_fee', 'shipping_buyer_paid'].some((name) =>
@@ -1033,11 +1034,11 @@
         saleNumber: row.order_id || '', date: dateValue ? new Date(dateValue) : null,
         month: String(dateValue).slice(0, 7), status: String(order.status || 'paid'),
         lineType: 'item_sale', eventClass: 'venda', units, productRevenue,
-        unitPrice, total: productRevenue, sellingFee,
+        unitPrice, total: productRevenue, buyerPriceIncrease: installmentEquivalent, sellingFee,
         commissionRate: productRevenue ? Math.abs(sellingFee) / productRevenue : 0,
         shippingRevenue, shippingFee,
         discounts: amount('promotion_discount', 'benefit') + amount('promotion_subsidy', 'benefit') + amount('bonus', 'benefit'),
-        refunds: amount('refund_or_reversal', 'expense'), installmentFee: amount('installment_fee', 'expense'),
+        refunds: amount('refund_or_reversal', 'expense'), installmentFee: -installmentEquivalent,
         shippingExchangeCost: amount('shipping_exchange', 'expense'), shippingMeasurementCost: amount('shipping_measurement', 'expense'),
         shippingWeightDifferenceCost: amount('shipping_weight', 'expense'), shippingSubsidy: amount('shipping_subsidy', 'benefit'),
         financialComponents: components, sku: normKey(row.sku || item.seller_sku || item.seller_custom_field || ''),

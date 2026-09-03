@@ -700,6 +700,8 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("selling_fee_gross", mapper)
         self.assertIn("promotion_subsidy", mapper)
         self.assertIn("shipping_fee_allocated", mapper)
+        self.assertIn("buyerPriceIncrease: installmentEquivalent", mapper)
+        self.assertIn("installmentFee: -installmentEquivalent", mapper)
         self.assertIn("commissionRate", mapper)
         self.assertIn("categoryPath", mapper)
         self.assertIn("shippingSubsidy", mapper)
