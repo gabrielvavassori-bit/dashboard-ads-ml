@@ -2620,6 +2620,7 @@
         ...(r.userProducts ? [...r.userProducts] : []),
         ...(r.catalogProducts ? [...r.catalogProducts] : []),
         ...(r.saleNumbers ? [...r.saleNumbers] : []),
+        ...(r.packIds ? [...r.packIds] : []),
         ...(r.campaignIds ? [...r.campaignIds] : []),
         ...(r.campaignNames ? [...r.campaignNames] : [])
       ].join(' ').toLowerCase().includes(q);
@@ -3466,6 +3467,7 @@
           profit: 0,
           orders: new Set(),
           saleNumbers: new Set(),
+          packIds: new Set(),
           skus: new Set(),
           mlbs: new Set(),
           familyIds: new Set(),
@@ -3492,6 +3494,7 @@
         row.profit += netBeforeCostTax - cost - tax - flexCost;
         row.orders.add(s.saleNumber || s.dedupeKey);
         if (s.saleNumber) row.saleNumbers.add(s.saleNumber);
+        if (s.packId) row.packIds.add(s.packId);
         if (s.sku) row.skus.add(s.sku);
         if (s.mlb) row.mlbs.add(s.mlb);
         if (s.familyId) row.familyIds.add(s.familyId);

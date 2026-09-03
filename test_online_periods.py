@@ -680,6 +680,8 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("const salesList = Array.isArray(salesScope) ? salesScope : financialSalesSource();", source)
         self.assertIn("!String(sale?.saleNumber || '').startsWith('daily:')", source)
         self.assertIn("return stored.filter(isDedicatedFinancialSale);", financial_source)
+        self.assertIn("...(r.packIds ? [...r.packIds] : [])", source)
+        self.assertIn("if (s.packId) row.packIds.add(s.packId);", source)
         self.assertNotIn("state.sales.filter", financial_source)
         self.assertIn("const window = reportWindowData();", financial_loader)
         self.assertIn("date_from=${dateFrom}&date_to=${dateTo}", financial_loader)
