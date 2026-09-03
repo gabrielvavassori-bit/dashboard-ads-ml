@@ -720,7 +720,9 @@ class HTTPRouteTests(unittest.TestCase):
     def test_health_and_custom_delivery(self):
         with urlopen(f"{self.base_url}/healthz", timeout=5) as response:
             self.assertEqual(response.status, 200)
-            self.assertTrue(json.loads(response.read())["ok"])
+            health = json.loads(response.read())
+            self.assertTrue(health["ok"])
+            self.assertIn("revision", health)
         request = Request(
             f"{self.base_url}/eduzz/custom-delivery",
             data=b'{"test":true}',

@@ -1878,7 +1878,7 @@ class Handler(BaseHTTPRequestHandler):
         path = url.path
         try:
             if path == "/healthz":
-                _send_json(self, {"ok": True})
+                _send_json(self, {"ok": True, "revision": os.environ.get("RENDER_GIT_COMMIT", "")[:12]})
                 return
             if beta_config.BETA_MODE and (path == "/admin" or path.startswith("/admin/")):
                 target = beta_config.BETA_SHARED_AUTH_URL.rstrip("/") + path
