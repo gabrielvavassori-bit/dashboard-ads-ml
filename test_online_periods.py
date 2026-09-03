@@ -667,6 +667,35 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("const orders = sumOrderCount(rows);", source)
         self.assertIn("window.__marketplaceAppReady = boot();", source)
 
+    def test_profit_view_uses_separate_financial_store_after_online_hydration(self):
+        source = Path(__file__).with_name("assets").joinpath("inteligencia-vendas-marketplace.html").read_text(encoding="utf-8")
+        boot = source.split("async function boot()", 1)[1].split("async function loadGovernanceSummary", 1)[0]
+        memory_hydration = source.split("setMemoryData:", 1)[1].split("createDemoSales,", 1)[0]
+
+        self.assertIn("financialSales: []", source)
+        self.assertIn("createObjectStore('financialSales'", source)
+        self.assertIn("state.financialSales = detailed;", source)
+        self.assertIn("const salesList = Array.isArray(salesScope) ? salesScope : financialSalesSource();", source)
+        self.assertIn("!String(sale?.saleNumber || '').startsWith('daily:')", source)
+        self.assertNotIn("loadRemoteOrderFinancials()", boot)
+        self.assertIn("reloadRemoteOrderFinancials();", memory_hydration)
+        self.assertNotIn("clearStore('saleCosts')", memory_hydration)
+
+    def test_financial_view_uses_billing_components_and_exposes_pack_relationship(self):
+        source = Path(__file__).with_name("assets").joinpath("inteligencia-vendas-marketplace.html").read_text(encoding="utf-8")
+        mapper = source.split("function remoteFinancialSale(row)", 1)[1].split("function allocatePackShipping", 1)[0]
+        detail = source.split("function renderProfitDetail", 1)[1].split("function renderMonthly", 1)[0]
+
+        self.assertIn("selling_fee_gross", mapper)
+        self.assertIn("promotion_subsidy", mapper)
+        self.assertIn("shipping_fee_allocated", mapper)
+        self.assertIn("commissionRate", mapper)
+        self.assertIn("categoryPath", mapper)
+        self.assertIn("Pacote/carrinho", detail)
+        self.assertIn("Venda/item", detail)
+        self.assertIn("Comissão %", detail)
+        self.assertIn("Subsídio/benefício", detail)
+
     def test_online_builder_uses_requested_period_when_explicit_dates_are_empty(self):
         payload = {
             "ok": True,

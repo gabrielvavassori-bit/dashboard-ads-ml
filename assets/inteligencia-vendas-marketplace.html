@@ -820,9 +820,9 @@
 
   <script>
     const DB_NAME = 'un_clic_marketplace_intelligence_v1';
-    const DB_VERSION = 3;
+    const DB_VERSION = 4;
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
-    const state = { sales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, flexCarrierCost: 0, costBySku: {}, costByKey: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', remoteFinancialsLoaded: false, governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
+    const state = { sales: [], financialSales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, flexCarrierCost: 0, costBySku: {}, costByKey: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', remoteFinancialsLoaded: false, financialLoadError: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
     let remoteFinanceSyncTimer = null;
     let remoteFinancePendingRows = [];
@@ -881,6 +881,7 @@
         req.onupgradeneeded = () => {
           const d = req.result;
           if (!d.objectStoreNames.contains('sales')) d.createObjectStore('sales', { keyPath: 'dedupeKey' });
+          if (!d.objectStoreNames.contains('financialSales')) d.createObjectStore('financialSales', { keyPath: 'dedupeKey' });
           if (!d.objectStoreNames.contains('imports')) d.createObjectStore('imports', { keyPath: 'id' });
           if (!d.objectStoreNames.contains('events')) d.createObjectStore('events', { keyPath: 'id' });
           if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'id' });
@@ -983,14 +984,22 @@
       const order = raw.order || {};
       const orderItem = raw.order_item || {};
       const item = orderItem.item || {};
-      const amount = (name, sign = 'raw') => {
+      const componentValues = (name, preferredSuffix = '') => {
         let values = Array.isArray(components[name]) ? components[name] : [];
+        if (preferredSuffix) {
+          const preferred = values.filter((value) => String(value.path || '').endsWith(preferredSuffix));
+          if (preferred.length) values = preferred;
+        }
         if (name === 'selling_fee') {
           const itemIndex = String(row.line_id || '').match(/:(\d+)$/)?.[1];
           const canonicalPath = itemIndex === undefined ? '' : `order.order_items[${itemIndex}].sale_fee`;
           const canonical = values.filter((value) => String(value.path || '') === canonicalPath);
           if (canonical.length) values = canonical;
         }
+        return values;
+      };
+      const amount = (name, sign = 'raw', preferredSuffix = '') => {
+        const values = componentValues(name, preferredSuffix);
         const total = values.reduce((sum, value) => sum + (Number.isFinite(Number(value.numeric_value)) ? Number(value.numeric_value) : 0), 0);
         if (sign === 'expense') return total > 0 ? -total : total;
         if (sign === 'benefit') return total < 0 ? -total : total;
@@ -998,10 +1007,19 @@
       };
       const units = Math.max(0, Number(orderItem.quantity || 0));
       const unitPrice = Number(orderItem.unit_price || orderItem.full_unit_price || 0);
+      const productRevenue = units * unitPrice;
+      const sellingFee = componentValues('selling_fee_gross').length
+        ? amount('selling_fee_gross', 'expense')
+        : (componentValues('selling_fee_net').length ? amount('selling_fee_net', 'expense') : amount('selling_fee', 'expense'));
+      const shippingFee = componentValues('shipping_fee_allocated').length
+        ? amount('shipping_fee_allocated', 'expense')
+        : amount('shipping_fee', 'expense');
+      const shippingRevenue = amount('shipping_buyer_paid', 'benefit', 'billing_summary.receiver_shipping_cost');
       const dateValue = order.date_closed || order.date_created || row.order_date || '';
-      const shippingFeeIndividual = ['shipping_fee', 'shipping_buyer_paid'].some((name) =>
+      const shippingFeeIndividual = componentValues('shipping_fee_allocated').length > 0 || ['shipping_fee', 'shipping_buyer_paid'].some((name) =>
         (Array.isArray(components[name]) ? components[name] : []).some((value) => /^order\.order_items\[\d+\]\./.test(String(value.path || '')))
       );
+      const packId = row.pack_id || order.pack_id || row.order_id || '';
       return {
         dedupeKey: `remote:${row.line_id}:${row.snapshot_date}`,
         importId: `remote-financial:${row.client_id}`,
@@ -1009,18 +1027,20 @@
         client: norm($('clientName')?.value || 'CLIENTE_TESTE'), channel: 'Mercado Livre',
         saleNumber: row.order_id || '', date: dateValue ? new Date(dateValue) : null,
         month: String(dateValue).slice(0, 7), status: String(order.status || 'paid'),
-        lineType: 'item_sale', eventClass: 'venda', units, productRevenue: units * unitPrice,
-        unitPrice, total: units * unitPrice, sellingFee: amount('selling_fee', 'expense'),
-        shippingRevenue: amount('shipping_buyer_paid', 'benefit'), shippingFee: amount('shipping_fee', 'expense'),
+        lineType: 'item_sale', eventClass: 'venda', units, productRevenue,
+        unitPrice, total: productRevenue, sellingFee,
+        commissionRate: productRevenue ? Math.abs(sellingFee) / productRevenue : 0,
+        shippingRevenue, shippingFee,
         discounts: amount('promotion_discount', 'benefit') + amount('promotion_subsidy', 'benefit') + amount('bonus', 'benefit'),
         refunds: amount('refund_or_reversal', 'expense'), installmentFee: amount('installment_fee', 'expense'),
         shippingExchangeCost: amount('shipping_exchange', 'expense'), shippingMeasurementCost: amount('shipping_measurement', 'expense'),
         shippingWeightDifferenceCost: amount('shipping_weight', 'expense'), shippingSubsidy: amount('shipping_subsidy', 'benefit'),
         financialComponents: components, sku: normKey(row.sku || item.seller_sku || item.seller_custom_field || ''),
         mlb: normKey(row.item_id || item.id || ''), title: norm(item.title || ''),
-        userProductId: norm(item.user_product_id || ''), categoryId: norm(item.category_id || ''),
+        userProductId: norm(item.user_product_id || ''), categoryId: norm(item.category_id || ''), categoryPath: norm(item.category_path || ''),
         deliveryMethod: norm(order.shipping?.logistic_type || order.shipping?.mode || ''),
-        packId: row.pack_id || order.pack_id || row.order_id || '', packRole: 'child',
+        packId, packRole: String(packId) !== String(row.order_id || '') ? 'child' : 'single',
+        packageMulti: String(packId) !== String(row.order_id || '') ? 'Sim' : 'Nao',
         shippingFeeIndividual, shippingAllocation: 'source', adsSale: '', promoClass: 'indefinido'
       };
     }
@@ -1049,36 +1069,59 @@
     async function loadRemoteOrderFinancials() {
       if (state.remoteFinancialsLoaded || location.protocol === 'file:') return;
       const dates = state.sales.map((sale) => sale.date).filter(Boolean).map((date) => dateOnly(date)).sort((a, b) => a - b);
-      if (!dates.length) return;
+      if (!dates.length) {
+        state.financialSales = [];
+        state.remoteFinancialsLoaded = true;
+        renderProfit();
+        return;
+      }
       const iso = (date) => { const value = date instanceof Date ? date : new Date(date); return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`; };
-      const response = await fetch(`/api/inteligencia/order-financials?date_from=${iso(dates[0])}&date_to=${iso(dates.at(-1))}`, {
-        credentials: 'same-origin', cache: 'no-store'
-      });
-      const payload = await response.json();
-      const rows = Array.isArray(payload.rows) ? payload.rows
-        : (Array.isArray(payload.data?.rows) ? payload.data.rows
-          : (Array.isArray(payload.financials) ? payload.financials
-            : (Array.isArray(payload.order_financials) ? payload.order_financials : [])));
-      if (!response.ok || payload.ok === false || !rows.length) return;
-      const skuByMlb = new Map(state.sales
-        .filter((sale) => sale.mlb && sale.sku)
-        .map((sale) => [normKey(sale.mlb), sale.sku]));
-      const detailed = allocatePackShipping(rows.map(remoteFinancialSale)
-        .filter((sale) => sale.saleNumber && sale.mlb)
-        .map((sale) => ({ ...sale, sku: skuByMlb.get(normKey(sale.mlb)) || sale.sku })));
-      if (!detailed.length) return;
-      const detailedMlbs = new Set(detailed.map((sale) => normKey(sale.mlb)));
-      const legacyKeys = state.sales
-        .filter((sale) => String(sale.saleNumber || '').startsWith('daily:') && detailedMlbs.has(normKey(sale.mlb)))
-        .map((sale) => sale.dedupeKey)
-        .filter(Boolean);
-      state.sales = state.sales.filter((sale) => !legacyKeys.includes(sale.dedupeKey));
-      const existing = new Set(state.sales.map((sale) => sale.dedupeKey));
-      detailed.forEach((sale) => { if (!existing.has(sale.dedupeKey)) state.sales.push(sale); });
-      state.remoteFinancialsLoaded = true;
-      if (legacyKeys.length) await deleteMany('sales', legacyKeys);
-      await putMany('sales', detailed);
-      renderAll();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 45000);
+      state.financialLoadError = '';
+      try {
+        const response = await fetch(`/api/inteligencia/order-financials?date_from=${iso(dates[0])}&date_to=${iso(dates.at(-1))}`, {
+          credentials: 'same-origin', cache: 'no-store', signal: controller.signal
+        });
+        const payload = await response.json();
+        const rows = Array.isArray(payload.rows) ? payload.rows
+          : (Array.isArray(payload.data?.rows) ? payload.data.rows
+            : (Array.isArray(payload.financials) ? payload.financials
+              : (Array.isArray(payload.order_financials) ? payload.order_financials : [])));
+        if (!response.ok || payload.ok === false) throw new Error(payload.error || payload.erro || `HTTP ${response.status}`);
+        const skuByMlb = new Map(state.sales
+          .filter((sale) => sale.mlb && sale.sku)
+          .map((sale) => [normKey(sale.mlb), sale.sku]));
+        const detailed = allocatePackShipping(rows.map(remoteFinancialSale)
+          .filter((sale) => sale.saleNumber && sale.mlb)
+          .map((sale) => ({ ...sale, sku: skuByMlb.get(normKey(sale.mlb)) || sale.sku })));
+        state.financialSales = detailed;
+        state.remoteFinancialsLoaded = true;
+        await clearStore('financialSales');
+        if (detailed.length) await putMany('financialSales', detailed);
+      } catch (err) {
+        state.financialLoadError = err?.name === 'AbortError'
+          ? 'A consulta financeira excedeu 45 segundos.'
+          : String(err?.message || err || 'Falha ao carregar dados financeiros.');
+      } finally {
+        clearTimeout(timeout);
+        renderProfit();
+      }
+    }
+
+    async function reloadRemoteOrderFinancials() {
+      if (location.protocol === 'file:') return;
+      state.financialSales = [];
+      state.remoteFinancialsLoaded = false;
+      state.financialLoadError = '';
+      renderProfit();
+      try {
+        await clearStore('financialSales');
+        await loadRemoteOrderFinancials();
+      } catch (err) {
+        state.financialLoadError = String(err?.message || err || 'Falha ao reiniciar a base financeira.');
+        renderProfit();
+      }
     }
     function queueRemoteFinanceSync(rows = []) {
       if (location.protocol === 'file:') return;
@@ -1103,14 +1146,13 @@
         };
       }).filter((sale) => sale.dedupeKey && sale.lineType === 'item_sale' && sale.saleNumber && !String(sale.saleNumber).startsWith('daily:'));
       if (!detailed.length) return;
-      await putMany('sales', detailed);
       const detailedDays = new Set(detailed.map((sale) => `${normKey(sale.mlb)}|${String(sale.date || '').slice(0, 10)}`));
-      state.sales = (state.sales || []).filter((sale) => {
-        if (!String(sale.saleNumber || '').startsWith('daily:')) return true;
-        return !detailedDays.has(`${normKey(sale.mlb)}|${String(sale.date || '').slice(0, 10)}`);
-      });
-      const existing = new Set(state.sales.map((sale) => sale.dedupeKey));
-      detailed.forEach((sale) => { if (!existing.has(sale.dedupeKey)) state.sales.push(sale); });
+      state.financialSales = (state.financialSales || []).filter((sale) =>
+        !detailedDays.has(`${normKey(sale.mlb)}|${String(sale.date || '').slice(0, 10)}`)
+      );
+      const existing = new Set(state.financialSales.map((sale) => sale.dedupeKey));
+      detailed.forEach((sale) => { if (!existing.has(sale.dedupeKey)) state.financialSales.push(sale); });
+      await putMany('financialSales', detailed);
     }
     async function loadRemoteFinanceCache() {
       if (location.protocol === 'file:') return;
@@ -1157,13 +1199,13 @@
     async function boot() {
       db = await openDb();
       state.sales = normalizeStoredSales(await getAll('sales'));
+      state.financialSales = normalizeStoredSales(await getAll('financialSales'));
       state.imports = await getAll('imports');
       state.events = await getAll('events');
       await loadClientCostProfile();
       bindUi();
       renderAll();
       await loadRemoteFinanceCache();
-      await loadRemoteOrderFinancials();
       await persistSaleCostLedger(state.sales);
       await loadGovernanceSummary();
       renderAll();
@@ -1573,17 +1615,32 @@
       if (start) start.style.display = show ? '' : 'none';
       if (end) end.style.display = show ? '' : 'none';
     }
+    function financialSalesSource() {
+      const stored = Array.isArray(state.financialSales) ? state.financialSales : [];
+      if (stored.length || state.remoteFinancialsLoaded || state.financialLoadError) return stored;
+      return state.sales.filter((sale) =>
+        sale?.lineType === 'item_sale' && !String(sale?.saleNumber || '').startsWith('daily:')
+      );
+    }
     function profitWindowedSales() {
-      return reportWindowData().currentSales;
+      const source = financialSalesSource();
+      const wnd = reportWindowData();
+      if (!wnd.valid) return [];
+      if (!wnd.currentStart || !wnd.currentEnd) return source.slice();
+      return source.filter((sale) =>
+        sale.date && dateOnly(sale.date) >= wnd.currentStart && dateOnly(sale.date) <= wnd.currentEnd
+      );
     }
 
     async function clearBase() {
       if (!confirm('Isso remove todos os dados importados deste navegador/computador. O programa continuara limpo, mas a base ficara vazia.')) return;
       await clearStore('sales');
+      await clearStore('financialSales');
       await clearStore('saleCosts');
       await clearStore('imports');
       await clearStore('events');
       state.sales = [];
+      state.financialSales = [];
       state.imports = [];
       state.events = [];
       state.pendingImports = [];
@@ -2117,7 +2174,9 @@
     }
 
     async function persistSaleCostLedger(sales) {
-      const rows = (sales || []).filter((sale) => sale?.lineType === 'item_sale').map(saleCostRecord);
+      const rows = (sales || []).filter((sale) =>
+        sale?.lineType === 'item_sale' && !String(sale?.saleNumber || '').startsWith('daily:')
+      ).map(saleCostRecord);
       if (rows.length) await putMany('saleCosts', rows);
       queueRemoteFinanceSync(rows);
     }
@@ -2438,6 +2497,7 @@
           familyIds: new Set(),
           userProducts: new Set(),
           catalogProducts: new Set(),
+          categoryPaths: new Set(),
           campaignIds: new Set(),
           campaignNames: new Set(),
           currentPrice: 0,
@@ -2453,6 +2513,7 @@
         if (s.familyId) row.familyIds.add(s.familyId);
         if (s.userProductId) row.userProducts.add(s.userProductId);
         if (s.catalogProductId) row.catalogProducts.add(s.catalogProductId);
+        if (s.categoryPath) row.categoryPaths.add(s.categoryPath);
         if (s.campaignId) row.campaignIds.add(s.campaignId);
         const campaignLabel = saleCampaignLabel(s);
         if (campaignLabel) row.campaignNames.add(campaignLabel);
@@ -2516,6 +2577,7 @@
         r.familyLabel = summarizeValues(r.familyIds, 'Familia nao informada');
         r.variationLabel = summarizeValues(r.userProducts, 'Sem vinculo MLBU');
         r.catalogLabel = summarizeValues(r.catalogProducts, 'Sem catalogo identificado');
+        r.categoryLabel = summarizeValues(r.categoryPaths, 'Categoria nao informada');
         r.campaignLabel = summarizeValues([...r.campaignNames, ...[...r.campaignIds].map((id) => `Campanha ${id}`)], 'Sem campanha identificada');
         r.mlbLabel = summarizeValues(r.mlbs, 'Sem MLB');
         r.skuLabel = summarizeValues(r.skus, 'Sem SKU');
@@ -3375,7 +3437,7 @@
 
     function profitRows(group = 'sku', salesScope = null) {
       const taxRate = Math.max(0, Number(state.profitTaxRate || 0)) / 100;
-      const salesList = Array.isArray(salesScope) ? salesScope : state.sales;
+      const salesList = Array.isArray(salesScope) ? salesScope : financialSalesSource();
       const returnedSaleNumbers = new Set(salesList.filter((s) => isReturnEvent(s)).map((s) => s.saleNumber || s.dedupeKey));
       const baseRows = salesList.filter((s) =>
         (s.sku || s.mlb || s.userProductId || s.familyId) &&
@@ -3405,6 +3467,7 @@
           catalogProducts: new Set(),
           campaignIds: new Set(),
           campaignNames: new Set(),
+          categoryPaths: new Set(),
           thumbnailUrl: '',
           flexCost: 0
         };
@@ -3429,6 +3492,7 @@
         if (s.userProductId) row.userProducts.add(s.userProductId);
         if (s.catalogProductId) row.catalogProducts.add(s.catalogProductId);
         if (s.campaignId) row.campaignIds.add(s.campaignId);
+        if (s.categoryPath) row.categoryPaths.add(s.categoryPath);
         const campaignLabel = saleCampaignLabel(s);
         if (campaignLabel) row.campaignNames.add(campaignLabel);
         if (!row.thumbnailUrl && s.thumbnailUrl) row.thumbnailUrl = s.thumbnailUrl;
@@ -3443,6 +3507,7 @@
         r.variationLabel = summarizeValues(r.userProducts, 'Sem vinculo MLBU');
         r.catalogLabel = summarizeValues(r.catalogProducts, 'Sem catalogo identificado');
         r.campaignLabel = summarizeValues([...r.campaignNames, ...[...r.campaignIds].map((id) => `Campanha ${id}`)], 'Sem campanha identificada');
+        r.categoryLabel = summarizeValues(r.categoryPaths, 'Categoria nao informada');
         r.mlbLabel = summarizeValues(r.mlbs, 'Sem MLB');
         r.skuLabel = summarizeValues(r.skus, 'Sem SKU');
         return r;
@@ -3450,6 +3515,16 @@
     }
 
     function renderProfit() {
+      const financialSource = financialSalesSource();
+      if (!financialSource.length) {
+        const message = state.financialLoadError
+          ? `Falha ao carregar a base financeira separada: ${state.financialLoadError}`
+          : (state.remoteFinancialsLoaded ? 'Nenhuma venda financeira encontrada neste historico.' : 'Carregando base financeira separada...');
+        $('profitSummary').innerHTML = `<div class="notice">${esc(message)}</div>`;
+        $('profitTable').innerHTML = '<div class="empty">Os snapshots diarios nao sao usados para calcular lucro por venda.</div>';
+        $('profitDetail').innerHTML = '';
+        return;
+      }
       const salesScope = profitWindowedSales();
       if (state.reportWindow === 'custom' && !reportWindowData().valid) {
         $('profitSummary').innerHTML = '<div class="notice">Periodo personalizado invalido. Ajuste as datas no topo para calcular lucro e prejuizo.</div>';
@@ -3488,7 +3563,7 @@
           : r.loss ? '<span class="badge bad">Prejuizo</span>' : r.margin < 0.08 ? '<span class="badge warn">Margem baixa</span>' : '<span class="badge ok">Saudavel</span>';
         const row = [
           aggregateIdentityCell(r, state.profitGroup, state.profitGroup !== 'sku' ? `${fmtNum(r.skus.size)} SKU(s) consolidados` : ''),
-          `${esc(r.title || '-')}<span class="subline">${esc(r.catalogLabel || 'Sem catalogo identificado')}</span>`,
+          `${esc(r.title || '-')}<span class="subline">${esc(r.categoryLabel || 'Categoria nao informada')}</span><span class="subline">${esc(r.catalogLabel || 'Sem catalogo identificado')}</span>`,
           right(fmtNum(r.units)),
           right(fmtMoney(r.gross)),
           right(fmtMoney(r.netBeforeCostTax)),
@@ -3537,16 +3612,22 @@
         const flexCost = flexCostForSale(s, salesList);
         const profit = base - cost - tax - flexCost;
         const margin = gross ? profit / gross : 0;
+        const commissionRate = Number.isFinite(Number(s.commissionRate))
+          ? Number(s.commissionRate)
+          : (gross ? Math.abs(Number(s.sellingFee || 0)) / gross : 0);
         return [
+          esc(s.packId || '-'),
           esc(s.saleNumber || '-'),
           s.date ? s.date.toLocaleDateString('pt-BR') : '-',
           esc(s.sku || '-'),
           esc(s.mlb || '-'),
+          esc(s.categoryPath || 'Categoria nao informada'),
           right(fmtNum(s.units || 0)),
           right(fmtMoney(gross)),
           right(fmtMoney(s.buyerPriceIncrease || 0)),
           right(fmtMoney(s.shippingRevenue || 0)),
           right(fmtMoney(s.sellingFee || 0)),
+          right(fmtPct(commissionRate)),
           right(fmtMoney(s.installmentFee || 0)),
           right(fmtMoney(s.shippingFee || 0)),
           right(fmtMoney(s.shippingExchangeCost || 0)),
@@ -3562,7 +3643,7 @@
           right(`<span class="${margin >= 0 ? 'pos' : 'neg'}">${fmtPct(margin)}</span>`)
         ];
       });
-      target.innerHTML = `<div class="section"><div class="section-head"><h2 class="section-title">Lucro por venda: ${esc(state.selectedProfitKey)}</h2><div class="muted">${esc(groupLabel(state.profitGroup))}</div></div><div class="section-body">${tableWrap(['Venda','Data','SKU','MLB','Unid.','Receita produto','Acréscimo comprador','Receita frete','Comissão/tarifa','Parcelamento','Frete','Ajuste troca','Ajuste medidas','Ajuste peso','Descontos/bônus','Reembolsos','Base líquida','Custo produto','Imposto','Despesa Flex','Lucro','Margem'], rows, 'profit_detail')}</div></div>`;
+      target.innerHTML = `<div class="section"><div class="section-head"><h2 class="section-title">Lucro por venda: ${esc(state.selectedProfitKey)}</h2><div class="muted">${esc(groupLabel(state.profitGroup))}</div></div><div class="section-body">${tableWrap(['Pacote/carrinho','Venda/item','Data','SKU','MLB','Categoria','Unid.','Receita produto','Acréscimo comprador','Receita frete','Comissão/tarifa','Comissão %','Parcelamento','Frete','Ajuste troca','Ajuste medidas','Ajuste peso','Subsídio/benefício','Reembolsos','Base líquida','Custo produto','Imposto','Despesa Flex','Lucro','Margem'], rows, 'profit_detail')}</div></div>`;
     }
 
     function renderMonthly() {
@@ -4450,12 +4531,7 @@
     window.__marketplaceApp = {
       getState: () => state,
       setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku, costByKey, profitTaxRate, flexCarrierCost = null, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', dashboardGranularity = 'day', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
-        const detailedSales = (state.sales || []).filter((s) =>
-          s && s.lineType === 'item_sale' && !String(s.saleNumber || '').startsWith('daily:')
-        );
-        const incomingSales = (sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
-        const incomingKeys = new Set(incomingSales.map((s) => s.dedupeKey).filter(Boolean));
-        state.sales = [...incomingSales, ...detailedSales.filter((s) => !incomingKeys.has(s.dedupeKey))];
+        state.sales = (sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
         state.imports = imports;
         state.events = events;
         state.planStatus = planStatus && typeof planStatus === 'object' ? planStatus : {};
@@ -4475,9 +4551,6 @@
         state.globalSearch = String(globalSearch || '');
         state.noSalesRejected = noSalesRejected && typeof noSalesRejected === 'object' ? noSalesRejected : {};
         state.onlineNotice = String(onlineNotice || '');
-        if (db) {
-          clearStore('saleCosts').then(() => persistSaleCostLedger(state.sales)).catch(() => {});
-        }
         saveClientCostProfile().catch(() => {});
         syncDerivedWindowsFromReport();
         if ($('profitTaxInput')) $('profitTaxInput').value = String(state.profitTaxRate);
@@ -4487,6 +4560,7 @@
         syncWindowControls();
         toggleProfitCustomDates();
         renderAll();
+        reloadRemoteOrderFinancials();
       },
       createDemoSales,
       readXlsx,
