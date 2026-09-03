@@ -671,13 +671,21 @@ class OnlinePeriodTests(unittest.TestCase):
         source = Path(__file__).with_name("assets").joinpath("inteligencia-vendas-marketplace.html").read_text(encoding="utf-8")
         boot = source.split("async function boot()", 1)[1].split("async function loadGovernanceSummary", 1)[0]
         memory_hydration = source.split("setMemoryData:", 1)[1].split("createDemoSales,", 1)[0]
+        financial_source = source.split("function financialSalesSource()", 1)[1].split("function profitWindowedSales", 1)[0]
+        financial_loader = source.split("async function loadRemoteOrderFinancials()", 1)[1].split("async function reloadRemoteOrderFinancials", 1)[0]
 
         self.assertIn("financialSales: []", source)
         self.assertIn("createObjectStore('financialSales'", source)
         self.assertIn("state.financialSales = detailed;", source)
         self.assertIn("const salesList = Array.isArray(salesScope) ? salesScope : financialSalesSource();", source)
         self.assertIn("!String(sale?.saleNumber || '').startsWith('daily:')", source)
+        self.assertIn("return stored.filter(isDedicatedFinancialSale);", financial_source)
+        self.assertNotIn("state.sales.filter", financial_source)
+        self.assertIn("const window = reportWindowData();", financial_loader)
+        self.assertIn("date_from=${dateFrom}&date_to=${dateTo}", financial_loader)
+        self.assertNotIn("state.sales.map", financial_loader)
         self.assertNotIn("loadRemoteOrderFinancials()", boot)
+        self.assertNotIn("persistSaleCostLedger(state.sales)", boot)
         self.assertIn("reloadRemoteOrderFinancials();", memory_hydration)
         self.assertNotIn("clearStore('saleCosts')", memory_hydration)
 
