@@ -1016,7 +1016,8 @@
       const sellingFee = componentValues('selling_fee_gross').length
         ? amount('selling_fee_gross', 'expense')
         : (componentValues('selling_fee_net').length ? amount('selling_fee_net', 'expense') : amount('selling_fee', 'expense'));
-      const shippingFee = componentValues('shipping_fee_allocated').length
+      const shippingNetAlreadyAllocated = componentValues('shipping_fee_allocated').length > 0;
+      const shippingFee = shippingNetAlreadyAllocated
         ? amount('shipping_fee_allocated', 'expense')
         : amount('shipping_fee', 'expense');
       const installmentEquivalent = Math.abs(amount('installment_fee'));
@@ -1037,6 +1038,7 @@
         unitPrice, total: productRevenue, buyerPriceIncrease: installmentEquivalent, sellingFee,
         commissionRate: productRevenue ? Math.abs(sellingFee) / productRevenue : 0,
         shippingRevenue, shippingFee,
+        shippingNetAlreadyAllocated,
         discounts: amount('promotion_discount', 'benefit') + amount('promotion_subsidy', 'benefit') + amount('bonus', 'benefit'),
         refunds: amount('refund_or_reversal', 'expense'), installmentFee: -installmentEquivalent,
         shippingExchangeCost: amount('shipping_exchange', 'expense'), shippingMeasurementCost: amount('shipping_measurement', 'expense'),
@@ -2111,7 +2113,7 @@
     function financialBase(sale) {
       return Number(sale?.productRevenue || 0)
         + Number(sale?.buyerPriceIncrease || 0)
-        + Number(sale?.shippingRevenue || 0)
+        + (sale?.shippingNetAlreadyAllocated ? 0 : Number(sale?.shippingRevenue || 0))
         + Number(sale?.sellingFee || 0)
         + Number(sale?.installmentFee || 0)
         + Number(sale?.shippingFee || 0)
