@@ -1666,6 +1666,14 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     online_notice = (
         f"Base online carregada via OAuth/cache para {client_label}. Cobertura inicial: {period['dateFrom']} ate {period['dateTo']}. O historico restante esta sendo preparado em segundo plano."
     )
+    if latest_payload.get("period_cache_complete") is False:
+        coverage = sales.get("coverage") if isinstance(sales.get("coverage"), dict) else {}
+        persisted = int(_number(coverage.get("sales_item_days_persisted")))
+        expected = int(_number(coverage.get("item_days_expected")))
+        online_notice = (
+            f"Base online parcialmente materializada para {client_label}: {persisted} de {expected} "
+            "item-dias ja persistidos. A coleta desta mesma janela continua em segundo plano."
+        )
     if any(daily.get("fallback_aggregate") for daily in daily_rows):
         online_notice += " Fonte: cache agregado da conta usado como fallback porque os snapshots diarios ainda nao estavam disponiveis."
     else:

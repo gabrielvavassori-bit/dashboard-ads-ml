@@ -648,6 +648,24 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIsNone(payload)
         self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
 
+    def test_sales_intelligence_accepts_exact_partial_snapshot_while_backfill_runs(self):
+        partial_payload = {
+            "ok": True,
+            "period_cache_hit": True,
+            "period_cache_complete": False,
+            "latest": {"date_from": "2026-08-28", "date_to": "2026-09-03"},
+            "ads": {"date_from": "2026-08-28", "date_to": "2026-09-03", "items": []},
+            "sales": {"date_from": "2026-08-28", "date_to": "2026-09-03", "items": {}},
+        }
+        with patch.object(app, "_fetch_dash_ads_json", return_value=partial_payload) as fetch:
+            payload, message = app._sales_intelligence_fetch_latest(
+                "conta-ativa", "adv-1", "2026-08-28", "2026-09-03"
+            )
+
+        self.assertEqual(message, "")
+        self.assertIs(payload, partial_payload)
+        self.assertEqual(fetch.call_count, 1)
+
     def test_sales_intelligence_falls_back_to_aggregate_cache_when_daily_snapshot_fails(self):
         latest = {
             "sales": {"items": {"MLB123": {
