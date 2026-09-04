@@ -19,9 +19,12 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(period["dateTo"], "2026-07-30")
         self.assertEqual(period["label"], "Ultimos 7 dias fechados")
 
-    def test_sales_intelligence_full_period_remains_available_for_background_warmup(self):
-        period = app._sales_intelligence_full_period(NOW)
-        self.assertEqual(period, {"dateFrom": "2026-04-03", "dateTo": "2026-07-30"})
+    def test_sales_intelligence_opening_does_not_start_a_full_history_refresh(self):
+        source = Path(__file__).with_name("app.py").read_text(encoding="utf-8")
+        builder = source.split("def _build_sales_intelligence_memory_data", 1)[1].split(
+            "def _inject_sales_intelligence_memory_data", 1
+        )[0]
+        self.assertNotIn("online-cache-refresh", builder)
 
     def test_sku_view_keeps_children_available_for_separate_mlbu_boxes(self):
         base = {
@@ -612,10 +615,11 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(data["sales"][0]["productRevenue"], 150)
         self.assertEqual(data["sales"][0]["sku"], "SKU-123")
 
-    def test_sales_intelligence_reports_pending_while_period_refresh_runs(self):
+    def test_sales_intelligence_reports_pending_while_hourly_refresh_runs(self):
         stale_payload = {
             "ok": True,
             "period_cache_hit": False,
+            "status": {"status": "running"},
             "latest": {
                 "date_from": "2026-07-24",
                 "date_to": "2026-08-22",
@@ -632,9 +636,10 @@ class OnlinePeriodTests(unittest.TestCase):
             },
         }
 
+        calls = []
+
         def fake_fetch(path, _params):
-            if path.endswith("online-cache-refresh"):
-                return {"ok": True, "status": "running", "http_status": 202}
+            calls.append(path)
             return stale_payload
 
         with patch.object(app, "_fetch_dash_ads_json", side_effect=fake_fetch):
@@ -647,6 +652,7 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertIsNone(payload)
         self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
+        self.assertEqual(calls, ["/internal/dash-ads/online-cache-latest"])
 
     def test_sales_intelligence_accepts_exact_partial_snapshot_while_backfill_runs(self):
         partial_payload = {

@@ -1233,32 +1233,6 @@ def _sales_intelligence_default_period(now: datetime | None = None) -> dict:
     }
 
 
-def _sales_intelligence_full_period(now: datetime | None = None) -> dict:
-    current = (now or datetime.now(ONLINE_TZ)).date()
-    yesterday = current - timedelta(days=1)
-    return {
-        "dateFrom": (current - timedelta(days=119)).isoformat(),
-        "dateTo": yesterday.isoformat(),
-    }
-
-
-def _sales_intelligence_warm_full_cache(client: str, advertiser_id: str, bootstrap_period: dict) -> None:
-    full_period = _sales_intelligence_full_period()
-    if full_period["dateFrom"] == bootstrap_period.get("dateFrom"):
-        return
-
-    def refresh() -> None:
-        try:
-            _fetch_dash_ads_json(
-                "/internal/dash-ads/online-cache-refresh",
-                {"client": client, "advertiser_id": advertiser_id, **full_period},
-            )
-        except Exception:
-            pass
-
-    threading.Thread(target=refresh, daemon=True).start()
-
-
 def _sales_intelligence_period_from_payload(latest_payload: dict) -> dict | None:
     if not isinstance(latest_payload, dict) or not latest_payload.get("ok"):
         return None
@@ -1327,30 +1301,8 @@ def _sales_intelligence_fetch_latest(client: str, advertiser_id: str, date_from:
     )
     if period_match:
         return latest_payload, ""
-    refresh_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-refresh", params)
-    refreshed_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-latest", params)
-    if refreshed_payload.get("ok"):
-        latest_payload = refreshed_payload
-        latest = refreshed_payload.get("latest") if isinstance(refreshed_payload.get("latest"), dict) else {}
-        ads = refreshed_payload.get("ads") if isinstance(refreshed_payload.get("ads"), dict) else {}
-        sales = refreshed_payload.get("sales") if isinstance(refreshed_payload.get("sales"), dict) else {}
-        latest_from = str(latest.get("date_from") or ads.get("date_from") or "").strip()
-        latest_to = str(latest.get("date_to") or ads.get("date_to") or "").strip()
-        period_cache_hit = refreshed_payload.get("period_cache_hit") is not False
-        period_match = (
-            period_cache_hit
-            and latest_from == date_from
-            and latest_to == date_to
-            and str(ads.get("date_from") or "").strip() == date_from
-            and str(ads.get("date_to") or "").strip() == date_to
-            and str(sales.get("date_from") or "").strip() == date_from
-            and str(sales.get("date_to") or "").strip() == date_to
-        )
-        if period_match:
-            return latest_payload, ""
-    refresh_running = refresh_payload.get("ok") and refresh_payload.get("status") == "running"
     cached_status = latest_payload.get("status") if isinstance(latest_payload.get("status"), dict) else {}
-    if refresh_running or cached_status.get("status") == "running":
+    if cached_status.get("status") == "running":
         return None, (
             f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {date_from} a {date_to}. "
             "A pagina sera atualizada automaticamente quando a coleta terminar."
@@ -1526,7 +1478,6 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     )
     if not latest_payload:
         return None, message
-    _sales_intelligence_warm_full_cache(client_id, advertiser_id, period)
 
     sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
     sales_items = sales.get("items") if isinstance(sales.get("items"), dict) else {}
