@@ -654,6 +654,35 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
         self.assertEqual(calls, ["/internal/dash-ads/online-cache-latest"])
 
+    def test_sales_intelligence_reports_pending_when_hourly_snapshot_is_not_ready(self):
+        empty_payload = {
+            "ok": True,
+            "period_cache_hit": False,
+            "latest": {},
+            "ads": {},
+            "sales": {},
+        }
+
+        with patch.object(app, "_fetch_dash_ads_json", return_value=empty_payload) as fetch:
+            payload, message = app._sales_intelligence_fetch_latest(
+                "conta-ativa",
+                "adv-1",
+                "2026-08-28",
+                "2026-09-03",
+            )
+
+        self.assertIsNone(payload)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
+        fetch.assert_called_once_with(
+            "/internal/dash-ads/online-cache-latest",
+            {
+                "client": "conta-ativa",
+                "advertiser_id": "adv-1",
+                "date_from": "2026-08-28",
+                "date_to": "2026-09-03",
+            },
+        )
+
     def test_sales_intelligence_accepts_exact_partial_snapshot_while_backfill_runs(self):
         partial_payload = {
             "ok": True,

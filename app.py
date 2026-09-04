@@ -1302,7 +1302,7 @@ def _sales_intelligence_fetch_latest(client: str, advertiser_id: str, date_from:
     if period_match:
         return latest_payload, ""
     cached_status = latest_payload.get("status") if isinstance(latest_payload.get("status"), dict) else {}
-    if cached_status.get("status") == "running":
+    if cached_status.get("status") == "running" or not (latest_from or latest_to):
         return None, (
             f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {date_from} a {date_to}. "
             "A pagina sera atualizada automaticamente quando a coleta terminar."
