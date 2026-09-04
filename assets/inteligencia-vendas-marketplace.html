@@ -824,9 +824,10 @@
     const DB_NAME = 'un_clic_marketplace_intelligence_v1';
     const DB_VERSION = 4;
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
-    const state = { sales: [], financialSales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardChartHover: -1, dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, flexCarrierCost: 0, costBySku: {}, costByKey: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', remoteFinancialsLoaded: false, remoteFinancialRange: '', financialLoadError: '', governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], consulted_human_decisions: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
+    const state = { sales: [], financialSales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, flexCarrierCost: 0, costBySku: {}, costByKey: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', remoteFinancialsLoaded: false, remoteFinancialRange: '', financialLoadError: '', financialLoadPending: false, governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
     let remoteFinanceSyncTimer = null;
+    let remoteFinanceRetryTimer = null;
     let remoteFinancePendingRows = [];
 
     const $ = (id) => document.getElementById(id);
@@ -1112,6 +1113,17 @@
             : (Array.isArray(payload.financials) ? payload.financials
               : (Array.isArray(payload.order_financials) ? payload.order_financials : [])));
         if (!response.ok || payload.ok === false) throw new Error(payload.error || payload.erro || `HTTP ${response.status}`);
+        const financialStatus = payload.financial_status || {};
+        if (financialStatus.status === 'preparando' || financialStatus.status === 'rodando') {
+          state.financialLoadPending = true;
+          clearTimeout(remoteFinanceRetryTimer);
+          remoteFinanceRetryTimer = setTimeout(() => {
+            state.remoteFinancialsLoaded = false;
+            loadRemoteOrderFinancials();
+          }, 15000);
+          return;
+        }
+        state.financialLoadPending = false;
         const skuByMlb = new Map(state.sales
           .filter((sale) => sale.mlb && sale.sku)
           .map((sale) => [normKey(sale.mlb), sale.sku]));
@@ -1124,6 +1136,7 @@
         if (detailed.length) await putMany('financialSales', detailed);
         await persistSaleCostLedger(detailed);
       } catch (err) {
+        state.financialLoadPending = false;
         state.financialLoadError = err?.name === 'AbortError'
           ? 'A consulta financeira excedeu 45 segundos.'
           : String(err?.message || err || 'Falha ao carregar dados financeiros.');
@@ -1135,6 +1148,7 @@
 
     async function reloadRemoteOrderFinancials() {
       if (location.protocol === 'file:') return;
+      clearTimeout(remoteFinanceRetryTimer);
       state.financialSales = [];
       state.remoteFinancialsLoaded = false;
       state.remoteFinancialRange = '';
@@ -3557,7 +3571,8 @@
       if (!financialSource.length) {
         const message = state.financialLoadError
           ? `Falha ao carregar a base financeira separada: ${state.financialLoadError}`
-          : (state.remoteFinancialsLoaded ? 'Nenhuma venda financeira encontrada neste historico.' : 'Carregando base financeira separada...');
+          : (state.financialLoadPending ? 'Preparando a base financeira separada. Os SKUs aparecerao automaticamente quando a coleta terminar.'
+            : (state.remoteFinancialsLoaded ? 'Nenhuma venda financeira encontrada neste historico.' : 'Carregando base financeira separada...'));
         $('profitSummary').innerHTML = `<div class="notice">${esc(message)}</div>`;
         $('profitTable').innerHTML = '<div class="empty">Os snapshots diarios nao sao usados para calcular lucro por venda.</div>';
         $('profitDetail').innerHTML = '';
