@@ -13,6 +13,16 @@ NOW = datetime(2026, 7, 31, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
 class OnlinePeriodTests(unittest.TestCase):
+    def test_sales_intelligence_bootstrap_is_seven_closed_days(self):
+        period = app._sales_intelligence_default_period(NOW)
+        self.assertEqual(period["dateFrom"], "2026-07-24")
+        self.assertEqual(period["dateTo"], "2026-07-30")
+        self.assertEqual(period["label"], "Ultimos 7 dias fechados")
+
+    def test_sales_intelligence_full_period_remains_available_for_background_warmup(self):
+        period = app._sales_intelligence_full_period(NOW)
+        self.assertEqual(period, {"dateFrom": "2026-04-03", "dateTo": "2026-07-30"})
+
     def test_sku_view_keeps_children_available_for_separate_mlbu_boxes(self):
         base = {
             "sku": "SKU-1", "title": "Produto", "campaign": "Campanha",

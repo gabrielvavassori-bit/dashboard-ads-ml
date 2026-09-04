@@ -1224,13 +1224,39 @@ def _render_sales_intelligence() -> str:
 def _sales_intelligence_default_period(now: datetime | None = None) -> dict:
     current = (now or datetime.now(ONLINE_TZ)).date()
     yesterday = current - timedelta(days=1)
-    start = current - timedelta(days=119)
+    start = current - timedelta(days=7)
     return {
         "mode": "bootstrap",
         "dateFrom": start.isoformat(),
         "dateTo": yesterday.isoformat(),
-        "label": "Ultimos 120 dias fechados",
+        "label": "Ultimos 7 dias fechados",
     }
+
+
+def _sales_intelligence_full_period(now: datetime | None = None) -> dict:
+    current = (now or datetime.now(ONLINE_TZ)).date()
+    yesterday = current - timedelta(days=1)
+    return {
+        "dateFrom": (current - timedelta(days=119)).isoformat(),
+        "dateTo": yesterday.isoformat(),
+    }
+
+
+def _sales_intelligence_warm_full_cache(client: str, advertiser_id: str, bootstrap_period: dict) -> None:
+    full_period = _sales_intelligence_full_period()
+    if full_period["dateFrom"] == bootstrap_period.get("dateFrom"):
+        return
+
+    def refresh() -> None:
+        try:
+            _fetch_dash_ads_json(
+                "/internal/dash-ads/online-cache-refresh",
+                {"client": client, "advertiser_id": advertiser_id, **full_period},
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=refresh, daemon=True).start()
 
 
 def _sales_intelligence_period_from_payload(latest_payload: dict) -> dict | None:
@@ -1491,10 +1517,6 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     if not client_id:
         return None, "Conta Mercado Livre vinculada sem client_id ativo."
     advertiser_id = str(link["advertiser_id"] or "").strip()
-    latest_hint = _fetch_dash_ads_json(
-        "/internal/dash-ads/online-cache-latest",
-        {"client": client_id, "advertiser_id": advertiser_id},
-    )
     period = _sales_intelligence_default_period()
     latest_payload, message = _sales_intelligence_fetch_latest(
         client_id,
@@ -1504,6 +1526,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     )
     if not latest_payload:
         return None, message
+    _sales_intelligence_warm_full_cache(client_id, advertiser_id, period)
 
     sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
     sales_items = sales.get("items") if isinstance(sales.get("items"), dict) else {}
@@ -1641,7 +1664,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     imported_at = datetime.now(ONLINE_TZ).isoformat(timespec="seconds")
     client_label = link["official_store"] or link["nickname"] or client_id or (user["name"] or user["email"])
     online_notice = (
-        f"Base online carregada via OAuth/cache para {client_label}. Cobertura inicial: {period['dateFrom']} ate {period['dateTo']}."
+        f"Base online carregada via OAuth/cache para {client_label}. Cobertura inicial: {period['dateFrom']} ate {period['dateTo']}. O historico restante esta sendo preparado em segundo plano."
     )
     if any(daily.get("fallback_aggregate") for daily in daily_rows):
         online_notice += " Fonte: cache agregado da conta usado como fallback porque os snapshots diarios ainda nao estavam disponiveis."
