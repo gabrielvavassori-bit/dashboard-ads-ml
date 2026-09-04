@@ -527,10 +527,11 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIsNone(data)
         self.assertIn("fora do periodo", message)
 
-    def test_online_builder_reports_pending_while_period_refresh_runs(self):
+    def test_online_builder_reports_pending_when_no_snapshot_is_available(self):
         stale_payload = {
             "ok": True,
             "period_cache_hit": False,
+            "period_cache_complete": False,
             "latest": {
                 "date_from": "2026-07-24",
                 "date_to": "2026-07-30",
@@ -559,11 +560,51 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertIsNone(data)
         self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
-        html = app.templates.render_online_cache_pending(
-            message[len(app.ONLINE_CACHE_PENDING_PREFIX):],
-        )
-        self.assertIn("Preparando o periodo selecionado", html)
-        self.assertIn("window.location.reload", html)
+
+    def test_online_builder_renders_completed_snapshot_fallback_while_refresh_runs(self):
+        fallback = {
+            "ok": True,
+            "period_cache_hit": True,
+            "period_cache_complete": True,
+            "fallback": {
+                "reason": "latest_complete_7d",
+                "requested": {"date_from": "2026-08-05", "date_to": "2026-09-03"},
+                "served": {"date_from": "2026-08-16", "date_to": "2026-08-22"},
+            },
+            "latest": {
+                "date_from": "2026-08-16", "date_to": "2026-08-22",
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": "2026-08-16", "date_to": "2026-08-22",
+                "items": [{"item_id": "MLB123", "cost": 10, "total_amount": 100, "direct_amount": 80}],
+            },
+            "campaigns": {"campaigns": []},
+            "sales": {
+                "date_from": "2026-08-16", "date_to": "2026-08-22",
+                "items": {"MLB123": {"revenue_total": 120, "orders_count": 1, "units_total": 1}},
+            },
+        }
+
+        def fetch(path, params=None):
+            if path.endswith("online-cache-refresh"):
+                return {"ok": True, "status": "running"}
+            if path.endswith("sales-daily") or path.endswith("ads-daily"):
+                return {"ok": True, "rows": []}
+            if params and params.get("fallback"):
+                return fallback
+            return {"ok": True, "period_cache_hit": False, "latest": {}, "ads": {}, "sales": {}}
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
+            data, error = app._build_online_dashboard_data(
+                "conta-ativa", "adv-1", "2026-08-05", "2026-09-03",
+                {"dateFrom": "2026-08-05", "dateTo": "2026-09-03"},
+            )
+
+        self.assertEqual(error, "")
+        self.assertEqual(data["meta"]["period"], {"dateFrom": "2026-08-16", "dateTo": "2026-08-22"})
+        self.assertFalse(data["meta"]["onlineMode"]["periodMatch"])
+        self.assertIn("ultimo periodo completo", data["meta"]["onlineMode"]["notice"])
 
     def test_sales_intelligence_injection_uses_real_final_body_tag(self):
         html = "<html><body><script>var sample = '</body>';</script><div>ok</div></body></html>"

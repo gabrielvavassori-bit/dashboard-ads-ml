@@ -549,19 +549,24 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     requested_at = datetime.now().astimezone().isoformat(timespec="seconds")
     requested_from = date_from or (requested_period or {}).get("dateFrom") or ""
     requested_to = date_to or (requested_period or {}).get("dateTo") or ""
-    period_params = {"date_from": requested_from, "date_to": requested_to}
-    latest_payload = _fetch_dash_ads_json(
-        "/internal/dash-ads/online-cache-latest",
-        {"client": client, "advertiser_id": advertiser_id, **period_params},
+    # The dashboard must render persisted snapshots before asking the agent to
+    # refresh a missing range. The helper returns an exact partial range when
+    # available, or a separate completed seven-day fallback while refresh runs.
+    latest_payload, cache_error = _sales_intelligence_fetch_latest(
+        client,
+        advertiser_id,
+        requested_from,
+        requested_to,
     )
-    if not latest_payload.get("ok"):
-        return None, "Nao foi possivel ler o snapshot online agora. A coleta segue em segundo plano; tente novamente em alguns minutos."
+    if not latest_payload:
+        return None, cache_error
 
     latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
     ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
     sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
     latest_date_from = latest.get("date_from") or ads.get("date_from") or ""
     latest_date_to = latest.get("date_to") or ads.get("date_to") or ""
+    served_period_params = {"date_from": latest_date_from, "date_to": latest_date_to}
     period_cache_hit = latest_payload.get("period_cache_hit") is not False
     period_match = not (requested_from or requested_to) or (
         period_cache_hit
@@ -572,46 +577,6 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         and sales.get("date_from") == requested_from
         and sales.get("date_to") == requested_to
     )
-    refresh_payload = {}
-    if not period_match and requested_from and requested_to:
-        refresh_payload = _fetch_dash_ads_json(
-            "/internal/dash-ads/online-cache-refresh",
-            {"client": client, "advertiser_id": advertiser_id, **period_params},
-        )
-        refreshed_payload = _fetch_dash_ads_json(
-            "/internal/dash-ads/online-cache-latest",
-            {"client": client, "advertiser_id": advertiser_id, **period_params},
-        )
-        if refreshed_payload.get("ok"):
-            latest_payload = refreshed_payload
-            period_cache_hit = refreshed_payload.get("period_cache_hit") is not False
-            latest = refreshed_payload.get("latest") if isinstance(refreshed_payload.get("latest"), dict) else {}
-            ads = refreshed_payload.get("ads") if isinstance(refreshed_payload.get("ads"), dict) else {}
-            sales = refreshed_payload.get("sales") if isinstance(refreshed_payload.get("sales"), dict) else {}
-    latest_date_from = latest.get("date_from") or ads.get("date_from") or ""
-    latest_date_to = latest.get("date_to") or ads.get("date_to") or ""
-    period_match = not (requested_from or requested_to) or (
-        period_cache_hit
-        and latest_date_from == requested_from
-        and latest_date_to == requested_to
-        and ads.get("date_from") == requested_from
-        and ads.get("date_to") == requested_to
-        and sales.get("date_from") == requested_from
-        and sales.get("date_to") == requested_to
-    )
-    if not period_match:
-        refresh_running = refresh_payload.get("ok") and refresh_payload.get("status") == "running"
-        cached_status = latest_payload.get("status") if isinstance(latest_payload.get("status"), dict) else {}
-        if refresh_running or cached_status.get("status") == "running":
-            return None, (
-                f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {requested_from} a {requested_to}. "
-                "A pagina sera atualizada automaticamente quando a coleta terminar."
-            )
-        return None, (
-            f"Cache online fora do periodo selecionado ({latest_date_from or 'sem data'} a "
-            f"{latest_date_to or 'sem data'}). Solicitado {requested_from or 'sem data'} a "
-            f"{requested_to or 'sem data'}. Atualize a coleta online e tente novamente."
-        )
     campaigns = latest_payload.get("campaigns") if isinstance(latest_payload.get("campaigns"), dict) else {}
     campaign_rows = campaigns.get("campaigns") if isinstance(campaigns.get("campaigns"), list) else []
     campaign_config_by_id = {
@@ -653,7 +618,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                     "client": client,
                     "advertiser_id": advertiser_id,
                     "items": ",".join(reconciliation_item_ids),
-                    **period_params,
+                    **served_period_params,
                 },
             )
             reconciliation_from = str(reconciliation.get("date_from") or "")
@@ -953,13 +918,19 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         "snapshotAt": snapshot_at,
         "snapshotAgeSeconds": snapshot_age_seconds,
         "snapshotSource": "agente-ml / online-cache-latest",
-        "snapshotCadence": "diario as 06:00 (America/Sao_Paulo) + atualizacao sob demanda",
+        "snapshotCadence": "diario as 00:20 (America/Sao_Paulo) + atualizacao sob demanda",
     }
     cache_status = "completo" if complete else "parcial"
     notice = (
         f"Modo online beta: leitura autenticada do faturamento bruto do cache da conta. A cobertura de vendas esta {cache_status}; "
         "confira pelo XLSX detalhado antes de qualquer decisao financeira definitiva."
     )
+    fallback_info = latest_payload.get("fallback") if isinstance(latest_payload.get("fallback"), dict) else {}
+    if fallback_info.get("reason") == "latest_complete_7d":
+        notice += (
+            f" Exibindo o ultimo periodo completo ({latest_date_from} a {latest_date_to}) "
+            "enquanto o periodo solicitado e atualizado em segundo plano."
+        )
     if ads_deduplication["hasDuplicates"]:
         notice += (
             f" Foram removidas {ads_deduplication['removedRows']} linhas duplicadas do cache de Ads "
@@ -1329,7 +1300,10 @@ def _sales_intelligence_fetch_latest(client: str, advertiser_id: str, date_from:
     ):
         fallback_payload["background_refresh"] = refresh_payload
         return fallback_payload, ""
-    if cached_status.get("status") == "running" or not (latest_from or latest_to):
+    if (
+        refresh_payload.get("ok")
+        and refresh_payload.get("status") == "running"
+    ) or cached_status.get("status") == "running" or not (latest_from or latest_to):
         return None, (
             f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {date_from} a {date_to}. "
             "A pagina sera atualizada automaticamente quando a coleta terminar."
