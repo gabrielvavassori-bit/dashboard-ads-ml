@@ -1224,12 +1224,12 @@ def _render_sales_intelligence() -> str:
 def _sales_intelligence_default_period(now: datetime | None = None) -> dict:
     current = (now or datetime.now(ONLINE_TZ)).date()
     yesterday = current - timedelta(days=1)
-    start = current - timedelta(days=7)
+    start = current - timedelta(days=90)
     return {
         "mode": "bootstrap",
         "dateFrom": start.isoformat(),
         "dateTo": yesterday.isoformat(),
-        "label": "Ultimos 7 dias fechados",
+        "label": "Ultimos 90 dias fechados",
     }
 
 
@@ -1300,8 +1300,35 @@ def _sales_intelligence_fetch_latest(client: str, advertiser_id: str, date_from:
         and str(sales.get("date_to") or "").strip() == date_to
     )
     if period_match:
+        if latest_payload.get("period_cache_complete") is False:
+            try:
+                latest_payload["background_refresh"] = _fetch_dash_ads_json(
+                    "/internal/dash-ads/online-cache-refresh", params
+                )
+            except Exception:
+                latest_payload["background_refresh"] = {"ok": False, "status": "unavailable"}
         return latest_payload, ""
     cached_status = latest_payload.get("status") if isinstance(latest_payload.get("status"), dict) else {}
+    refresh_payload = {}
+    if cached_status.get("status") != "running":
+        try:
+            refresh_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-refresh", params)
+        except Exception:
+            refresh_payload = {"ok": False, "status": "unavailable"}
+    fallback_payload = _fetch_dash_ads_json(
+        "/internal/dash-ads/online-cache-latest",
+        {**params, "fallback": "latest_complete_7d"},
+    )
+    fallback_period = _sales_intelligence_period_from_payload(fallback_payload)
+    fallback_info = fallback_payload.get("fallback") if isinstance(fallback_payload.get("fallback"), dict) else {}
+    if (
+        fallback_payload.get("ok")
+        and fallback_payload.get("period_cache_complete") is True
+        and fallback_info.get("reason") == "latest_complete_7d"
+        and fallback_period
+    ):
+        fallback_payload["background_refresh"] = refresh_payload
+        return fallback_payload, ""
     if cached_status.get("status") == "running" or not (latest_from or latest_to):
         return None, (
             f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {date_from} a {date_to}. "
@@ -1479,13 +1506,17 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     if not latest_payload:
         return None, message
 
+    actual_period = _sales_intelligence_period_from_payload(latest_payload) or period
+    fallback_info = latest_payload.get("fallback") if isinstance(latest_payload.get("fallback"), dict) else {}
+    is_fallback = fallback_info.get("reason") == "latest_complete_7d"
+
     sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
     sales_items = sales.get("items") if isinstance(sales.get("items"), dict) else {}
     item_meta = _sales_intelligence_collect_item_meta(latest_payload)
     daily_rows, daily_error = _sales_intelligence_fetch_daily_sales(
         client_id,
-        period["dateFrom"],
-        period["dateTo"],
+        actual_period["dateFrom"],
+        actual_period["dateTo"],
     )
     if daily_error:
         daily_rows = []
@@ -1503,7 +1534,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
             "sales": [],
             "imports": [],
             "events": [],
-            "reportWindow": "7d",
+            "reportWindow": "7d" if is_fallback else "30d",
             "profitWindow": "30d",
             "globalSearchScope": "code",
             "globalSearch": "",
@@ -1517,7 +1548,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
             if qty <= 0 and gross <= 0:
                 continue
             raw_date = str(sale.get("last_sale_date") or "").strip()
-            snapshot_date = raw_date[:10] if len(raw_date) >= 10 else period["dateTo"]
+            snapshot_date = raw_date[:10] if len(raw_date) >= 10 else actual_period["dateTo"]
             daily_rows.append({
                 "item_id": code,
                 "snapshot_date": snapshot_date,
@@ -1536,7 +1567,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
                 "thumbnail_url": str(meta.get("thumbnailUrl") or "").strip(),
             })
     sales_rows = []
-    import_id = f"online:{client_id}:{period['dateFrom']}:{period['dateTo']}"
+    import_id = f"online:{client_id}:{actual_period['dateFrom']}:{actual_period['dateTo']}"
     row_number = 0
     for daily in daily_rows:
         code = _normalize_mlb_code(daily.get("item_id"))
@@ -1615,8 +1646,13 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     imported_at = datetime.now(ONLINE_TZ).isoformat(timespec="seconds")
     client_label = link["official_store"] or link["nickname"] or client_id or (user["name"] or user["email"])
     online_notice = (
-        f"Base online carregada via OAuth/cache para {client_label}. Cobertura inicial: {period['dateFrom']} ate {period['dateTo']}. O historico restante esta sendo preparado em segundo plano."
+        f"Base online carregada via snapshots SQL para {client_label}. Cobertura solicitada: {period['dateFrom']} ate {period['dateTo']}."
     )
+    if is_fallback:
+        online_notice += (
+            f" A janela mais recente ainda esta em coleta; exibindo a ultima janela completa de "
+            f"{actual_period['dateFrom']} ate {actual_period['dateTo']} enquanto a solicitada segue em segundo plano."
+        )
     if latest_payload.get("period_cache_complete") is False:
         coverage = sales.get("coverage") if isinstance(sales.get("coverage"), dict) else {}
         persisted = int(_number(coverage.get("sales_item_days_persisted")))
@@ -1637,8 +1673,8 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
         "imports": [{
             "importId": import_id,
             "fileName": f"OAuth Mercado Livre - {client_label}",
-            "periodStart": period["dateFrom"],
-            "periodEnd": period["dateTo"],
+            "periodStart": actual_period["dateFrom"],
+            "periodEnd": actual_period["dateTo"],
             "rows": len(sales_rows),
             "newRows": len(sales_rows),
             "duplicateRows": 0,
@@ -1648,7 +1684,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
             "importedAt": imported_at,
         }],
         "events": [],
-        "reportWindow": "7d",
+        "reportWindow": "7d" if is_fallback else "30d",
         "profitWindow": "30d",
         "globalSearchScope": "code",
         "globalSearch": "",

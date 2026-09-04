@@ -13,11 +13,11 @@ NOW = datetime(2026, 7, 31, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
 class OnlinePeriodTests(unittest.TestCase):
-    def test_sales_intelligence_bootstrap_is_seven_closed_days(self):
+    def test_sales_intelligence_bootstrap_is_ninety_closed_days(self):
         period = app._sales_intelligence_default_period(NOW)
-        self.assertEqual(period["dateFrom"], "2026-07-24")
+        self.assertEqual(period["dateFrom"], "2026-05-02")
         self.assertEqual(period["dateTo"], "2026-07-30")
-        self.assertEqual(period["label"], "Ultimos 7 dias fechados")
+        self.assertEqual(period["label"], "Ultimos 90 dias fechados")
 
     def test_sales_intelligence_opening_does_not_start_a_full_history_refresh(self):
         source = Path(__file__).with_name("app.py").read_text(encoding="utf-8")
@@ -652,7 +652,10 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertIsNone(payload)
         self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
-        self.assertEqual(calls, ["/internal/dash-ads/online-cache-latest"])
+        self.assertEqual(calls, [
+            "/internal/dash-ads/online-cache-latest",
+            "/internal/dash-ads/online-cache-latest",
+        ])
 
     def test_sales_intelligence_reports_pending_when_hourly_snapshot_is_not_ready(self):
         empty_payload = {
@@ -673,15 +676,15 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertIsNone(payload)
         self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
-        fetch.assert_called_once_with(
+        self.assertEqual(fetch.call_count, 3)
+        self.assertEqual(fetch.call_args_list[0].args, (
             "/internal/dash-ads/online-cache-latest",
-            {
-                "client": "conta-ativa",
-                "advertiser_id": "adv-1",
-                "date_from": "2026-08-28",
-                "date_to": "2026-09-03",
-            },
-        )
+            {"client": "conta-ativa", "advertiser_id": "adv-1", "date_from": "2026-08-28", "date_to": "2026-09-03"},
+        ))
+        self.assertEqual(fetch.call_args_list[-1].args, (
+            "/internal/dash-ads/online-cache-latest",
+            {"client": "conta-ativa", "advertiser_id": "adv-1", "date_from": "2026-08-28", "date_to": "2026-09-03", "fallback": "latest_complete_7d"},
+        ))
 
     def test_sales_intelligence_accepts_exact_partial_snapshot_while_backfill_runs(self):
         partial_payload = {
@@ -699,7 +702,39 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertEqual(message, "")
         self.assertIs(payload, partial_payload)
-        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual(fetch.call_count, 2)
+
+    def test_sales_intelligence_opens_latest_complete_window_while_requested_range_refreshes(self):
+        requested = {"client": "conta-ativa", "advertiser_id": "adv-1", "date_from": "2026-08-05", "date_to": "2026-09-03"}
+        fallback = {
+            "ok": True,
+            "period_cache_hit": True,
+            "period_cache_complete": True,
+            "fallback": {
+                "reason": "latest_complete_7d",
+                "requested": {"date_from": "2026-08-05", "date_to": "2026-09-03"},
+                "served": {"date_from": "2026-08-16", "date_to": "2026-08-22"},
+            },
+            "latest": {"date_from": "2026-08-16", "date_to": "2026-08-22"},
+            "ads": {"date_from": "2026-08-16", "date_to": "2026-08-22", "items": []},
+            "sales": {"date_from": "2026-08-16", "date_to": "2026-08-22", "items": {}},
+        }
+
+        def fake_fetch(path, params):
+            if path.endswith("online-cache-refresh"):
+                return {"ok": True, "status": "running"}
+            if params.get("fallback"):
+                return fallback
+            return {"ok": True, "period_cache_hit": False, "latest": {}, "ads": {}, "sales": {}}
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fake_fetch):
+            payload, message = app._sales_intelligence_fetch_latest(
+                "conta-ativa", "adv-1", requested["date_from"], requested["date_to"]
+            )
+
+        self.assertEqual(message, "")
+        self.assertIs(payload, fallback)
+        self.assertEqual(payload["background_refresh"]["status"], "running")
 
     def test_sales_intelligence_falls_back_to_aggregate_cache_when_daily_snapshot_fails(self):
         latest = {
