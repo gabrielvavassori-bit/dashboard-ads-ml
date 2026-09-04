@@ -588,6 +588,35 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     sales_by_item = sales.get("items") if isinstance(sales.get("items"), dict) else {}
     if not ads_rows:
         return None, "Ainda nao existem dados de publicidade em cache para esta conta. Aguarde a coleta online e tente novamente."
+    def cached_thumbnail(raw: dict) -> str:
+        sale = sales_by_item.get(_normalize_mlb_code(raw.get("item_id") or raw.get("id")))
+        sale = sale if isinstance(sale, dict) else {}
+        return str(
+            raw.get("thumbnail_url")
+            or raw.get("secure_thumbnail")
+            or raw.get("thumbnail")
+            or sale.get("thumbnail_url")
+            or sale.get("secure_thumbnail")
+            or sale.get("thumbnail")
+            or sale.get("picture")
+            or ""
+        ).strip()
+
+    has_cached_thumbnail = any(cached_thumbnail(raw) for raw in ads_rows if isinstance(raw, dict))
+    if not has_cached_thumbnail:
+        try:
+            _fetch_dash_ads_json(
+                "/internal/dash-ads/online-cache-refresh",
+                {
+                    "client": client,
+                    "advertiser_id": advertiser_id,
+                    "date_from": latest_date_from,
+                    "date_to": latest_date_to,
+                    "refresh_metadata": "1",
+                },
+            )
+        except Exception:
+            pass
     ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
     # O cache de Ads pode conter uma janela/estado antigo mesmo quando a
     # metadada do snapshot bate com o periodo solicitado. Nunca renderizar
@@ -2546,6 +2575,7 @@ class Handler(BaseHTTPRequestHandler):
             "client", "client_id", "site_id", "advertiser_id", "seller_id",
             "campaign_id", "item_id", "items", "date_from", "date_to",
             "include_mcp", "max_items",
+            "refresh_metadata",
         }
         query = parse_qs(url.query or "", keep_blank_values=True)
         clean_query = {

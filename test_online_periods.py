@@ -80,6 +80,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn('const above = ratio > 0;', source)
         self.assertIn("if (context === 'priceAboveAvg') return hasPriceAboveAverage(item, 0.05);", source)
         self.assertIn('.price-above-avg', source)
+        self.assertIn('"refresh_metadata": "1"', Path(__file__).with_name("app.py").read_text(encoding="utf-8"))
 
     def test_online_builder_keeps_campaign_condition_and_catalog_links_separate(self):
         payload = {
