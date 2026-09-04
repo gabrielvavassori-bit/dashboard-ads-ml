@@ -672,16 +672,27 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                     "Cache online inconsistente: a receita atribuida por Ads supera o faturamento bruto "
                     "do periodo. A reconciliacao oficial ainda nao confirmou os dados; tente novamente."
                 )
-    daily_sales_rows, daily_sales_error = _sales_intelligence_fetch_daily_sales(
+    daily_sales_result = _sales_intelligence_fetch_daily_sales(
         client,
         latest_date_from,
         latest_date_to,
     )
+    if len(daily_sales_result) == 2:
+        daily_sales_rows, daily_sales_error = daily_sales_result
+        daily_sales_coverage_days = {}
+    else:
+        daily_sales_rows, daily_sales_coverage_days, daily_sales_error = daily_sales_result
     daily_ads_rows, daily_ads_error = _sales_intelligence_fetch_daily_ads(
         client,
         latest_date_from,
         latest_date_to,
     )
+    partial_daily_dates = _daily_partial_snapshot_dates(daily_sales_coverage_days)
+    if partial_daily_dates:
+        daily_sales_rows = [
+            row for row in daily_sales_rows
+            if str(row.get("snapshot_date") or row.get("date") or "") not in partial_daily_dates
+        ]
     daily_by_item_date: dict[str, dict[str, dict]] = {}
     for daily_raw in daily_sales_rows:
         daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
@@ -1468,7 +1479,7 @@ def _sales_intelligence_fetch_orders(client: str, item_ids: list[str], date_from
     return collected, errors
 
 
-def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: str) -> tuple[list[dict], str]:
+def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: str) -> tuple[list[dict], dict, str]:
     payload = _fetch_dash_ads_json(
         "/internal/dash-ads/sales-daily",
         {
@@ -1478,9 +1489,18 @@ def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: 
         },
     )
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    coverage_days = payload.get("coverage_days") if isinstance(payload.get("coverage_days"), dict) else {}
     if payload.get("ok") is True:
-        return [row for row in rows if isinstance(row, dict)], ""
-    return [], str(payload.get("erro") or payload.get("error") or "snapshots_diarios_indisponiveis")
+        return [row for row in rows if isinstance(row, dict)], coverage_days, ""
+    return [], coverage_days, str(payload.get("erro") or payload.get("error") or "snapshots_diarios_indisponiveis")
+
+
+def _daily_partial_snapshot_dates(coverage_days: dict) -> set[str]:
+    return {
+        str(snapshot_date)
+        for snapshot_date, coverage in coverage_days.items()
+        if isinstance(coverage, dict) and coverage.get("complete") is False
+    }
 
 
 def _sales_intelligence_fetch_daily_ads(client: str, date_from: str, date_to: str) -> tuple[list[dict], str]:
@@ -1520,13 +1540,25 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
     sales_items = sales.get("items") if isinstance(sales.get("items"), dict) else {}
     item_meta = _sales_intelligence_collect_item_meta(latest_payload)
-    daily_rows, daily_error = _sales_intelligence_fetch_daily_sales(
+    daily_result = _sales_intelligence_fetch_daily_sales(
         client_id,
         actual_period["dateFrom"],
         actual_period["dateTo"],
     )
+    if len(daily_result) == 2:
+        daily_rows, daily_error = daily_result
+        daily_coverage_days = {}
+    else:
+        daily_rows, daily_coverage_days, daily_error = daily_result
     if daily_error:
         daily_rows = []
+    persisted_daily_rows = list(daily_rows)
+    partial_daily_dates = _daily_partial_snapshot_dates(daily_coverage_days)
+    if partial_daily_dates:
+        daily_rows = [
+            row for row in daily_rows
+            if str(row.get("snapshot_date") or row.get("date") or "") not in partial_daily_dates
+        ]
     if not item_meta and not daily_rows:
         if daily_error:
             return None, (
@@ -1547,7 +1579,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
             "globalSearch": "",
             "noSalesRejected": {},
         }, ""
-    if not daily_rows and item_meta:
+    if not daily_rows and item_meta and not persisted_daily_rows:
         for code, meta in item_meta.items():
             sale = sales_items.get(code) if isinstance(sales_items.get(code), dict) else {}
             qty = max(0, int(_number(sale.get("units_total"))))
@@ -1667,6 +1699,12 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
         online_notice = (
             f"Base online parcialmente materializada para {client_label}: {persisted} de {expected} "
             "item-dias ja persistidos. A coleta desta mesma janela continua em segundo plano."
+        )
+    if partial_daily_dates:
+        online_notice += (
+            " Dias parciais foram retirados dos totais e do grafico ate a fila concluir: "
+            + ", ".join(sorted(partial_daily_dates))
+            + "."
         )
     if any(daily.get("fallback_aggregate") for daily in daily_rows):
         online_notice += " Fonte: cache agregado da conta usado como fallback porque os snapshots diarios ainda nao estavam disponiveis."

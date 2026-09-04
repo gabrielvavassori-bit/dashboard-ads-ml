@@ -687,6 +687,7 @@
               <div class="seg" id="groupSeg">
                 <button data-group="family">Familia</button>
                 <button data-group="variation">Variacao</button>
+                <button data-group="hybrid">Hibrido</button>
                 <button class="active" data-group="sku">SKU</button>
                 <button data-group="mlb">Anuncio MLB</button>
                 <button data-group="campaign">Campanha</button>
@@ -738,6 +739,7 @@
               <div class="seg" id="profitGroupSeg">
                 <button data-group="family">Familia</button>
                 <button data-group="variation">Variacao</button>
+                <button data-group="hybrid">Hibrido</button>
                 <button class="active" data-group="sku">SKU</button>
                 <button data-group="mlb">Anuncio MLB</button>
                 <button data-group="campaign">Campanha</button>
@@ -1016,31 +1018,38 @@
       const sellingFee = componentValues('selling_fee_gross').length
         ? amount('selling_fee_gross', 'expense')
         : (componentValues('selling_fee_net').length ? amount('selling_fee_net', 'expense') : amount('selling_fee', 'expense'));
-      const shippingNetAlreadyAllocated = componentValues('shipping_fee_allocated').length > 0;
-      const shippingFee = shippingNetAlreadyAllocated
-        ? amount('shipping_fee_allocated', 'expense')
+      const shippingSellerDebitKnown = componentValues('shipping_seller_debit').length > 0;
+      const shippingFee = shippingSellerDebitKnown
+        ? amount('shipping_seller_debit', 'expense')
         : amount('shipping_fee', 'expense');
       const installmentEquivalent = Math.abs(amount('installment_fee'));
       const shippingRevenue = amount('shipping_buyer_paid', 'benefit', 'billing_summary.receiver_shipping_cost');
       const dateValue = order.date_closed || order.date_created || row.order_date || '';
-      const shippingFeeIndividual = componentValues('shipping_fee_allocated').length > 0 || ['shipping_fee', 'shipping_buyer_paid'].some((name) =>
+      const shippingFeeIndividual = shippingSellerDebitKnown || ['shipping_fee', 'shipping_buyer_paid'].some((name) =>
         (Array.isArray(components[name]) ? components[name] : []).some((value) => /^order\.order_items\[\d+\]\./.test(String(value.path || '')))
       );
       const packId = row.pack_id || order.pack_id || row.order_id || '';
+      const orderStatus = String(order.status || 'paid').toLowerCase();
+      const refunds = amount('refund_or_reversal', 'expense');
+      const eventClass = /cancel|invalid/.test(orderStatus)
+        ? 'cancelamento'
+        : (/partially_refunded|returned|return/.test(orderStatus)
+          ? 'devolucao'
+          : (Math.abs(refunds) > 0.005 ? 'reembolso_a_conciliar' : 'venda'));
       return {
         dedupeKey: `remote:${row.line_id}:${row.snapshot_date}`,
         importId: `remote-financial:${row.client_id}`,
         fileName: 'Snapshot financeiro Mercado Livre', rowNumber: 0,
         client: norm($('clientName')?.value || 'CLIENTE_TESTE'), channel: 'Mercado Livre',
         saleNumber: row.order_id || '', date: dateValue ? new Date(dateValue) : null,
-        month: String(dateValue).slice(0, 7), status: String(order.status || 'paid'),
-        lineType: 'item_sale', eventClass: 'venda', units, productRevenue,
+        month: String(dateValue).slice(0, 7), status: orderStatus,
+        lineType: 'item_sale', eventClass, units, productRevenue,
         unitPrice, total: productRevenue, buyerPriceIncrease: installmentEquivalent, sellingFee,
         commissionRate: productRevenue ? Math.abs(sellingFee) / productRevenue : 0,
         shippingRevenue, shippingFee,
-        shippingNetAlreadyAllocated,
+        shippingNetAlreadyAllocated: false,
         discounts: amount('promotion_discount', 'benefit') + amount('promotion_subsidy', 'benefit') + amount('bonus', 'benefit'),
-        refunds: amount('refund_or_reversal', 'expense'), installmentFee: -installmentEquivalent,
+        refunds, installmentFee: -installmentEquivalent,
         shippingExchangeCost: amount('shipping_exchange', 'expense'), shippingMeasurementCost: amount('shipping_measurement', 'expense'),
         shippingWeightDifferenceCost: amount('shipping_weight', 'expense'), shippingSubsidy: amount('shipping_subsidy', 'benefit'),
         financialComponents: components, sku: normKey(row.sku || item.seller_sku || item.seller_custom_field || ''),
@@ -2100,20 +2109,25 @@
       return values.filter(([, value]) => normKey(value)).map(([kind, value]) => `${kind}:${normKey(value)}`);
     }
 
+    function configuredCost(value) {
+      const amount = Number(value);
+      return Number.isFinite(amount) && amount > 0 ? amount : 0;
+    }
+
     function costForSale(sale) {
       const candidates = saleCostKeyCandidates(sale);
       for (const key of candidates) {
-        const value = Number(state.costByKey?.[key]);
-        if (Number.isFinite(value) && value >= 0) return { value, key };
+        const value = configuredCost(state.costByKey?.[key]);
+        if (value > 0) return { value, key };
       }
-      const legacy = Number(state.costBySku?.[normKey(sale?.sku)]);
-      return Number.isFinite(legacy) && legacy >= 0 ? { value: legacy, key: `sku:${normKey(sale?.sku)}` } : { value: 0, key: '' };
+      const legacy = configuredCost(state.costBySku?.[normKey(sale?.sku)]);
+      return legacy > 0 ? { value: legacy, key: `sku:${normKey(sale?.sku)}` } : { value: 0, key: '' };
     }
 
     function financialBase(sale) {
       return Number(sale?.productRevenue || 0)
         + Number(sale?.buyerPriceIncrease || 0)
-        + (sale?.shippingNetAlreadyAllocated ? 0 : Number(sale?.shippingRevenue || 0))
+        + Number(sale?.shippingRevenue || 0)
         + Number(sale?.sellingFee || 0)
         + Number(sale?.installmentFee || 0)
         + Number(sale?.shippingFee || 0)
@@ -2279,6 +2293,7 @@
       return {
         family: 'Familia',
         variation: 'Variacao',
+        hybrid: 'Familia / MLB',
         sku: 'SKU',
         mlb: 'Anuncio MLB',
         campaign: 'Campanha'
@@ -2790,6 +2805,19 @@
         s.eventClass === 'devolucao reembolso' ||
         s.eventClass === 'devolucao retorno' ||
         s.eventClass === 'troca';
+    }
+
+    function isClosedFinancialSale(s) {
+      return s?.lineType === 'item_sale' && s?.eventClass === 'venda';
+    }
+
+    function financialAdjustmentSummary(sales) {
+      const adjustments = (sales || []).filter((sale) => sale?.lineType === 'item_sale' && sale?.eventClass !== 'venda');
+      return {
+        cancellations: adjustments.filter((sale) => sale.eventClass === 'cancelamento').length,
+        returns: adjustments.filter((sale) => isReturnEvent(sale)).length,
+        pendingRefunds: adjustments.filter((sale) => sale.eventClass === 'reembolso_a_conciliar').length,
+      };
     }
 
     function isComplaintEvent(s) {
@@ -3435,25 +3463,23 @@
         : group === 'mlb' ? [['mlb', [...row.mlbs][0]]]
         : group === 'variation' ? [['mlbu', [...row.userProducts][0]]]
         : group === 'family' ? [['family', [...row.familyIds][0]]]
+        : group === 'hybrid' ? [[String(row.key || '').split(':')[0], String(row.key || '').split(':').slice(1).join(':')]]
         : [];
       for (const [kind, value] of values) {
         const key = value ? `${kind}:${normKey(value)}` : '';
-        const amount = Number(key ? state.costByKey?.[key] : NaN);
-        if (key && Number.isFinite(amount) && amount >= 0) return { value: amount, key };
+        const amount = configuredCost(key ? state.costByKey?.[key] : NaN);
+        if (key && amount > 0) return { value: amount, key };
       }
-      const legacy = Number(state.costBySku?.[normKey(row.key)]);
-      return Number.isFinite(legacy) && legacy >= 0 ? { value: legacy, key: `sku:${normKey(row.key)}` } : { value: 0, key: '' };
+      const legacy = configuredCost(state.costBySku?.[normKey(row.key)]);
+      return legacy > 0 ? { value: legacy, key: `sku:${normKey(row.key)}` } : { value: 0, key: '' };
     }
 
     function profitRows(group = 'sku', salesScope = null) {
       const taxRate = Math.max(0, Number(state.profitTaxRate || 0)) / 100;
       const salesList = Array.isArray(salesScope) ? salesScope : financialSalesSource();
-      const returnedSaleNumbers = new Set(salesList.filter((s) => isReturnEvent(s)).map((s) => s.saleNumber || s.dedupeKey));
       const baseRows = salesList.filter((s) =>
         (s.sku || s.mlb || s.userProductId || s.familyId) &&
-        s.lineType === 'item_sale' &&
-        !returnedSaleNumbers.has(s.saleNumber || s.dedupeKey) &&
-        s.eventClass !== 'cancelamento'
+        isClosedFinancialSale(s)
       );
       const map = new Map();
       baseRows.forEach((s) => {
@@ -3550,7 +3576,11 @@
       const totalProfit = rows.reduce((a, r) => a + r.profit, 0);
       const lossCount = rows.filter((r) => r.loss).length;
       const margin = totalGross ? totalProfit / totalGross : 0;
-      $('profitSummary').innerHTML = `<div class="notice">Resultado liquido (sem devolucoes): <strong>${fmtMoney(totalProfit)}</strong> | Margem media: <strong class="${margin >= 0 ? 'pos' : 'neg'}">${fmtPct(margin)}</strong> | Itens com prejuizo: <strong class="${lossCount ? 'neg' : 'pos'}">${fmtNum(lossCount)}</strong></div>`;
+      const adjustments = financialAdjustmentSummary(salesScope);
+      const adjustmentText = adjustments.cancellations || adjustments.returns || adjustments.pendingRefunds
+        ? ` | Ajustes fora da margem: ${fmtNum(adjustments.cancellations)} cancelamento(s), ${fmtNum(adjustments.returns)} devolucao(oes), ${fmtNum(adjustments.pendingRefunds)} reembolso(s) a conciliar`
+        : '';
+      $('profitSummary').innerHTML = `<div class="notice">Resultado liquido de vendas concluidas: <strong>${fmtMoney(totalProfit)}</strong> | Margem media: <strong class="${margin >= 0 ? 'pos' : 'neg'}">${fmtPct(margin)}</strong> | Itens com prejuizo: <strong class="${lossCount ? 'neg' : 'pos'}">${fmtNum(lossCount)}</strong>${adjustmentText}</div>`;
       const headers = [
         groupLabel(state.profitGroup),
         'Produto',
@@ -3569,7 +3599,7 @@
         const rowCost = costForProfitRow(r, state.profitGroup);
         const costCell = state.profitGroup === 'campaign'
           ? right(fmtMoney(r.avgSkuCost))
-          : `<input class="control" type="number" min="0" step="0.01" value="${Number(rowCost.value || 0).toFixed(2)}" style="width:110px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onfocus="event.stopPropagation()" onchange="__marketplaceApp.setCost('${state.profitGroup}', '${safeKey}', this.value)">`;
+          : `<input class="control" type="number" min="0" step="0.01" value="${Number(rowCost.value || 0).toFixed(2)}" style="width:110px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onfocus="event.stopPropagation()" onchange="__marketplaceApp.setCost('${state.profitGroup}', '${safeKey}', this.value)">${state.profitGroup === 'family' ? `<span class="subline">${fmtNum(r.userProducts.size)} MLBU e ${fmtNum(r.mlbs.size)} MLB relacionados; aplica somente onde custo ainda e zero.</span>` : ''}`;
         const alert = r.cost === 0 && r.gross > 0
           ? '<span class="badge info">Custo nao informado</span>'
           : r.loss ? '<span class="badge bad">Prejuizo</span>' : r.margin < 0.08 ? '<span class="badge warn">Margem baixa</span>' : '<span class="badge ok">Saudavel</span>';
@@ -3603,12 +3633,9 @@
       }
       const taxRate = Math.max(0, Number(state.profitTaxRate || 0)) / 100;
       const salesList = Array.isArray(salesScope) ? salesScope : profitWindowedSales();
-      const returnedSaleNumbers = new Set(salesList.filter((s) => isReturnEvent(s)).map((s) => s.saleNumber || s.dedupeKey));
       const filtered = salesList.filter((s) =>
         (s.sku || s.mlb || s.userProductId || s.familyId) &&
-        s.lineType === 'item_sale' &&
-        !returnedSaleNumbers.has(s.saleNumber || s.dedupeKey) &&
-        s.eventClass !== 'cancelamento' &&
+        isClosedFinancialSale(s) &&
         groupKeyFromSale(s, state.profitGroup) === state.selectedProfitKey
       );
       if (!filtered.length) {
@@ -4589,11 +4616,30 @@
       setCost: (group, identifier, value) => {
         const key = normKey(identifier);
         if (!key) return;
-        const kind = group === 'variation' ? 'mlbu' : (['sku', 'mlb', 'family'].includes(group) ? group : 'sku');
+        let kind = group === 'variation' ? 'mlbu' : (['sku', 'mlb', 'family'].includes(group) ? group : 'sku');
+        let resolvedKey = key;
+        if (group === 'hybrid') {
+          const match = String(identifier || '').match(/^(family|mlb|mlbu|sku):(.+)$/i);
+          if (!match) return;
+          kind = match[1].toLowerCase();
+          resolvedKey = normKey(match[2]);
+        }
         const v = Math.max(0, Number(String(value ?? 0).replace(',', '.')));
         const amount = Number.isFinite(v) ? v : 0;
-        state.costByKey[`${kind}:${key}`] = amount;
-        if (kind === 'sku') state.costBySku[key] = amount;
+        const familyTargets = kind === 'family' && amount > 0
+          ? financialSalesSource().filter((sale) => normKey(sale?.familyId) === resolvedKey && costForSale(sale).value === 0)
+          : [];
+        state.costByKey[`${kind}:${resolvedKey}`] = amount;
+        if (kind === 'sku') state.costBySku[resolvedKey] = amount;
+        if (familyTargets.length) {
+          familyTargets.forEach((sale) => {
+            [['mlbu', sale?.userProductId], ['mlb', sale?.mlb]].forEach(([childKind, childValue]) => {
+              const childKey = normKey(childValue);
+              if (!childKey || configuredCost(state.costByKey?.[`${childKind}:${childKey}`]) > 0) return;
+              state.costByKey[`${childKind}:${childKey}`] = amount;
+            });
+          });
+        }
         saveClientCostProfile().catch(() => {});
         renderProfit();
       },

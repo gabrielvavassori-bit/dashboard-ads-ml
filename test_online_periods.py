@@ -26,6 +26,23 @@ class OnlinePeriodTests(unittest.TestCase):
         )[0]
         self.assertNotIn("online-cache-refresh", builder)
 
+    def test_daily_snapshots_expose_partial_dates_to_the_dashboard(self):
+        with patch.object(app, "_fetch_dash_ads_json", return_value={
+            "ok": True,
+            "rows": [{"item_id": "MLB1", "snapshot_date": "2026-08-10"}],
+            "coverage_days": {
+                "2026-08-10": {"complete": False},
+                "2026-08-11": {"complete": True},
+            },
+        }):
+            rows, coverage_days, error = app._sales_intelligence_fetch_daily_sales(
+                "cliente", "2026-08-10", "2026-08-11"
+            )
+
+        self.assertEqual(error, "")
+        self.assertEqual(rows[0]["item_id"], "MLB1")
+        self.assertEqual(app._daily_partial_snapshot_dates(coverage_days), {"2026-08-10"})
+
     def test_sku_view_keeps_children_available_for_separate_mlbu_boxes(self):
         base = {
             "sku": "SKU-1", "title": "Produto", "campaign": "Campanha",
@@ -847,7 +864,7 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertIn("selling_fee_gross", mapper)
         self.assertIn("promotion_subsidy", mapper)
-        self.assertIn("shipping_fee_allocated", mapper)
+        self.assertIn("shipping_seller_debit", mapper)
         self.assertIn("shippingNetAlreadyAllocated", mapper)
         self.assertIn("buyerPriceIncrease: installmentEquivalent", mapper)
         self.assertIn("installmentFee: -installmentEquivalent", mapper)
@@ -855,7 +872,8 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("categoryPath", mapper)
         self.assertIn("shippingSubsidy", mapper)
         self.assertNotIn("shippingSubsidy", financial_base)
-        self.assertIn("sale?.shippingNetAlreadyAllocated ? 0 : Number(sale?.shippingRevenue || 0)", financial_base)
+        self.assertIn("+ Number(sale?.shippingRevenue || 0)", financial_base)
+        self.assertNotIn("shippingNetAlreadyAllocated ? 0", financial_base)
         self.assertIn("Pacote/carrinho", detail)
         self.assertIn("Venda/item", detail)
         self.assertIn("Comissão %", detail)
