@@ -858,6 +858,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 raw.get("thumbnail_url")
                 or raw.get("secure_thumbnail")
                 or raw.get("thumbnail")
+                or sale.get("thumbnail_url")
+                or sale.get("secure_thumbnail")
+                or sale.get("thumbnail")
+                or sale.get("picture")
                 or ""
             ).strip(),
             "impressions": impressions,

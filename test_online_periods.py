@@ -46,7 +46,13 @@ class OnlinePeriodTests(unittest.TestCase):
     def test_dashboard_has_grouped_layout_zoom_help_and_whatsapp_support(self):
         source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
         self.assertIn('function groupedSkuBodies(rows)', source)
-        self.assertIn('productParentRow(productParentSummary(group.children))', source)
+        self.assertIn("aggregateDetailItem(group.children, {{scope:'mlbu'", source)
+        self.assertIn("aggregateDetailItem(group.children, {{scope:'family'", source)
+        self.assertIn('data-hierarchy-toggle=', source)
+        self.assertIn("data-hierarchy-kind=\"${{safe(kind)}}\"", source)
+        self.assertIn("Ver leitura'}} da ${{safe(label)}}", source)
+        self.assertIn("const expanded = mlbuExpanded.has(key)", source)
+        self.assertIn("const expanded = !familyCollapsed.has(key)", source)
         self.assertIn('data-view-mode="family"', source)
         self.assertIn('data-view-mode="hybrid"', source)
         self.assertIn("let currentViewMode = 'hybrid'", source)
@@ -140,6 +146,7 @@ class OnlinePeriodTests(unittest.TestCase):
                         "revenue_total": 631.84,
                         "orders_count": 1,
                         "units_total": 8,
+                        "secure_thumbnail": "https://http2.mlstatic.com/condition-b.jpg",
                         "family_id": "FAM-7X4",
                         "family_name": "Familia 7x4",
                         "user_product_id": "MLBU-7X4",
@@ -175,6 +182,7 @@ class OnlinePeriodTests(unittest.TestCase):
         condition_b = next(item for item in data["items"] if item["code"] == "MLB6689184622")
         self.assertEqual(condition_b["orders"], 1)
         self.assertEqual(condition_b["units"], 8)
+        self.assertEqual(condition_b["thumbnailUrl"], "https://http2.mlstatic.com/condition-b.jpg")
 
         html = render_dashboard(data)
         self.assertIn("Campanha Ads", html)

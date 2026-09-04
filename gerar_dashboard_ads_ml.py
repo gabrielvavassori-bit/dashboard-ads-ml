@@ -1598,6 +1598,11 @@ def render_dashboard(data):
     .product-thumbnail {{ position:relative; width:52px; height:52px; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#f8fafc; display:flex; align-items:center; justify-content:center; color:#98a2b3; font-size:9px; font-weight:800; text-align:center; line-height:1.1; }}
     .product-thumbnail img {{ width:100%; height:100%; display:block; object-fit:contain; background:#fff; }}
     .product-thumbnail-count {{ position:absolute; right:2px; bottom:2px; min-width:20px; padding:2px 4px; border-radius:999px; background:rgba(16,32,51,.9); color:#fff; font-size:9px; line-height:1.2; }}
+    .product-image-control {{ display:flex; flex-direction:column; align-items:center; gap:5px; }}
+    .hierarchy-toggle {{ width:26px; height:22px; padding:0; border-radius:6px; border:1px solid #98a2b3; background:#fff; color:#102033; font-size:16px; line-height:18px; font-weight:900; }}
+    .hierarchy-toggle:hover {{ background:#eef4ff; border-color:#5b8def; }}
+    .aggregate-reading-row td {{ background:#f8fbff; border-left:1px solid #84adff; border-right:1px solid #84adff; }}
+    tr.variation-parent-row + .aggregate-reading-row td {{ background:#fffdf6; border-left-color:#e0b653; border-right-color:#e0b653; }}
     .detail-row td {{ background:#fbfcfe; border:1px solid var(--line); border-top:0; }}
     .detail-grid {{ display:grid; grid-template-columns:repeat(3,minmax(260px,1fr)); gap:12px; }}
     .detail-block {{ border:1px solid var(--line); border-radius:8px; padding:12px; background:#fff; }}
@@ -1859,6 +1864,8 @@ def render_dashboard(data):
       try {{ return Number(localStorage.getItem('dashboardAdsTableZoom')) || 1; }} catch (error) {{ return 1; }}
     }})();
     const detailExpanded = new Set();
+    const familyCollapsed = new Set();
+    const mlbuExpanded = new Set();
     const dailyChartMetric = new Map();
     let sortState = {{ key:'revenue', direction:1 }};
     let abcMode = 'hybrid';
@@ -2500,7 +2507,7 @@ def render_dashboard(data):
       </table>`;
     }}
     function detailKey(item) {{
-      return [currentViewMode, item.campaignKey || item.campaign || '', item.sku || '', item.code || ''].join('|');
+      return [currentViewMode, item.detailScope || '', item.detailId || '', item.campaignKey || item.campaign || '', item.sku || '', item.code || ''].join('|');
     }}
     function listBlock(title, rows) {{
       const values = (rows || []).filter(Boolean);
@@ -2509,7 +2516,8 @@ def render_dashboard(data):
     function campaignChildren(item) {{
       const children = item.children || [];
       if (!children.length) return '';
-      return `<div class="detail-block" style="grid-column:1/-1"><h3>Itens da campanha</h3><table class="child-table">
+      const title = item.detailScope === 'family' ? 'Condições da família' : item.detailScope === 'mlbu' ? 'Condições da variação/MLBU' : 'Itens da campanha';
+      return `<div class="detail-block" style="grid-column:1/-1"><h3>${{safe(title)}}</h3><table class="child-table">
         <thead><tr><th>SKU</th><th>Anuncio</th><th>Condicao/opcao</th><th>Titulo</th><th class="num">Pedidos</th><th class="num">Unidades</th><th class="num">Receita</th><th class="num">Receita ADS</th><th class="num">Invest.</th><th class="num">CTR</th><th class="num">CVR</th><th class="num">TACOS</th><th>Alerta</th></tr></thead>
         <tbody>${{children.map(child => `<tr><td>${{safe(child.sku || '(sem SKU)')}}</td><td>${{safe(child.code || '')}}</td><td>${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td>${{safe(child.title || '')}}</td><td class="num">${{num(child.orders || 0)}}</td><td class="num">${{num(child.units || 0)}}</td><td class="num">${{brl(child.totalRevenue || 0)}}</td><td class="num">${{brl(child.adsRevenue || 0)}}</td><td class="num">${{brl(child.investment || 0)}}</td><td class="num">${{pct(child.ctr || 0)}}</td><td class="num">${{pct(child.cvr || 0)}}</td><td class="num">${{pct(child.tacos || 0)}}</td><td>${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
       </table></div>`;
@@ -2814,6 +2822,19 @@ def render_dashboard(data):
         <div class="listing-fact"><span class="muted">Ultima venda</span><b>${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : 'Nao informada'}}</b></div>
       </div></div>`;
     }}
+    function aggregateFactsBlock(item) {{
+      const scope = item.detailScope === 'family' ? 'Família' : 'Variação/MLBU';
+      return `<div class="detail-block detail-block-wide"><h3>Resumo consolidado da ${{safe(scope)}}</h3><div class="listing-facts">
+        <div class="listing-fact"><span class="muted">Pedidos</span><b>${{num(item.orders || 0)}}</b></div>
+        <div class="listing-fact"><span class="muted">Unidades</span><b>${{num(item.units || 0)}}</b></div>
+        <div class="listing-fact"><span class="muted">Receita total</span><b>${{brl(item.totalRevenue || 0)}}</b></div>
+        <div class="listing-fact"><span class="muted">Receita atribuída Ads</span><b>${{brl(item.adsRevenue || 0)}}</b></div>
+        <div class="listing-fact"><span class="muted">Investimento Ads</span><b>${{brl(item.investment || 0)}}</b></div>
+        <div class="listing-fact"><span class="muted">TACOS consolidado</span><b>${{pct(item.tacos || 0)}}</b></div>
+        <div class="listing-fact"><span class="muted">ROAS consolidado</span><b>${{Number(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}x</b></div>
+        <div class="listing-fact"><span class="muted">Última venda do conjunto</span><b>${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : 'Não informada'}}</b></div>
+      </div></div>`;
+    }}
     function pricingPreviewBlock(item) {{
       const change = Number(item.priceChangePct || 0);
       const hasSignal = item.pricingSignal === 'indicio_alta_preco_com_interrupcao' && Number(item.suggestedTestPrice || 0) > 0;
@@ -2833,8 +2854,8 @@ def render_dashboard(data):
       ];
       if (item.campaignRevenueAmbiguous) evidence.unshift('TACOS da campanha e orientativo: o mesmo MLB aparece em mais de uma campanha.');
       return dailyChartBlock(item)
-        + listingFactsBlock(item)
-        + pricingPreviewBlock(item)
+        + (item.detailScope ? aggregateFactsBlock(item) : listingFactsBlock(item))
+        + (item.detailScope ? '' : pricingPreviewBlock(item))
         + listBlock('Leitura e confianca', evidence)
         + listBlock('Causas mais provaveis', item.diagnosisHypotheses)
         + listBlock('O que fazer agora', item.testOrder)
@@ -2877,7 +2898,7 @@ def render_dashboard(data):
         catalogLabel: [...catalogs].join(', '),
         thumbnailUrl: thumbnailSource ? thumbnailSource.thumbnailUrl : '',
         thumbnailCount: picturedChildren.length,
-        orders: sum('orders'), units, totalRevenue, adsRevenue, investment, impressions, clicks, adsSales,
+        orders: sum('orders'), units, totalRevenue, adsRevenue, investment, impressions, clicks, adsSales, tacosBaseRevenue,
         lastSaleDate: latest ? latest.lastSaleDate : '',
         lastPrice: latest ? Number(latest.lastPrice || 0) : 0,
         avgSalePrice: units ? totalRevenue / units : 0,
@@ -2906,9 +2927,21 @@ def render_dashboard(data):
       if (!url) return `<div class="product-thumbnail" aria-label="Imagem indisponivel">SEM<br>FOTO</div>`;
       return `<div class="product-thumbnail"><img src="${{safe(url)}}" alt="${{safe(item.title || item.sku || 'Produto')}}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.parentElement.textContent='SEM FOTO'">${{badge}}</div>`;
     }}
-    function productParentRow(item) {{
+    function hierarchyKey(kind, id) {{
+      return `${{currentViewMode}}|${{kind}}|${{id}}`;
+    }}
+    function productImageWithToggle(item, key, expanded, label, kind) {{
+      return `<div class="product-image-control">${{productImage(item)}}<button class="hierarchy-toggle" type="button" data-hierarchy-toggle="${{safe(key)}}" data-hierarchy-kind="${{safe(kind)}}" aria-expanded="${{expanded ? 'true' : 'false'}}" aria-label="${{safe(expanded ? 'Recolher ' + label : 'Expandir ' + label)}}" title="${{safe(expanded ? 'Recolher ' + label : 'Expandir ' + label)}}">${{expanded ? '−' : '+'}}</button></div>`;
+    }}
+    function aggregateDetailRows(item, label) {{
+      const key = detailKey(item);
+      const expanded = detailExpanded.has(key);
+      return `<tr class="aggregate-reading-row"><td colspan="17"><div class="decision-wrap"><div class="decision-summary-main"><span class="summary-chip">Leitura consolidada</span><div class="decision-teaser">${{safe(item.diagnosticSummary)}}</div></div><div class="decision-summary-side"><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">${{expanded ? 'Ocultar leitura' : 'Ver leitura'}} da ${{safe(label)}}</button></div></div></td></tr>
+      <tr class="detail-row aggregate-detail-row" style="display:${{expanded ? 'table-row' : 'none'}}"><td colspan="17"><div class="detail-grid">${{detailBlocks(item)}}</div></td></tr>`;
+    }}
+    function productParentRow(item, key, expanded) {{
       return `<tr class="product-parent-row variation-parent-row">
-        <td>${{productImage(item)}}</td>
+        <td>${{productImageWithToggle(item, key, expanded, 'MLBU', 'mlbu')}}</td>
         <td><span class="code">${{safe(item.sku || '(sem SKU)')}}</span><div class="muted">Variação / produto</div></td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.parentId)}}</span>${{copyButton(item.parentId, 'MLBU')}}</div><div class="title">Resumo consolidado de ${{num(item.optionCount)}} condições</div></td>
         <td><span class="summary-chip">MLBU</span></td>
@@ -2919,12 +2952,11 @@ def render_dashboard(data):
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
-    function familyParentRow(group) {{
-      const item = productParentSummary(group.children);
+    function familyParentRow(group, item, key, expanded) {{
       const variationCount = new Set(group.children.map(child => child.userProductId).filter(Boolean)).size;
       const familyLabel = group.familyName || `Família ${{group.familyId}}`;
       return `<tr class="product-parent-row family-parent-row">
-        <td>${{productImage(item)}}</td>
+        <td>${{productImageWithToggle(item, key, expanded, 'família', 'family')}}</td>
         <td><span class="code">${{safe(familyLabel)}}</span><div class="muted">Família do produto</div></td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(group.familyId)}}</span>${{copyButton(group.familyId, 'Família')}}</div><div class="title">Resumo de ${{num(variationCount)}} variação(ões) e ${{num(group.children.length)}} condição(ões)</div></td>
         <td><span class="summary-chip">FAMÍLIA</span></td>
@@ -3021,14 +3053,47 @@ def render_dashboard(data):
         currentPrice: summary.lastPrice || first.currentPrice || first.lastPrice || 0
       }};
     }}
+    function uniqueValues(children, key) {{
+      return [...new Set(children.flatMap(item => item[key] || []).filter(Boolean))];
+    }}
+    function aggregateDetailItem(children, meta) {{
+      const summary = productParentSummary(children);
+      const representative = [...children].sort((a, b) => Number(b.totalRevenue || 0) - Number(a.totalRevenue || 0))[0] || {{}};
+      const adsDependency = summary.totalRevenue > 0 ? summary.adsRevenue / summary.totalRevenue : 0;
+      return {{
+        ...representative,
+        ...summary,
+        detailScope:meta.scope,
+        detailId:meta.id,
+        code:meta.id,
+        title:meta.title,
+        sku:meta.sku || summary.sku,
+        currentPrice:summary.lastPrice || 0,
+        lastSalePrice:summary.lastPrice || 0,
+        action:'Leitura consolidada',
+        diagnosticSummary:`Consolidado de ${{num(children.length)}} condição(ões) de venda. Valores absolutos somados e taxas recalculadas sobre os totais.`,
+        adsDependencyLabel:`Dependência Ads ${{pct(adsDependency)}}`,
+        alerts:uniqueValues(children, 'alerts'),
+        confidenceReasons:uniqueValues(children, 'confidenceReasons'),
+        validationPoints:uniqueValues(children, 'validationPoints'),
+        diagnosisHypotheses:uniqueValues(children, 'diagnosisHypotheses'),
+        testOrder:uniqueValues(children, 'testOrder'),
+        confidence:children.every(item => item.confidence === 'confirmado') ? 'confirmado' : 'hipótese consolidada',
+        campaignRevenueAmbiguous:children.some(item => item.campaignRevenueAmbiguous),
+        salesCoverageComplete:children.every(item => item.salesCoverageComplete !== false),
+      }};
+    }}
     function sortedGroups(groups) {{
       return [...groups].sort((a, b) => compareTableItems(groupSortItem(a), groupSortItem(b)));
     }}
     function mlbuGroupRows(group, forceParent = false, includeNote = true) {{
       if (group.parentId && (forceParent || group.children.length > 1)) {{
-        return productParentRow(productParentSummary(group.children))
-          + group.children.map(item => row(item, 'product-child-row')).join('')
-          + (includeNote ? productGroupNote(group.children.length) : '');
+        const key = hierarchyKey('mlbu', group.parentId);
+        const expanded = mlbuExpanded.has(key);
+        const item = aggregateDetailItem(group.children, {{scope:'mlbu', id:group.parentId, title:`Variação/MLBU ${{group.parentId}}`}});
+        return productParentRow(item, key, expanded)
+          + aggregateDetailRows(item, 'variação/MLBU')
+          + (expanded ? group.children.map(child => row(child, 'product-child-row')).join('') + (includeNote ? productGroupNote(group.children.length) : '') : '');
       }}
       return group.children.map(item => row(item)).join('');
     }}
@@ -3039,7 +3104,11 @@ def render_dashboard(data):
     function familyGroupBody(group) {{
       const variationGroups = splitByMlbu(group.children);
       if (!group.familyId) return variationGroups.map(item => mlbuGroupBody(item, true)).join('');
-      return `<tbody class="product-group family-group">${{familyParentRow(group)}}${{variationGroups.map(item => mlbuGroupRows(item, true, false)).join('')}}</tbody>`;
+      const key = hierarchyKey('family', group.familyId);
+      const expanded = !familyCollapsed.has(key);
+      const familyLabel = group.familyName || `Família ${{group.familyId}}`;
+      const item = aggregateDetailItem(group.children, {{scope:'family', id:group.familyId, title:familyLabel}});
+      return `<tbody class="product-group family-group">${{familyParentRow(group, item, key, expanded)}}${{aggregateDetailRows(item, 'família')}}${{expanded ? variationGroups.map(variation => mlbuGroupRows(variation, true, false)).join('') : ''}}</tbody>`;
     }}
     function groupedFamilyBodies(rows) {{
       return sortedGroups(splitByFamily(rows)).map(familyGroupBody).join('');
@@ -3132,9 +3201,9 @@ def render_dashboard(data):
       }} else if (currentViewMode === 'sku') {{
         helpText.textContent = 'A aba SKU mostra primeiro o SKU pai consolidado. Abaixo, detalha Família, Variação/MLBU e respectivos MLBs sem misturar campanhas na busca.';
       }} else if (currentViewMode === 'family') {{
-        helpText.textContent = 'A visao Família mostra a família acima, cada Variação/MLBU dentro dela e os respectivos MLBs/condições de venda abaixo. Os totais são recalculados em cada nível.';
+        helpText.textContent = 'A visão Família mostra a família acima e seus MLBUs recolhidos. Use + / − para abrir ou recolher Família e MLBU; cada nível tem sua própria leitura consolidada.';
       }} else if (currentViewMode === 'variation') {{
-        helpText.textContent = 'Cada Variação/MLBU aparece como um quadro próprio, com o resumo consolidado acima e seus MLBs/condições de venda abaixo.';
+        helpText.textContent = 'Cada Variação/MLBU aparece recolhida com seu resumo consolidado. Use + para ver os MLBs/condições e Ver leitura para avaliar o conjunto inteiro.';
       }} else {{
         helpText.textContent = 'A visão MLB mantém cada anúncio/condição de venda em uma linha independente, sem consolidá-lo como Variação/MLBU.';
       }}
@@ -3148,6 +3217,15 @@ def render_dashboard(data):
       document.querySelectorAll('[data-detail-toggle]').forEach(button => button.addEventListener('click', () => {{
         const key = button.dataset.detailToggle;
         if (detailExpanded.has(key)) detailExpanded.delete(key); else detailExpanded.add(key);
+        renderTable();
+      }}));
+      document.querySelectorAll('[data-hierarchy-toggle]').forEach(button => button.addEventListener('click', () => {{
+        const key = button.dataset.hierarchyToggle;
+        if (button.dataset.hierarchyKind === 'family') {{
+          if (familyCollapsed.has(key)) familyCollapsed.delete(key); else familyCollapsed.add(key);
+        }} else {{
+          if (mlbuExpanded.has(key)) mlbuExpanded.delete(key); else mlbuExpanded.add(key);
+        }}
         renderTable();
       }}));
       document.querySelectorAll('[data-sort]').forEach(button => button.addEventListener('click', () => {{
@@ -3253,6 +3331,8 @@ def render_dashboard(data):
         button.classList.add('active');
         currentViewMode = button.dataset.viewMode;
         detailExpanded.clear();
+        familyCollapsed.clear();
+        mlbuExpanded.clear();
         sortState = defaultTableSort();
         renderTable();
       }});
