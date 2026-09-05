@@ -556,6 +556,7 @@
         <button data-view="profit">Lucro e prejuizo</button>
         <button data-view="monthly">Evolucao mensal</button>
         <button data-view="nosales">Sem vendas</button>
+        <button data-view="never-sold">Nunca vendeu</button>
         <button data-view="issues">Devolucoes</button>
         <button data-view="promo">Promocoes</button>
         <button data-view="events">Eventos</button>
@@ -785,6 +786,13 @@
         </div>
       </section>
 
+      <section class="view" id="view-never-sold">
+        <div class="section">
+          <div class="section-head"><h2 class="section-title">Anuncios sem venda registrada</h2></div>
+          <div class="section-body"><div id="neverSoldSummary" style="margin-bottom:10px"></div><div id="neverSoldTable"></div></div>
+        </div>
+      </section>
+
       <section class="view" id="view-issues">
         <div class="section">
           <div class="section-head"><h2 class="section-title">Devolucoes, reclamacoes e cancelamentos</h2></div>
@@ -824,7 +832,7 @@
     const DB_NAME = 'un_clic_marketplace_intelligence_v1';
     const DB_VERSION = 4;
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
-    const state = { sales: [], financialSales: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, flexCarrierCost: 0, costBySku: {}, costByKey: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', remoteFinancialsLoaded: false, remoteFinancialRange: '', financialLoadError: '', financialLoadPending: false, governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
+    const state = { sales: [], financialSales: [], neverSoldListings: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, flexCarrierCost: 0, costBySku: {}, costByKey: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', remoteFinancialsLoaded: false, remoteFinancialRange: '', financialLoadError: '', financialLoadPending: false, governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
     let remoteFinanceSyncTimer = null;
     let remoteFinanceRetryTimer = null;
@@ -2265,6 +2273,7 @@
       renderProfit();
       renderMonthly();
       renderNoSales();
+      renderNeverSold();
       renderIssues();
       renderPromo();
       renderEvents();
@@ -3993,6 +4002,32 @@
       ]), 'nosales');
     }
 
+    function neverSoldMatchesSearch(row) {
+      const needle = norm(state.globalSearch || '');
+      if (!needle) return true;
+      const source = state.globalSearchScope === 'title'
+        ? row.title
+        : state.globalSearchScope === 'campaign'
+          ? ''
+          : [row.mlb, row.sku].join(' ');
+      return norm(source || '').includes(needle);
+    }
+
+    function renderNeverSold() {
+      const rows = (state.neverSoldListings || []).filter(neverSoldMatchesSearch);
+      const confirmed = rows.filter((row) => row.classification === 'confirmed').length;
+      const partial = rows.length - confirmed;
+      $('neverSoldSummary').innerHTML = `<div class="notice"><strong>${fmtNum(confirmed)}</strong> anuncio(s) sem venda confirmada desde a criacao. <strong>${fmtNum(partial)}</strong> com cobertura parcial: exibidos para analise, sem afirmar que nunca venderam.</div>`;
+      $('neverSoldTable').innerHTML = tableWrap(['Anuncio MLB','SKU','Titulo','Criado em','Cobertura','Status'], rows.map((row) => [
+        `${productThumb(row)}<strong>${esc(row.mlb || '-')}</strong>`,
+        esc(row.sku || '-'),
+        esc(row.title || '-'),
+        esc(row.dateCreated || 'Nao informado'),
+        esc(row.coverageStart ? `${row.coverageStart}${row.coverageComplete ? ' completa' : ' parcial'}` : 'Nao informada'),
+        `<span class="badge ${row.classification === 'confirmed' ? 'warn' : 'info'}">${esc(row.classification === 'confirmed' ? 'Nunca vendeu confirmado' : 'Cobertura insuficiente')}</span><span class="subline">${esc(row.reason || '')}</span>`
+      ]), 'never_sold');
+    }
+
     function renderIssues() {
       const rows = aggregate('sku').filter(rowMatchesGlobalSearch).filter((r) => r.returnRate > .01 || r.complaintRate > .01 || r.cancellations > 0);
       $('issuesTable').innerHTML = tableWrap(['SKU','Vendas','Devolucoes','Reclamacoes','Cancel.','Taxa dev.','Taxa recl.','Diagnostico'], rows.map((r) => [
@@ -4122,6 +4157,7 @@
       if (active === 'view-profit') return exportProfitCsv();
       if (active === 'view-monthly') return exportMonthlyCsv();
       if (active === 'view-nosales') return exportNoSalesCsv();
+      if (active === 'view-never-sold') return exportNeverSoldCsv();
       if (active === 'view-issues') return exportIssuesCsv();
       if (active === 'view-promo') return exportPromoCsv();
       return exportAnalysisCsv();
@@ -4351,6 +4387,15 @@
           rows.push([r.key, r.title || '', r.currentDate.toISOString().slice(0,10), days, avgMonthly(r).toFixed(2), `Produto sem venda ha ${days} dias. Verificar preco, promocao, estoque, catalogo ou anuncio.`]);
         });
       downloadCsv(state.noSalesMode === 'rejected' ? 'skus_rejeitados_sem_venda.csv' : `sem_vendas_${state.noSalesDays === 0 ? 'total_operacional' : state.noSalesDays + '_dias'}.csv`, rows);
+    }
+
+    function exportNeverSoldCsv() {
+      const rows = [['mlb','sku','titulo','criado_em','cobertura_inicio','cobertura_completa','classificacao','motivo']];
+      (state.neverSoldListings || []).filter(neverSoldMatchesSearch).forEach((row) => rows.push([
+        row.mlb || '', row.sku || '', row.title || '', row.dateCreated || '', row.coverageStart || '',
+        row.coverageComplete ? 'sim' : 'nao', row.classification || '', row.reason || ''
+      ]));
+      downloadCsv('anuncios_nunca_venderam.csv', rows);
     }
 
     function exportIssuesCsv() {
@@ -4584,8 +4629,9 @@
 
     window.__marketplaceApp = {
       getState: () => state,
-      setMemoryData: ({ sales = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku, costByKey, profitTaxRate, flexCarrierCost = null, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', dashboardGranularity = 'day', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
+      setMemoryData: ({ sales = [], neverSoldListings = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku, costByKey, profitTaxRate, flexCarrierCost = null, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', dashboardGranularity = 'day', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
         state.sales = (sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
+        state.neverSoldListings = Array.isArray(neverSoldListings) ? neverSoldListings : [];
         state.imports = imports;
         state.events = events;
         state.planStatus = planStatus && typeof planStatus === 'object' ? planStatus : {};

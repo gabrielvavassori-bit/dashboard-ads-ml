@@ -1437,6 +1437,54 @@ def _sales_intelligence_collect_item_meta(latest_payload: dict) -> dict[str, dic
     return meta
 
 
+def _sales_intelligence_collect_never_sold_listings(
+    latest_payload: dict,
+    coverage_start: str,
+    coverage_complete: bool,
+) -> list[dict]:
+    """Return active monitored listings with no evidence of a sale."""
+    sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
+    sales_items = sales.get("items") if isinstance(sales.get("items"), dict) else {}
+    ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
+    ads_rows = ads.get("items") if isinstance(ads.get("items"), list) else []
+    rows_by_code: dict[str, dict] = {}
+
+    for raw in ads_rows:
+        if not isinstance(raw, dict):
+            continue
+        code = _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
+        status = str(raw.get("status") or raw.get("listing_status") or "").strip().lower()
+        if not code or not status.startswith(("active", "ativo")):
+            continue
+        sale = sales_items.get(code) if isinstance(sales_items.get(code), dict) else {}
+        has_sale = (
+            _number(sale.get("units_total")) > 0
+            or _number(sale.get("revenue_total")) > 0
+            or bool(str(sale.get("last_sale_date") or sale.get("lastSaleDate") or "").strip())
+        )
+        if has_sale:
+            continue
+        created_at = str(raw.get("date_created") or raw.get("dateCreated") or raw.get("created_at") or raw.get("createdAt") or "").strip()
+        created_date = created_at[:10]
+        confirmed = bool(coverage_complete and created_date and coverage_start and coverage_start <= created_date)
+        rows_by_code[code] = {
+            "mlb": code,
+            "sku": str(raw.get("sku") or sale.get("sku") or sale.get("seller_sku") or "").strip(),
+            "title": str(raw.get("title") or sale.get("title") or sale.get("item_title") or "").strip(),
+            "thumbnailUrl": str(raw.get("thumbnail_url") or raw.get("secure_thumbnail") or raw.get("thumbnail") or sale.get("thumbnail_url") or sale.get("secure_thumbnail") or sale.get("thumbnail") or "").strip(),
+            "dateCreated": created_date,
+            "coverageStart": coverage_start,
+            "coverageComplete": coverage_complete,
+            "classification": "confirmed" if confirmed else "partial",
+            "reason": (
+                "Sem venda desde a criacao, com cobertura completa desde a criacao."
+                if confirmed
+                else "Sem venda na cobertura disponivel; nao confirma ausencia de vendas anterior."
+            ),
+        }
+    return sorted(rows_by_code.values(), key=lambda row: (row["dateCreated"] or "9999-99-99", row["mlb"]))
+
+
 def _sales_intelligence_chunk_item_ids(item_ids: list[str], max_items: int = 60, max_chars: int = 2500) -> list[list[str]]:
     chunks: list[list[str]] = []
     current: list[str] = []
@@ -1540,6 +1588,11 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
     sales_items = sales.get("items") if isinstance(sales.get("items"), dict) else {}
     item_meta = _sales_intelligence_collect_item_meta(latest_payload)
+    never_sold_listings = _sales_intelligence_collect_never_sold_listings(
+        latest_payload,
+        actual_period["dateFrom"],
+        bool(sales.get("complete")) and latest_payload.get("period_cache_complete") is not False,
+    )
     daily_result = _sales_intelligence_fetch_daily_sales(
         client_id,
         actual_period["dateFrom"],
@@ -1578,6 +1631,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
             "globalSearchScope": "code",
             "globalSearch": "",
             "noSalesRejected": {},
+            "neverSoldListings": never_sold_listings,
         }, ""
     if not daily_rows and item_meta and not persisted_daily_rows:
         for code, meta in item_meta.items():
@@ -1734,6 +1788,7 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
         "globalSearchScope": "code",
         "globalSearch": "",
         "noSalesRejected": {},
+        "neverSoldListings": never_sold_listings,
     }, ""
 
 

@@ -682,6 +682,45 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(data["sales"][0]["productRevenue"], 150)
         self.assertEqual(data["sales"][0]["sku"], "SKU-123")
 
+    def test_sales_intelligence_exposes_never_sold_listing_with_partial_coverage(self):
+        latest = {
+            "period_cache_complete": True,
+            "sales": {"complete": True, "items": {}},
+            "ads": {"items": [{
+                "item_id": "MLB-NUNCA", "status": "active", "sku": "SKU-NUNCA",
+                "title": "Anuncio sem venda", "date_created": "2024-01-10T12:00:00Z",
+            }]},
+        }
+        user = {"name": "Cliente", "email": "cliente@example.com"}
+        link = {"client_id": "cliente", "advertiser_id": "1", "official_store": "Loja", "nickname": ""}
+
+        with patch.object(app, "_sales_intelligence_fetch_latest", return_value=(latest, "")), \
+             patch.object(app, "_sales_intelligence_fetch_daily_sales", return_value=([], "")):
+            data, message = app._build_sales_intelligence_memory_data(user, link)
+
+        self.assertEqual(message, "")
+        self.assertEqual(data["neverSoldListings"][0]["mlb"], "MLB-NUNCA")
+        self.assertEqual(data["neverSoldListings"][0]["classification"], "partial")
+
+    def test_never_sold_listing_requires_active_status_and_creation_coverage(self):
+        rows = app._sales_intelligence_collect_never_sold_listings({
+            "sales": {"items": {}},
+            "ads": {"items": [
+                {"item_id": "MLB-CONFIRMA", "status": "active", "date_created": "2026-07-10"},
+                {"item_id": "MLB-INATIVO", "status": "paused", "date_created": "2026-07-10"},
+            ]},
+        }, "2026-06-01", True)
+
+        self.assertEqual([row["mlb"] for row in rows], ["MLB-CONFIRMA"])
+        self.assertEqual(rows[0]["classification"], "confirmed")
+
+    def test_sales_intelligence_asset_separates_never_sold_from_recent_no_sales(self):
+        source = Path(__file__).with_name("assets").joinpath("inteligencia-vendas-marketplace.html").read_text(encoding="utf-8")
+        self.assertIn('data-view="never-sold"', source)
+        self.assertIn("function renderNeverSold()", source)
+        self.assertIn("neverSoldListings", source)
+        self.assertIn("Cobertura insuficiente", source)
+
     def test_sales_intelligence_reports_pending_while_hourly_refresh_runs(self):
         stale_payload = {
             "ok": True,
