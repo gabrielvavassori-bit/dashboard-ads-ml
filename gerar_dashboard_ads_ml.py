@@ -1612,6 +1612,23 @@ def render_dashboard(data):
     .detail-block-wide {{ grid-column:1/-1; }}
     .listing-facts {{ display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:8px; }}
     .listing-fact {{ border:1px solid var(--line); border-radius:8px; padding:9px; background:#f8fafc; }}
+    body.detail-modal-open {{ overflow:hidden; }}
+    .detail-modal-backdrop {{ position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(16,24,40,.58); backdrop-filter:blur(2px); }}
+    .detail-modal-backdrop.open {{ display:flex; }}
+    .detail-modal-shell {{ width:min(1480px,96vw); height:min(900px,92vh); display:flex; flex-direction:column; overflow:hidden; border:1px solid #b8c8df; border-radius:16px; background:#f5f7fb; box-shadow:0 24px 70px rgba(16,24,40,.34); }}
+    .detail-modal-head {{ display:flex; align-items:center; justify-content:space-between; gap:18px; padding:16px 20px; border-bottom:1px solid var(--line); background:#fff; }}
+    .detail-modal-identity {{ display:flex; align-items:center; gap:12px; min-width:0; }}
+    .detail-modal-identity .product-thumbnail {{ flex:0 0 52px; }}
+    .detail-modal-title {{ min-width:0; }}
+    .detail-modal-title h2 {{ margin:0 0 3px; font-size:18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+    .detail-modal-title p {{ margin:0; color:var(--muted); font-size:12px; }}
+    .detail-modal-close {{ flex:0 0 auto; width:38px; height:38px; padding:0; border-radius:10px; font-size:22px; line-height:1; }}
+    .detail-modal-tabs {{ display:flex; gap:6px; padding:10px 20px; overflow-x:auto; border-bottom:1px solid var(--line); background:#fff; }}
+    .detail-modal-tabs button {{ white-space:nowrap; }}
+    .detail-modal-tabs button.active {{ background:#102033; color:#fff; border-color:#102033; }}
+    .detail-modal-body {{ flex:1 1 auto; min-height:0; overflow:auto; padding:18px 20px 28px; }}
+    .detail-modal-body .detail-grid {{ grid-template-columns:repeat(3,minmax(260px,1fr)); }}
+    .detail-modal-empty {{ padding:24px; border:1px dashed var(--line); border-radius:10px; background:#fff; color:var(--muted); }}
     .listing-fact b {{ display:block; margin-top:3px; color:var(--ink); }}
     .readonly-badge {{ display:inline-block; margin-bottom:8px; padding:4px 8px; border-radius:999px; background:#eef4ff; color:#1849a9; font-size:12px; font-weight:800; }}
     .price-signal {{ border-left:4px solid var(--orange); }}
@@ -1687,7 +1704,7 @@ def render_dashboard(data):
       .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
     @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts, .promotion-panel-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .chart-head {{ align-items:stretch; }} .chart-metric-tabs {{ width:100%; }} .chart-metric-button {{ flex:1 1 auto; }} .campaign-config-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
-    @media (max-width:700px) {{ .promotion-panel-grid {{ grid-template-columns:1fr; }} .promotion-form label, .promotion-form input, .promotion-form button {{ width:100%; }} }}
+    @media (max-width:700px) {{ .promotion-panel-grid {{ grid-template-columns:1fr; }} .promotion-form label, .promotion-form input, .promotion-form button {{ width:100%; }} .detail-modal-backdrop {{ padding:0; }} .detail-modal-shell {{ width:100vw; height:100vh; max-height:none; border:0; border-radius:0; }} .detail-modal-head {{ padding:12px; }} .detail-modal-tabs {{ padding:8px 12px; }} .detail-modal-body {{ padding:12px; }} .detail-modal-body .detail-grid {{ grid-template-columns:1fr; }} }}
   </style>
 </head>
 <body>
@@ -1840,6 +1857,16 @@ def render_dashboard(data):
       </section>
     </section>
   </main>
+  <div class="detail-modal-backdrop" id="detailModal" aria-hidden="true">
+    <section class="detail-modal-shell" role="dialog" aria-modal="true" aria-labelledby="detailModalHeading">
+      <header class="detail-modal-head">
+        <div class="detail-modal-identity" id="detailModalIdentity"></div>
+        <button class="detail-modal-close" id="detailModalClose" type="button" aria-label="Fechar leitura">×</button>
+      </header>
+      <nav class="detail-modal-tabs" id="detailModalTabs" aria-label="Seções da leitura"></nav>
+      <div class="detail-modal-body" id="detailModalBody"></div>
+    </section>
+  </div>
   <a class="whatsapp-support" href="https://wa.me/5511998397385?text=Oi%2C%20estou%20precisando%20de%20suporte%20no%20Dash%20Ads." target="_blank" rel="noopener noreferrer" aria-label="Pedir suporte pelo WhatsApp">
     <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M19.11 17.21c-.26-.13-1.54-.76-1.78-.85-.24-.09-.41-.13-.59.13-.17.26-.67.85-.82 1.02-.15.17-.3.2-.56.07-.26-.13-1.09-.4-2.08-1.28-.77-.68-1.29-1.53-1.44-1.79-.15-.26-.02-.4.11-.53.12-.12.26-.3.39-.46.13-.15.17-.26.26-.43.09-.17.04-.33-.02-.46-.07-.13-.59-1.41-.8-1.93-.21-.51-.43-.44-.59-.45h-.5c-.17 0-.46.07-.7.33-.24.26-.91.89-.91 2.17s.93 2.52 1.06 2.69c.13.17 1.83 2.8 4.44 3.93.62.27 1.1.43 1.48.55.62.2 1.19.17 1.64.1.5-.07 1.54-.63 1.76-1.24.22-.61.22-1.13.15-1.24-.06-.12-.23-.18-.49-.31zM16.04 3.2A12.73 12.73 0 0 0 5.2 22.6L3.4 29.2l6.76-1.77a12.72 12.72 0 1 0 5.88-24.23zm0 22.88c-2.03 0-4.02-.55-5.75-1.59l-.41-.24-4.01 1.05 1.07-3.91-.27-.4a10.16 10.16 0 1 1 9.37 5.09z"/></svg>
     <span>Suporte pelo WhatsApp</span>
@@ -1878,7 +1905,9 @@ def render_dashboard(data):
     let tableZoom = (() => {{
       try {{ return Number(localStorage.getItem('dashboardAdsTableZoom')) || 1; }} catch (error) {{ return 1; }}
     }})();
-    const detailExpanded = new Set();
+    const detailItems = new Map();
+    let activeDetailKey = '';
+    let activeDetailTab = 'performance';
     const familyCollapsed = new Set();
     const mlbuExpanded = new Set();
     const dailyChartMetric = new Map();
@@ -2911,7 +2940,7 @@ def render_dashboard(data):
     }}
     function promotionStateUpdate(code, patch) {{
       promotionState.set(code, {{...(promotionState.get(code) || {{}}), ...patch}});
-      renderTable();
+      renderDetailModal();
     }}
     function activatePromotionPanels() {{
       document.querySelectorAll('[data-promo-load]').forEach(button => button.addEventListener('click', async () => {{
@@ -2971,20 +3000,76 @@ def render_dashboard(data):
       const action = enabled ? promotionPanelHtml(item) : `<div class="muted">A promocao online exige o beta, uma conta selecionada e um anuncio MLB individual. Produto pai e agrupamentos permanecem somente leitura.</div>`;
       return `<div class="detail-block detail-block-wide price-signal">${{mode}}<h3>Hipotese de preco e promocao</h3><p>${{safe(analysis)}}</p><p><b>${{safe(suggestion)}}</b></p>${{action}}</div>`;
     }}
-    function detailBlocks(item) {{
+    function detailEvidence(item) {{
       const evidence = [
         `Confianca: ${{item.confidence || 'hipotese'}}`,
         ...((item.confidenceReasons || []).map(value => `Evidencia: ${{value}}`)),
         ...((item.validationPoints || []).map(value => `Validar: ${{value}}`))
       ];
       if (item.campaignRevenueAmbiguous) evidence.unshift('TACOS da campanha e orientativo: o mesmo MLB aparece em mais de uma campanha.');
-      return dailyChartBlock(item)
-        + (item.detailScope ? aggregateFactsBlock(item) : listingFactsBlock(item))
-        + (item.detailScope ? '' : pricingPreviewBlock(item))
-        + listBlock('Leitura e confianca', evidence)
+      return evidence;
+    }}
+    function detailModalContent(item) {{
+      if (activeDetailTab === 'performance') {{
+        return dailyChartBlock(item) + (item.detailScope ? aggregateFactsBlock(item) : listingFactsBlock(item));
+      }}
+      if (activeDetailTab === 'diagnosis') {{
+        return listBlock('Leitura e confianca', detailEvidence(item))
         + listBlock('Causas mais provaveis', item.diagnosisHypotheses)
-        + listBlock('O que fazer agora', item.testOrder)
-        + campaignChildren(item);
+        + listBlock('O que fazer agora', item.testOrder);
+      }}
+      if (activeDetailTab === 'promotions') {{
+        return item.detailScope
+          ? '<div class="detail-modal-empty">Promoções são consultadas somente no anúncio MLB individual. Abra uma condição de venda para avaliar elegibilidade e gerar a prévia.</div>'
+          : pricingPreviewBlock(item);
+      }}
+      const campaigns = campaignChildren(item);
+      return campaigns || '<div class="detail-modal-empty">Nenhum detalhamento adicional de publicidade foi encontrado para este item.</div>';
+    }}
+    function detailModalScope(item) {{
+      if (item.detailScope === 'family') return 'Família consolidada';
+      if (item.detailScope === 'mlbu') return 'Variação / MLBU consolidado';
+      if (currentViewMode === 'campaign') return 'Campanha Ads';
+      return 'Anúncio / condição de venda';
+    }}
+    function closeDetailModal() {{
+      activeDetailKey = '';
+      const modal = document.getElementById('detailModal');
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('detail-modal-open');
+    }}
+    function renderDetailModal() {{
+      if (!activeDetailKey) return;
+      const item = detailItems.get(activeDetailKey);
+      if (!item) {{ closeDetailModal(); return; }}
+      const modal = document.getElementById('detailModal');
+      const title = item.title || item.sku || item.detailId || item.code || 'Leitura do produto';
+      const identifiers = [detailModalScope(item), item.detailId || '', item.code || '', item.sku || ''].filter(Boolean).join(' · ');
+      document.getElementById('detailModalIdentity').innerHTML = `${{productImage(item)}}<div class="detail-modal-title"><h2 id="detailModalHeading">${{safe(title)}}</h2><p>${{safe(identifiers)}}</p></div>`;
+      const tabs = [
+        ['performance', 'Desempenho'],
+        ['diagnosis', 'Diagnóstico'],
+        ['promotions', 'Promoções'],
+        ['advertising', 'Publicidade']
+      ];
+      document.getElementById('detailModalTabs').innerHTML = tabs.map(([key, label]) => `<button type="button" data-detail-tab="${{key}}" class="${{activeDetailTab === key ? 'active' : ''}}">${{label}}</button>`).join('');
+      document.getElementById('detailModalBody').innerHTML = `<div class="detail-grid">${{detailModalContent(item)}}</div>`;
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('detail-modal-open');
+      document.querySelectorAll('[data-detail-tab]').forEach(button => button.addEventListener('click', () => {{
+        activeDetailTab = button.dataset.detailTab;
+        renderDetailModal();
+      }}));
+      activateDailyCharts();
+      activatePromotionPanels();
+    }}
+    function openDetailModal(key) {{
+      activeDetailKey = key;
+      activeDetailTab = 'performance';
+      renderDetailModal();
+      document.getElementById('detailModalClose').focus();
     }}
     function productParentSummary(children) {{
       const sum = key => children.reduce((total, item) => total + Number(item[key] || 0), 0);
@@ -3060,9 +3145,8 @@ def render_dashboard(data):
     }}
     function aggregateDetailRows(item, label) {{
       const key = detailKey(item);
-      const expanded = detailExpanded.has(key);
-      return `<tr class="aggregate-reading-row"><td colspan="17"><div class="decision-wrap"><div class="decision-summary-main"><span class="summary-chip">Leitura consolidada</span><div class="decision-teaser">${{safe(item.diagnosticSummary)}}</div></div><div class="decision-summary-side"><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">${{expanded ? 'Ocultar leitura' : 'Ver leitura'}} da ${{safe(label)}}</button></div></div></td></tr>
-      <tr class="detail-row aggregate-detail-row" style="display:${{expanded ? 'table-row' : 'none'}}"><td colspan="17"><div class="detail-grid">${{detailBlocks(item)}}</div></td></tr>`;
+      detailItems.set(key, item);
+      return `<tr class="aggregate-reading-row"><td colspan="17"><div class="decision-wrap"><div class="decision-summary-main"><span class="summary-chip">Leitura consolidada</span><div class="decision-teaser">${{safe(item.diagnosticSummary)}}</div></div><div class="decision-summary-side"><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura da ${{safe(label)}}</button></div></div></td></tr>`;
     }}
     function productParentRow(item, key, expanded) {{
       return `<tr class="product-parent-row variation-parent-row">
@@ -3263,7 +3347,7 @@ def render_dashboard(data):
     }}
     function row(item, extraClass = '') {{
       const key = detailKey(item);
-      const expanded = detailExpanded.has(key);
+      detailItems.set(key, item);
       const campaignMode = currentViewMode === 'campaign';
       const abcValue = campaignMode ? item.abcCampaign : currentViewMode === 'sku' ? item.abcSku : item.abcCode;
       const abcPrefix = campaignMode ? 'CAMP' : currentViewMode === 'sku' ? 'SKU' : 'MLB';
@@ -3283,12 +3367,12 @@ def render_dashboard(data):
       </tr>
       <tr class="decision-row"><td colspan="17"><div class="decision-wrap">
         <div class="decision-summary-main"><span class="pill ${{actionClass(item.action)}}">${{safe(item.action)}}</span><div class="decision-teaser"><b>Diagnostico:</b> ${{safe(item.diagnosticSummary || item.recommendation || item.reason || 'Sem leitura adicional.')}}</div></div>
-        <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">${{expanded ? 'Ocultar leitura' : 'Ver leitura'}}</button></div>
-      </div></td></tr>
-      <tr class="detail-row" style="display:${{expanded ? 'table-row' : 'none'}}"><td colspan="17"><div class="detail-grid">${{detailBlocks(item)}}</div></td></tr>`;
+        <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura</button></div>
+      </div></td></tr>`;
     }}
     function renderTable() {{
       renderAlerts();
+      detailItems.clear();
       const q = document.getElementById('search').value.toLowerCase();
       let rows = rowsByViewMode().filter(item => matchesContext(item) && itemSearchText(item, currentViewMode).includes(q));
       if (sortState.key && sortState.direction !== 0) {{
@@ -3334,16 +3418,12 @@ def render_dashboard(data):
       }}
       helpMeta.textContent = `${{num(rows.length)}} registro(s) no filtro atual`;
       applyTableZoom();
-      activateDailyCharts();
-      activatePromotionPanels();
       document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {{
         const value = button.dataset.copy;
         try {{ await navigator.clipboard.writeText(value); }} catch (error) {{ const input = document.createElement('textarea'); input.value = value; document.body.appendChild(input); input.select(); document.execCommand('copy'); input.remove(); }}
       }}));
       document.querySelectorAll('[data-detail-toggle]').forEach(button => button.addEventListener('click', () => {{
-        const key = button.dataset.detailToggle;
-        if (detailExpanded.has(key)) detailExpanded.delete(key); else detailExpanded.add(key);
-        renderTable();
+        openDetailModal(button.dataset.detailToggle);
       }}));
       document.querySelectorAll('[data-hierarchy-toggle]').forEach(button => button.addEventListener('click', () => {{
         const key = button.dataset.hierarchyToggle;
@@ -3456,7 +3536,7 @@ def render_dashboard(data):
         document.querySelectorAll('#viewMode button[data-view-mode]').forEach(item => item.classList.remove('active'));
         button.classList.add('active');
         currentViewMode = button.dataset.viewMode;
-        detailExpanded.clear();
+        closeDetailModal();
         familyCollapsed.clear();
         mlbuExpanded.clear();
         sortState = defaultTableSort();
@@ -3496,6 +3576,13 @@ def render_dashboard(data):
     document.getElementById('tableTop').addEventListener('click', () => window.scrollTo({{ top:0, behavior:'smooth' }}));
     document.getElementById('search').addEventListener('input', renderTable);
     document.getElementById('abcSearch').addEventListener('input', renderAbc);
+    document.getElementById('detailModalClose').addEventListener('click', closeDetailModal);
+    document.getElementById('detailModal').addEventListener('click', event => {{
+      if (event.target.id === 'detailModal') closeDetailModal();
+    }});
+    document.addEventListener('keydown', event => {{
+      if (event.key === 'Escape' && activeDetailKey) closeDetailModal();
+    }});
     renderKpis(); renderAbc(); renderAlerts(); renderTable(); renderOnlineBeta();
   </script>
 </body>
