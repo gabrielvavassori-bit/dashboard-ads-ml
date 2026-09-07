@@ -73,6 +73,8 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("['diagnosis', 'Diagnóstico']", source)
         self.assertIn("['promotions', 'Promoções']", source)
         self.assertIn("['advertising', 'Publicidade']", source)
+        self.assertIn('.detail-modal-tabs {{ flex:0 0 auto;', source)
+        self.assertIn('modalBody.scrollTop = 0;', source)
         self.assertNotIn('const detailExpanded = new Set()', source)
         self.assertIn("const expanded = mlbuExpanded.has(key)", source)
         self.assertIn("const expanded = !familyCollapsed.has(key)", source)

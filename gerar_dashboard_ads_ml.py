@@ -1616,18 +1616,18 @@ def render_dashboard(data):
     .detail-modal-backdrop {{ position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(16,24,40,.58); backdrop-filter:blur(2px); }}
     .detail-modal-backdrop.open {{ display:flex; }}
     .detail-modal-shell {{ width:min(1480px,96vw); height:min(900px,92vh); display:flex; flex-direction:column; overflow:hidden; border:1px solid #b8c8df; border-radius:16px; background:#f5f7fb; box-shadow:0 24px 70px rgba(16,24,40,.34); }}
-    .detail-modal-head {{ display:flex; align-items:center; justify-content:space-between; gap:18px; padding:16px 20px; border-bottom:1px solid var(--line); background:#fff; }}
+    .detail-modal-head {{ flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:16px 20px; border-bottom:1px solid var(--line); background:#fff; }}
     .detail-modal-identity {{ display:flex; align-items:center; gap:12px; min-width:0; }}
     .detail-modal-identity .product-thumbnail {{ flex:0 0 52px; }}
     .detail-modal-title {{ min-width:0; }}
     .detail-modal-title h2 {{ margin:0 0 3px; font-size:18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
     .detail-modal-title p {{ margin:0; color:var(--muted); font-size:12px; }}
     .detail-modal-close {{ flex:0 0 auto; width:38px; height:38px; padding:0; border-radius:10px; font-size:22px; line-height:1; }}
-    .detail-modal-tabs {{ display:flex; gap:6px; padding:10px 20px; overflow-x:auto; border-bottom:1px solid var(--line); background:#fff; }}
-    .detail-modal-tabs button {{ white-space:nowrap; }}
+    .detail-modal-tabs {{ flex:0 0 auto; display:flex; align-items:center; gap:6px; min-height:60px; padding:10px 20px; overflow-x:auto; border-bottom:1px solid var(--line); background:#fff; }}
+    .detail-modal-tabs button {{ flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; min-height:38px; line-height:1.2; white-space:nowrap; }}
     .detail-modal-tabs button.active {{ background:#102033; color:#fff; border-color:#102033; }}
-    .detail-modal-body {{ flex:1 1 auto; min-height:0; overflow:auto; padding:18px 20px 28px; }}
-    .detail-modal-body .detail-grid {{ grid-template-columns:repeat(3,minmax(260px,1fr)); }}
+    .detail-modal-body {{ flex:1 1 auto; min-height:0; overflow:auto; padding:0 20px 28px; }}
+    .detail-modal-body .detail-grid {{ grid-template-columns:repeat(3,minmax(260px,1fr)); padding-top:18px; }}
     .detail-modal-empty {{ padding:24px; border:1px dashed var(--line); border-radius:10px; background:#fff; color:var(--muted); }}
     .listing-fact b {{ display:block; margin-top:3px; color:var(--ink); }}
     .readonly-badge {{ display:inline-block; margin-bottom:8px; padding:4px 8px; border-radius:999px; background:#eef4ff; color:#1849a9; font-size:12px; font-weight:800; }}
@@ -1704,7 +1704,7 @@ def render_dashboard(data):
       .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
     @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts, .promotion-panel-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .chart-head {{ align-items:stretch; }} .chart-metric-tabs {{ width:100%; }} .chart-metric-button {{ flex:1 1 auto; }} .campaign-config-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
-    @media (max-width:700px) {{ .promotion-panel-grid {{ grid-template-columns:1fr; }} .promotion-form label, .promotion-form input, .promotion-form button {{ width:100%; }} .detail-modal-backdrop {{ padding:0; }} .detail-modal-shell {{ width:100vw; height:100vh; max-height:none; border:0; border-radius:0; }} .detail-modal-head {{ padding:12px; }} .detail-modal-tabs {{ padding:8px 12px; }} .detail-modal-body {{ padding:12px; }} .detail-modal-body .detail-grid {{ grid-template-columns:1fr; }} }}
+    @media (max-width:700px) {{ .promotion-panel-grid {{ grid-template-columns:1fr; }} .promotion-form label, .promotion-form input, .promotion-form button {{ width:100%; }} .detail-modal-backdrop {{ padding:0; }} .detail-modal-shell {{ width:100vw; height:100vh; max-height:none; border:0; border-radius:0; }} .detail-modal-head {{ padding:12px; }} .detail-modal-tabs {{ min-height:54px; padding:8px 12px; }} .detail-modal-body {{ padding:0 12px 12px; }} .detail-modal-body .detail-grid {{ grid-template-columns:1fr; padding-top:12px; }} }}
   </style>
 </head>
 <body>
@@ -3054,7 +3054,10 @@ def render_dashboard(data):
         ['advertising', 'Publicidade']
       ];
       document.getElementById('detailModalTabs').innerHTML = tabs.map(([key, label]) => `<button type="button" data-detail-tab="${{key}}" class="${{activeDetailTab === key ? 'active' : ''}}">${{label}}</button>`).join('');
-      document.getElementById('detailModalBody').innerHTML = `<div class="detail-grid">${{detailModalContent(item)}}</div>`;
+      const modalBody = document.getElementById('detailModalBody');
+      modalBody.innerHTML = `<div class="detail-grid">${{detailModalContent(item)}}</div>`;
+      modalBody.scrollTop = 0;
+      modalBody.scrollLeft = 0;
       modal.classList.add('open');
       modal.setAttribute('aria-hidden', 'false');
       document.body.classList.add('detail-modal-open');
