@@ -75,6 +75,8 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("['advertising', 'Publicidade']", source)
         self.assertIn('grid-template-rows:auto auto minmax(0,1fr)', source)
         self.assertIn('grid-template-columns:repeat(2,minmax(0,1fr))', source)
+        self.assertIn('overflow-x:hidden; overflow-y:auto', source)
+        self.assertIn('.detail-modal-tabs button {{ width:100%; min-width:0; }}', source)
         self.assertIn('.detail-modal-body .child-table thead th {{ position:static;', source)
         self.assertIn('modalBody.scrollTop = 0;', source)
         self.assertNotIn('const detailExpanded = new Set()', source)
