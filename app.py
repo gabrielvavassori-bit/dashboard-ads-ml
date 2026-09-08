@@ -800,6 +800,53 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             )
             daily_series.append(daily)
         daily_series_by_item[daily_code] = sorted(daily_series, key=lambda row: row["date"])
+    account_daily_by_date: dict[str, dict] = {}
+    for daily_by_date in daily_by_item_date.values():
+        for daily in daily_by_date.values():
+            snapshot_date = str(daily.get("date") or "").strip()
+            if not snapshot_date:
+                continue
+            account_daily = account_daily_by_date.setdefault(snapshot_date, {
+                "date": snapshot_date,
+                "orders": 0.0,
+                "units": 0.0,
+                "revenue": 0.0,
+                "adsRevenue": 0.0,
+                "adsDirectRevenue": 0.0,
+                "adsIndirectRevenue": 0.0,
+                "investment": 0.0,
+                "tacosBaseRevenue": 0.0,
+                "impressions": 0.0,
+                "clicks": 0.0,
+                "adsUnits": 0.0,
+                "priceFallback": 0.0,
+            })
+            for field in (
+                "orders", "units", "revenue", "adsRevenue", "adsDirectRevenue",
+                "adsIndirectRevenue", "investment", "tacosBaseRevenue", "impressions",
+                "clicks", "adsUnits",
+            ):
+                account_daily[field] += _number(daily.get(field))
+            if _number(daily.get("lastSalePrice")) > 0:
+                account_daily["priceFallback"] = _number(daily.get("lastSalePrice"))
+    account_daily_series = []
+    for account_daily in sorted(account_daily_by_date.values(), key=lambda row: row["date"]):
+        account_daily["price"] = (
+            account_daily["revenue"] / account_daily["units"]
+            if account_daily["units"]
+            else account_daily["priceFallback"]
+        )
+        account_daily["roas"] = (
+            account_daily["adsRevenue"] / account_daily["investment"]
+            if account_daily["investment"]
+            else 0.0
+        )
+        account_daily["tacos"] = (
+            account_daily["investment"] / account_daily["tacosBaseRevenue"]
+            if account_daily["tacosBaseRevenue"]
+            else 0.0
+        )
+        account_daily_series.append(account_daily)
     ads_codes = {
         _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
         for raw in ads_rows
@@ -1115,6 +1162,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 "error": daily_ads_error,
             },
         },
+        "accountDailySeries": account_daily_series,
         "items": sorted(items, key=lambda item: (-item["investment"], -item["totalRevenue"])),
         "decisionItems": [item for item in items if item.get("sku")],
         "adsNoSales": [item for item in items if item["investment"] > 0 and item["adsRevenue"] <= 0],

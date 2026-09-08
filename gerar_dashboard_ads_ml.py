@@ -1452,6 +1452,27 @@ def render_dashboard(data):
     }})();
     </script>
     """
+    account_daily_chart = ""
+    if online_mode.get("enabled"):
+        account_daily_chart = """
+    <section class="card daily-chart-card account-daily-chart-card" data-account-daily-chart data-daily-chart data-chart-key="account">
+      <div class="chart-head">
+        <div><h3>Desempenho diario da conta</h3><div class="chart-summary">Selecione uma metrica para visualizar.</div></div>
+        <div class="chart-metric-tabs" role="group" aria-label="Metrica do grafico da conta">
+          <button class="chart-metric-button" type="button" data-chart-metric="revenue">Faturamento</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="adsRevenue">Receita Ads</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="investment">Investimento</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="roas">ROAS</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="tacos">TACOS</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="units">Unidades</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="orders">Pedidos</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="price">Preco medio</button>
+        </div>
+      </div>
+      <div class="chart-stage"><div class="chart-canvas"></div><div class="chart-tooltip"></div></div>
+      <p class="note">Consolidacao diaria de todos os anuncios e produtos no periodo selecionado.</p>
+    </section>
+    """
     return f"""<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -1650,6 +1671,7 @@ def render_dashboard(data):
     .promotion-success {{ margin-top:10px; padding:10px; border-radius:8px; background:#ecfdf3; color:#027a48; font-weight:800; }}
     .promotion-error {{ margin-top:10px; padding:10px; border-radius:8px; background:#fef3f2; color:#b42318; font-weight:800; }}
     .daily-chart-card {{ position:relative; overflow:hidden; padding:16px; background:linear-gradient(180deg,#fff 0%,#fbfdff 100%); }}
+    .account-daily-chart-card {{ margin:0 0 12px; }}
     .chart-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:14px; flex-wrap:wrap; }}
     .chart-head h3 {{ margin-bottom:4px; font-size:16px; }}
     .chart-summary {{ color:var(--muted); font-size:12px; }}
@@ -1732,6 +1754,7 @@ def render_dashboard(data):
     {f'<section class="online-notice">{online_notice}</section>' if online_notice else ''}
     {online_period_filter}
     <section class="kpis" id="kpis"></section>
+    {account_daily_chart}
     <nav class="page-nav" aria-label="Visoes do dashboard">
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
       <button class="page-tab" data-view="abc" type="button">Curva ABC</button>
@@ -2816,12 +2839,33 @@ def render_dashboard(data):
       document.querySelectorAll('[data-daily-chart]').forEach(root => {{
         const key = root.dataset.chartKey || '';
         const metric = dailyChartMetric.get(key) || 'revenue';
+        if (root.dataset.chartReady === '1') {{
+          renderDailyMetric(root, metric);
+          return;
+        }}
         root.querySelectorAll('[data-chart-metric]').forEach(button => button.addEventListener('click', () => {{
           dailyChartMetric.set(key, button.dataset.chartMetric);
           renderDailyMetric(root, button.dataset.chartMetric);
         }}));
+        root.dataset.chartReady = '1';
         renderDailyMetric(root, metric);
       }});
+    }}
+    function activateAccountDailyChart() {{
+      const root = document.querySelector('[data-account-daily-chart]');
+      if (!root) return;
+      const sourceRows = Array.isArray(DATA.accountDailySeries) ? DATA.accountDailySeries : [];
+      if (!sourceRows.length) {{
+        root.querySelector('.chart-summary').textContent = 'A serie diaria da conta ainda nao esta disponivel.';
+        root.querySelector('.chart-canvas').innerHTML = '<div class="muted" style="padding:28px">Os snapshots diarios ainda nao entregaram dados para esta conta e periodo. Nenhum zero foi inventado.</div>';
+        root.querySelectorAll('[data-chart-metric]').forEach(button => button.disabled = true);
+        return;
+      }}
+      const rows = dailySeriesFor({{dailySeries: sourceRows}});
+      root.dataset.chartSeries = encodeURIComponent(JSON.stringify(rows));
+      root.dataset.targetRoas = '';
+      root.dataset.campaignBudget = '';
+      activateDailyCharts();
     }}
     function dailyChartBlock(item) {{
       const rows = dailySeriesFor(item);
@@ -3591,7 +3635,7 @@ def render_dashboard(data):
     document.addEventListener('keydown', event => {{
       if (event.key === 'Escape' && activeDetailKey) closeDetailModal();
     }});
-    renderKpis(); renderAbc(); renderAlerts(); renderTable(); renderOnlineBeta();
+    renderKpis(); activateAccountDailyChart(); renderAbc(); renderAlerts(); renderTable(); renderOnlineBeta();
   </script>
 </body>
 </html>"""
