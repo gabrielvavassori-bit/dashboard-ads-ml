@@ -294,6 +294,17 @@ class OnlinePeriodTests(unittest.TestCase):
                     "prints": 1000,
                     "clicks": 50,
                     "units_quantity": 5,
+                }, {
+                    "item_id": "MLB9999999999",
+                    "campaign_id": "CAMP-2",
+                    "sku": "CONTA-2",
+                    "title": "Segundo produto",
+                    "cost": 5,
+                    "total_amount": 30,
+                    "direct_amount": 20,
+                    "prints": 200,
+                    "clicks": 10,
+                    "units_quantity": 1,
                 }],
             },
             "campaigns": {"campaigns": [{
@@ -311,6 +322,12 @@ class OnlinePeriodTests(unittest.TestCase):
                     "units_total": 13,
                     "last_sale_date": "2026-08-11T12:00:00-03:00",
                     "last_price": 29.90,
+                }, "MLB9999999999": {
+                    "revenue_total": 100,
+                    "orders_count": 2,
+                    "units_total": 2,
+                    "last_sale_date": "2026-08-11T13:00:00-03:00",
+                    "last_price": 50,
                 }},
             },
         }
@@ -318,6 +335,7 @@ class OnlinePeriodTests(unittest.TestCase):
             "ok": True,
             "rows": [
                 {"item_id": "MLB5364060738", "snapshot_date": "2026-08-11", "orders_count": 1, "units_total": 1, "revenue_total": 29.90, "last_price": 29.90},
+                {"item_id": "MLB9999999999", "snapshot_date": "2026-08-11", "orders_count": 2, "units_total": 2, "revenue_total": 100, "last_price": 50},
                 {"item_id": "MLB5364060738", "snapshot_date": "2026-08-12", "orders_count": 0, "units_total": 0, "revenue_total": 0},
                 {"item_id": "MLB5364060738", "snapshot_date": "2026-08-13", "orders_count": 0, "units_total": 0, "revenue_total": 0},
             ],
@@ -329,6 +347,11 @@ class OnlinePeriodTests(unittest.TestCase):
                 "campaign_id": "CAMP-1", "cost": 10, "total_amount": 50,
                 "direct_amount": 40, "indirect_amount": 10,
                 "prints": 100, "clicks": 5, "units_quantity": 2,
+            }, {
+                "item_id": "MLB9999999999", "snapshot_date": "2026-08-11",
+                "campaign_id": "CAMP-2", "cost": 5, "total_amount": 30,
+                "direct_amount": 20, "indirect_amount": 10,
+                "prints": 200, "clicks": 10, "units_quantity": 1,
             }],
         }
 
@@ -361,8 +384,22 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(item["dailySeries"][0]["adsRevenue"], 50)
         self.assertEqual(item["dailySeries"][0]["investment"], 10)
         self.assertEqual(item["dailySeries"][0]["tacosBaseRevenue"], 39.90)
+        account_daily = data["accountDailySeries"]
+        self.assertEqual([row["date"] for row in account_daily], ["2026-08-11", "2026-08-12", "2026-08-13"])
+        self.assertEqual(account_daily[0]["orders"], 3)
+        self.assertEqual(account_daily[0]["units"], 3)
+        self.assertEqual(account_daily[0]["revenue"], 129.90)
+        self.assertEqual(account_daily[0]["adsRevenue"], 80)
+        self.assertEqual(account_daily[0]["investment"], 15)
+        self.assertAlmostEqual(account_daily[0]["price"], 129.90 / 3)
+        self.assertAlmostEqual(account_daily[0]["roas"], 80 / 15)
+        self.assertAlmostEqual(account_daily[0]["tacos"], 15 / 149.90)
 
         html = render_dashboard(data)
+        self.assertIn('data-account-daily-chart', html)
+        self.assertIn("Desempenho diario da conta", html)
+        self.assertLess(html.index('id="kpis"'), html.index('data-account-daily-chart'))
+        self.assertLess(html.index('data-account-daily-chart'), html.index('aria-label="Visoes do dashboard"'))
         self.assertIn("Vendas diarias do periodo", html)
         self.assertIn('data-chart-metric="revenue"', html)
         self.assertIn('data-chart-metric="adsRevenue"', html)
