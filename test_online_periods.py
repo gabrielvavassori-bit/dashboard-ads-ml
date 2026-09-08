@@ -13,6 +13,49 @@ NOW = datetime(2026, 7, 31, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
 class OnlinePeriodTests(unittest.TestCase):
+    def test_beta_dashboard_shows_confirmed_returns_and_rate_over_gross_revenue(self):
+        latest = {
+            "ok": True,
+            "latest": {"date_from": "2026-09-01", "date_to": "2026-09-07", "sales": {"complete": True}},
+            "ads": {
+                "date_from": "2026-09-01", "date_to": "2026-09-07",
+                "items": [{"item_id": "MLB1", "cost": 20, "total_amount": 200, "direct_amount": 150}],
+            },
+            "sales": {
+                "date_from": "2026-09-01", "date_to": "2026-09-07",
+                "items": {"MLB1": {"revenue_total": 1000, "units_total": 10}},
+            },
+        }
+
+        def fetch(path, _params=None):
+            if path == "/internal/dash-ads/returns-summary":
+                return {
+                    "ok": True, "complete": True,
+                    "date_from": "2026-09-01", "date_to": "2026-09-07",
+                    "amount": 100, "returns_count": 1, "returned_units": 1,
+                    "return_shipping_cost": 18.75, "shipping_complete": True,
+                    "source": "mercado_livre_claims_returns_v2",
+                }
+            if path in ("/internal/dash-ads/sales-daily", "/internal/dash-ads/ads-daily"):
+                return {"ok": True, "rows": []}
+            return latest
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
+            data, error = app._build_online_dashboard_data(
+                "cliente", "adv-1", "2026-09-01", "2026-09-07",
+                {"dateFrom": "2026-09-01", "dateTo": "2026-09-07"},
+            )
+
+        self.assertEqual(error, "")
+        self.assertTrue(data["kpis"]["returnsAvailable"])
+        self.assertEqual(data["kpis"]["returnsAmount"], 100)
+        self.assertEqual(data["kpis"]["returnsRate"], 0.10)
+        self.assertEqual(data["meta"]["returns"]["returnShippingCost"], 18.75)
+        html = render_dashboard(data)
+        self.assertIn("Devolucoes confirmadas", html)
+        self.assertIn("Taxa de devolucao", html)
+        self.assertIn("o frete de retorno nao esta somado ao indicador", html)
+
     def test_sales_intelligence_bootstrap_is_ninety_closed_days(self):
         period = app._sales_intelligence_default_period(NOW)
         self.assertEqual(period["dateFrom"], "2026-05-02")

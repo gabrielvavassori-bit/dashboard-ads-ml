@@ -1006,6 +1006,37 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     total_tacos_base = total_revenue
     total_clicks = sum(item["clicks"] for item in items)
     total_ads_sales = sum(item["adsSales"] for item in items)
+    returns_payload = _fetch_dash_ads_json(
+        "/internal/dash-ads/returns-summary",
+        {
+            "client": client,
+            "date_from": latest_date_from,
+            "date_to": latest_date_to,
+        },
+    )
+    returns_available = bool(
+        returns_payload.get("ok") is True
+        and returns_payload.get("complete") is True
+        and str(returns_payload.get("date_from") or "") == latest_date_from
+        and str(returns_payload.get("date_to") or "") == latest_date_to
+    )
+    returns_amount = _number(returns_payload.get("amount")) if returns_available else 0.0
+    returns_rate = (returns_amount / total_revenue) if returns_available and total_revenue else 0.0
+    returns_meta = {
+        "available": returns_available,
+        "amount": returns_amount,
+        "rate": returns_rate,
+        "count": int(_number(returns_payload.get("returns_count"))) if returns_available else 0,
+        "returnedUnits": _number(returns_payload.get("returned_units")) if returns_available else 0.0,
+        "returnShippingCost": (
+            _number(returns_payload.get("return_shipping_cost"))
+            if returns_available and returns_payload.get("return_shipping_cost") is not None
+            else None
+        ),
+        "shippingComplete": bool(returns_payload.get("shipping_complete")) if returns_available else False,
+        "source": str(returns_payload.get("source") or "mercado_livre_claims_returns_v2"),
+        "error": str(returns_payload.get("error") or returns_payload.get("erro") or "") if not returns_available else "",
+    }
     snapshot_at = str(latest.get("updated_at") or ads.get("updated_at") or "").strip()
     snapshot_age_seconds = None
     try:
@@ -1039,6 +1070,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             f" Foram removidas {ads_deduplication['removedRows']} linhas duplicadas do cache de Ads "
             "antes dos calculos."
         )
+    if returns_available:
+        notice += " Devolucoes: valor dos produtos com dinheiro reembolsado; o frete de retorno nao esta somado ao indicador."
+    else:
+        notice += " A leitura oficial de devolucoes ainda nao ficou completa; os indicadores aparecem como N/D."
     return {
         "kpis": {
             "clientName": client,
@@ -1049,6 +1084,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "adsRevenue": total_ads_revenue,
             "adsDirectRevenue": total_ads_direct,
             "organicRevenue": total_organic,
+            "returnsAvailable": returns_available,
+            "returnsAmount": returns_amount,
+            "returnsRate": returns_rate,
             "tacosBaseRevenue": total_tacos_base,
             "investment": total_investment,
             "investmentNoAdsSales": sum(item["investment"] for item in items if item["investment"] > 0 and item["adsRevenue"] <= 0),
@@ -1065,6 +1103,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "revenueSource": "agente-ml / online-cache-latest / pedidos brutos",
             "onlineMode": {"enabled": True, "notice": notice, "complete": complete, "updatedAt": snapshot_at, "onlinePeriod": requested_period or {}, "periodMatch": period_match, "snapshot": snapshot_meta},
             "adsDeduplication": ads_deduplication,
+            "returns": returns_meta,
             "dailySales": {
                 "source": "agente-ml / sales-daily",
                 "available": not bool(daily_sales_error),

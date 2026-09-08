@@ -2408,6 +2408,8 @@ def render_dashboard(data):
       document.getElementById('kpis').innerHTML = [
         ['Produtos analisados', num(k.products), ''],
         ['Receita total', brl(k.revenue), 'good'],
+        ['Devolucoes confirmadas', k.returnsAvailable ? brl(k.returnsAmount || 0) : 'N/D', k.returnsAvailable && k.returnsAmount > 0 ? 'danger' : ''],
+        ['Taxa de devolucao', k.returnsAvailable ? pct(k.returnsRate || 0) : 'N/D', k.returnsAvailable && k.returnsRate > 0 ? 'danger' : ''],
         ['Receita atribuida ADS', brl(k.adsRevenue), ''],
         ['Receita organica estimada', brl(k.organicRevenue || 0), ''],
         ['Investimento ADS', brl(k.investment), ''],
