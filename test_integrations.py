@@ -939,13 +939,13 @@ class HTTPRouteTests(unittest.TestCase):
         payload = {
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
-            "ads": {"items": [dict(duplicate_row), dict(duplicate_row)]},
-            "sales": {"items": {"MLB123": {"revenue_total": 200, "units_total": 4}}},
+            "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [dict(duplicate_row), dict(duplicate_row)]},
+            "sales": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": {"MLB123": {"revenue_total": 200, "units_total": 4}}},
         }
         original_fetch = app._fetch_dash_ads_json
         app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
         try:
-            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424", "2026-07-01", "2026-07-30")
         finally:
             app._fetch_dash_ads_json = original_fetch
 
@@ -979,16 +979,16 @@ class HTTPRouteTests(unittest.TestCase):
         payload = {
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
-            "ads": {"items": [
+            "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [
                 {**base_row, "status": "paused"},
                 {**base_row, "status": "active"},
             ]},
-            "sales": {"items": {"MLB123": {"revenue_total": 200, "units_total": 4}}},
+            "sales": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": {"MLB123": {"revenue_total": 200, "units_total": 4}}},
         }
         original_fetch = app._fetch_dash_ads_json
         app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
         try:
-            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424", "2026-07-01", "2026-07-30")
         finally:
             app._fetch_dash_ads_json = original_fetch
 
@@ -1003,7 +1003,7 @@ class HTTPRouteTests(unittest.TestCase):
         payload = {
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
-            "ads": {"items": [{
+            "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [{
                 "item_id": "MLB123",
                 "campaign_id": "456",
                 "campaign_name": "Campanha Principal",
@@ -1012,7 +1012,7 @@ class HTTPRouteTests(unittest.TestCase):
                 "title": "Produto Teste",
                 "price": 59.9,
             }]},
-            "sales": {"items": {"MLB123": {
+            "sales": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": {"MLB123": {
                 "revenue_total": 100,
                 "units_total": 2,
                 "last_sale_date": "2026-07-30T10:00:00-03:00",
@@ -1022,7 +1022,7 @@ class HTTPRouteTests(unittest.TestCase):
         original_fetch = app._fetch_dash_ads_json
         app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
         try:
-            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424", "2026-07-01", "2026-07-30")
         finally:
             app._fetch_dash_ads_json = original_fetch
 
@@ -1039,16 +1039,16 @@ class HTTPRouteTests(unittest.TestCase):
         payload = {
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
-            "ads": {"items": [
+            "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [
                 {"item_id": "MLB123", "campaign_id": "A", "cost": 10, "total_amount": 100},
                 {"item_id": "MLB123", "campaign_id": "B", "cost": 5, "total_amount": 50},
             ]},
-            "sales": {"items": {"MLB123": {"revenue_total": 200, "units_total": 4}}},
+            "sales": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": {"MLB123": {"revenue_total": 200, "units_total": 4}}},
         }
         original_fetch = app._fetch_dash_ads_json
         app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
         try:
-            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424", "2026-07-01", "2026-07-30")
         finally:
             app._fetch_dash_ads_json = original_fetch
 
@@ -1065,8 +1065,8 @@ class HTTPRouteTests(unittest.TestCase):
         payload = {
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
-            "ads": {"items": [{"item_id": "MLB123", "cost": 10, "total_amount": 100}]},
-            "sales": {"items": {
+            "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [{"item_id": "MLB123", "cost": 10, "total_amount": 100}]},
+            "sales": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": {
                 "MLB123": {"revenue_total": 200, "units_total": 4},
                 "MLB456": {"revenue_total": 300, "units_total": 2, "sku": "SKU-456"},
             }},
@@ -1074,7 +1074,7 @@ class HTTPRouteTests(unittest.TestCase):
         original_fetch = app._fetch_dash_ads_json
         app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
         try:
-            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424", "2026-07-01", "2026-07-30")
         finally:
             app._fetch_dash_ads_json = original_fetch
 
@@ -1088,13 +1088,13 @@ class HTTPRouteTests(unittest.TestCase):
         payload = {
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
-            "ads": {"items": [{"item_id": "MLB123", "cost": 2000, "total_amount": 50000, "direct_amount": 0}]},
-            "sales": {"items": {"MLB123": {"revenue_total": 0, "units_total": 0}}},
+            "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [{"item_id": "MLB123", "cost": 2000, "total_amount": 50000, "direct_amount": 0}]},
+            "sales": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": {"MLB123": {"revenue_total": 0, "units_total": 0}}},
         }
         original_fetch = app._fetch_dash_ads_json
         app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
         try:
-            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424", "2026-07-01", "2026-07-30")
         finally:
             app._fetch_dash_ads_json = original_fetch
 
@@ -1107,13 +1107,13 @@ class HTTPRouteTests(unittest.TestCase):
         payload = {
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": False}},
-            "ads": {"items": [{"item_id": "MLB123", "campaign_id": "A", "cost": 10, "total_amount": 100}]},
-            "sales": {"items": {"MLB123": {"revenue_total": 50, "units_total": 1}}},
+            "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [{"item_id": "MLB123", "campaign_id": "A", "cost": 10, "total_amount": 100}]},
+            "sales": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": {"MLB123": {"revenue_total": 50, "units_total": 1}}},
         }
         original_fetch = app._fetch_dash_ads_json
         app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
         try:
-            data, message = app._build_online_dashboard_data("conta-ativa", "164424")
+            data, message = app._build_online_dashboard_data("conta-ativa", "164424", "2026-07-01", "2026-07-30")
         finally:
             app._fetch_dash_ads_json = original_fetch
 
