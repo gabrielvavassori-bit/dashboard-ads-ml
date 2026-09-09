@@ -1455,9 +1455,11 @@ def render_dashboard(data):
     account_daily_chart = ""
     if online_mode.get("enabled"):
         account_daily_chart = """
-    <section class="card daily-chart-card account-daily-chart-card" data-account-daily-chart data-daily-chart data-chart-key="account">
+    <details class="card dashboard-section account-daily-chart-card">
+      <summary>Desempenho diario da conta</summary>
+    <section class="daily-chart-card" data-account-daily-chart data-daily-chart data-chart-key="account">
       <div class="chart-head">
-        <div><h3>Desempenho diario da conta</h3><div class="chart-summary">Selecione uma metrica para visualizar.</div></div>
+        <div><div class="chart-summary">Selecione uma metrica para visualizar.</div></div>
         <div class="chart-metric-tabs" role="group" aria-label="Metrica do grafico da conta">
           <button class="chart-metric-button" type="button" data-chart-metric="revenue">Faturamento</button>
           <button class="chart-metric-button" type="button" data-chart-metric="adsRevenue">Receita Ads</button>
@@ -1472,6 +1474,7 @@ def render_dashboard(data):
       <div class="chart-stage"><div class="chart-canvas"></div><div class="chart-tooltip"></div></div>
       <p class="note">Consolidacao diaria de todos os anuncios e produtos no periodo selecionado.</p>
     </section>
+    </details>
     """
     return f"""<!doctype html>
 <html lang="pt-BR">
@@ -1496,6 +1499,17 @@ def render_dashboard(data):
     main {{ width:min(1500px, calc(100vw - 28px)); margin:0 auto; padding:14px 0 28px; }}
     .kpis {{ display:grid; grid-template-columns:repeat(6,minmax(150px,1fr)); gap:10px; margin-bottom:12px; flex:0 0 auto; }}
     .card {{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; box-shadow:0 4px 14px rgba(16,24,40,.04); min-width:0; overflow:hidden; }}
+    .dashboard-section {{ margin:0 0 12px; padding:0; }}
+    .dashboard-section > summary {{ list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:52px; padding:13px 16px; font-size:16px; font-weight:800; }}
+    .dashboard-section > summary::-webkit-details-marker {{ display:none; }}
+    .dashboard-section > summary::after {{ content:'+'; display:inline-flex; align-items:center; justify-content:center; flex:0 0 28px; width:28px; height:28px; border:1px solid #98a2b3; border-radius:8px; background:#fff; color:#102033; font-size:20px; line-height:1; }}
+    .dashboard-section[open] > summary {{ border-bottom:1px solid var(--line); }}
+    .dashboard-section[open] > summary::after {{ content:'−'; }}
+    .dashboard-section-body {{ min-width:0; padding:14px; }}
+    .dashboard-section-body > :first-child {{ margin-top:0; }}
+    .dashboard-section-body > :last-child {{ margin-bottom:0; }}
+    .kpi-section .kpis {{ margin-bottom:0; }}
+    .operational-products-section .table-card {{ border:0; box-shadow:none; padding:0; }}
     .kpi small {{ color:var(--muted); display:block; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }}
     .kpi strong {{ display:block; font-size:22px; margin-top:6px; }}
     .kpi.danger {{ border-color:#fecdca; }}
@@ -1671,7 +1685,7 @@ def render_dashboard(data):
     .promotion-success {{ margin-top:10px; padding:10px; border-radius:8px; background:#ecfdf3; color:#027a48; font-weight:800; }}
     .promotion-error {{ margin-top:10px; padding:10px; border-radius:8px; background:#fef3f2; color:#b42318; font-weight:800; }}
     .daily-chart-card {{ position:relative; overflow:hidden; padding:16px; background:linear-gradient(180deg,#fff 0%,#fbfdff 100%); }}
-    .account-daily-chart-card {{ margin:0 0 12px; }}
+    .account-daily-chart-card {{ margin:0 0 12px; padding:0; }}
     .chart-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:14px; flex-wrap:wrap; }}
     .chart-head h3 {{ margin-bottom:4px; font-size:16px; }}
     .chart-summary {{ color:var(--muted); font-size:12px; }}
@@ -1753,7 +1767,10 @@ def render_dashboard(data):
   <main>
     {f'<section class="online-notice">{online_notice}</section>' if online_notice else ''}
     {online_period_filter}
-    <section class="kpis" id="kpis"></section>
+    <details class="card dashboard-section kpi-section">
+      <summary>Indicadores da conta</summary>
+      <div class="dashboard-section-body"><section class="kpis" id="kpis"></section></div>
+    </details>
     {account_daily_chart}
     <nav class="page-nav" aria-label="Visoes do dashboard">
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
@@ -1762,13 +1779,16 @@ def render_dashboard(data):
     </nav>
     <section class="view active" id="view-operational">
       <section class="grid">
-        <div class="card">
-          <h2>Alertas principais</h2>
+        <details class="card dashboard-section">
+          <summary>Alertas principais</summary>
+          <div class="dashboard-section-body">
           <div id="alerts"></div>
           <p class="note">A visao de investimento sem vendas usa a receita atribuida pelo ADS. Ela ajuda a evitar TACOS/ROAS falsamente bons.</p>
-        </div>
-        <div class="card">
-          <h2>Leitura auxiliar de CTR e CVR</h2>
+          </div>
+        </details>
+        <details class="card dashboard-section">
+          <summary>Leitura auxiliar de CTR e CVR</summary>
+          <div class="dashboard-section-body">
           <table>
             <tr><th>Cenario</th><th>Leitura recomendada</th></tr>
             <tr><td>CTR baixo + muitas impressoes</td><td>Revisar imagem, titulo, preco, frete e relevancia.</td></tr>
@@ -1781,8 +1801,12 @@ def render_dashboard(data):
             <tr><td>CVR alto + TACOS ruim</td><td>Vende, mas o clique esta caro ou a margem nao cobre.</td></tr>
             <tr><td>CVR baixo + TACOS bom</td><td>Nao pausar automaticamente; pode ter baixo volume ou ticket alto.</td></tr>
           </table>
-        </div>
+          </div>
+        </details>
       </section>
+      <details class="card dashboard-section operational-products-section">
+      <summary>Análise operacional dos produtos</summary>
+      <div class="dashboard-section-body">
       <div class="toolbar">
         <div class="toolbar-left">
           <div class="control-block">
@@ -1837,12 +1861,15 @@ def render_dashboard(data):
           </div>
         </div>
       </section>
+      </div>
+      </details>
     </section>
     <section class="view" id="view-abc">
-      <section class="card abc-panel">
+      <details class="card dashboard-section abc-panel">
+        <summary>Curva ABC de vendas</summary>
+        <div class="dashboard-section-body">
         <div class="abc-head">
           <div>
-            <h2>Curva ABC de vendas</h2>
             <p class="note">Classifica o que mais pesa no resultado. A fica ate 80% acumulado, B ate 95%, C o restante.</p>
           </div>
           <div class="abc-controls">
@@ -1866,13 +1893,15 @@ def render_dashboard(data):
           <input id="abcSearch" placeholder="Buscar familia, MLBU, SKU, MLB, titulo ou campanha">
         </div>
         <div class="scroll-frame" id="abcTable"></div>
-      </section>
+        </div>
+      </details>
     </section>
     <section class="view" id="view-online-beta">
-      <section class="card">
+      <details class="card dashboard-section">
+        <summary>Online Beta</summary>
+        <div class="dashboard-section-body">
         <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
           <div>
-            <h2>Online Beta</h2>
             <p class="note">Leitura somente consulta para comparar o XLSX com o dado autenticado do cliente no agente-ml. Nao altera cache, campanha nem planilha.</p>
           </div>
           <div class="muted" id="onlineBetaPeriod"></div>
@@ -1880,7 +1909,8 @@ def render_dashboard(data):
         <div class="beta-grid" id="onlineBetaSummary"></div>
         <div id="onlineBetaStatus" class="note"></div>
         <div class="scroll-frame" id="onlineBetaTable" style="margin-top:12px"></div>
-      </section>
+        </div>
+      </details>
     </section>
   </main>
   <div class="detail-modal-backdrop" id="detailModal" aria-hidden="true">
@@ -1934,8 +1964,9 @@ def render_dashboard(data):
     const detailItems = new Map();
     let activeDetailKey = '';
     let activeDetailTab = 'performance';
-    const familyCollapsed = new Set();
+    const familyExpanded = new Set();
     const mlbuExpanded = new Set();
+    const skuExpanded = new Set();
     const dailyChartMetric = new Map();
     const promotionState = new Map();
     let sortState = {{ key:'revenue', direction:1 }};
@@ -3238,7 +3269,7 @@ def render_dashboard(data):
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
-    function skuParentRow(sku) {{
+    function skuParentRow(sku, key, expanded) {{
       const children = sku.children || [];
       const summary = children.length ? productParentSummary(children) : sku;
       const familyCount = new Set(children.map(item => item.familyId).filter(Boolean)).size;
@@ -3246,7 +3277,7 @@ def render_dashboard(data):
       const mlbCount = new Set(children.map(item => item.code).filter(Boolean)).size;
       const item = {{ ...sku, ...summary, sku:sku.sku || summary.sku || '(sem SKU)' }};
       return `<tr class="product-parent-row sku-parent-row">
-        <td>${{productImage(item)}}</td>
+        <td>${{productImageWithToggle(item, key, expanded, 'SKU', 'sku')}}</td>
         <td><span class="code">${{safe(item.sku)}}</span><div class="muted">SKU pai</div></td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.sku)}}</span>${{copyButton(item.sku,'SKU')}}</div><div class="title">Resumo consolidado de ${{num(children.length)}} registro(s)</div></td>
         <td><span class="summary-chip">SKU PAI</span></td>
@@ -3376,7 +3407,7 @@ def render_dashboard(data):
       const variationGroups = splitByMlbu(group.children);
       if (!group.familyId) return variationGroups.map(item => mlbuGroupBody(item, true)).join('');
       const key = hierarchyKey('family', group.familyId);
-      const expanded = !familyCollapsed.has(key);
+      const expanded = familyExpanded.has(key);
       const familyLabel = group.familyName || `Família ${{group.familyId}}`;
       const item = aggregateDetailItem(group.children, {{scope:'family', id:group.familyId, title:familyLabel}});
       return `<tbody class="product-group family-group">${{familyParentRow(group, item, key, expanded)}}${{aggregateDetailRows(item, 'família')}}${{expanded ? variationGroups.map(variation => mlbuGroupRows(variation, true, false)).join('') : ''}}</tbody>`;
@@ -3402,9 +3433,11 @@ def render_dashboard(data):
       return rows.map(sku => {{
         const children = sku.children || [];
         if (!children.length) return `<tbody>${{row(sku)}}</tbody>`;
+        const key = hierarchyKey('sku', sku.sku || 'sem-sku');
+        const expanded = skuExpanded.has(key);
         const item = aggregateDetailItem(children, {{scope:'sku', id:sku.sku, title:`SKU ${{sku.sku}}`, sku:sku.sku}});
-        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku)}}${{aggregateDetailRows(item, 'SKU')}}<tr class="product-group-note"><td colspan="17"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; detalhamento estrutural abaixo.</td></tr></tbody>`;
-        const details = sortedGroups(splitByFamily(children)).map(familyGroupBody).join('');
+        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku, key, expanded)}}${{aggregateDetailRows(item, 'SKU')}}<tr class="product-group-note"><td colspan="17"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; use + para abrir o detalhamento estrutural.</td></tr></tbody>`;
+        const details = expanded ? sortedGroups(splitByFamily(children)).map(familyGroupBody).join('') : '';
         return summary + details;
       }}).join('');
     }}
@@ -3491,7 +3524,9 @@ def render_dashboard(data):
       document.querySelectorAll('[data-hierarchy-toggle]').forEach(button => button.addEventListener('click', () => {{
         const key = button.dataset.hierarchyToggle;
         if (button.dataset.hierarchyKind === 'family') {{
-          if (familyCollapsed.has(key)) familyCollapsed.delete(key); else familyCollapsed.add(key);
+          if (familyExpanded.has(key)) familyExpanded.delete(key); else familyExpanded.add(key);
+        }} else if (button.dataset.hierarchyKind === 'sku') {{
+          if (skuExpanded.has(key)) skuExpanded.delete(key); else skuExpanded.add(key);
         }} else {{
           if (mlbuExpanded.has(key)) mlbuExpanded.delete(key); else mlbuExpanded.add(key);
         }}
@@ -3600,8 +3635,9 @@ def render_dashboard(data):
         button.classList.add('active');
         currentViewMode = button.dataset.viewMode;
         closeDetailModal();
-        familyCollapsed.clear();
+        familyExpanded.clear();
         mlbuExpanded.clear();
+        skuExpanded.clear();
         sortState = defaultTableSort();
         renderTable();
       }});
