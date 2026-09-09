@@ -1455,7 +1455,7 @@ def render_dashboard(data):
     account_daily_chart = ""
     if online_mode.get("enabled"):
         account_daily_chart = """
-    <details class="card account-daily-chart-card">
+    <details class="card dashboard-section account-daily-chart-card">
       <summary>Desempenho diário da conta</summary>
     <section class="daily-chart-card" data-account-daily-chart data-daily-chart data-chart-key="account">
       <div class="chart-head">
@@ -1499,6 +1499,17 @@ def render_dashboard(data):
     main {{ width:min(1500px, calc(100vw - 28px)); margin:0 auto; padding:14px 0 28px; }}
     .kpis {{ display:grid; grid-template-columns:repeat(6,minmax(150px,1fr)); gap:10px; margin-bottom:12px; flex:0 0 auto; }}
     .card {{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; box-shadow:0 4px 14px rgba(16,24,40,.04); min-width:0; overflow:hidden; }}
+    .dashboard-section {{ margin:0 0 12px; padding:0; }}
+    .dashboard-section > summary {{ list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:52px; padding:13px 16px; font-size:16px; font-weight:800; }}
+    .dashboard-section > summary::-webkit-details-marker {{ display:none; }}
+    .dashboard-section > summary::after {{ content:'+'; display:inline-flex; align-items:center; justify-content:center; flex:0 0 28px; width:28px; height:28px; border:1px solid #98a2b3; border-radius:8px; background:#fff; color:#102033; font-size:20px; line-height:1; }}
+    .dashboard-section[open] > summary {{ border-bottom:1px solid var(--line); }}
+    .dashboard-section[open] > summary::after {{ content:'−'; }}
+    .dashboard-section-body {{ min-width:0; padding:14px; }}
+    .dashboard-section-body > :first-child {{ margin-top:0; }}
+    .dashboard-section-body > :last-child {{ margin-bottom:0; }}
+    .kpi-section .kpis {{ margin-bottom:0; }}
+    .operational-products-section .table-card {{ border:0; box-shadow:none; padding:0; }}
     .kpi small {{ color:var(--muted); display:block; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }}
     .kpi strong {{ display:block; font-size:22px; margin-top:6px; }}
     .kpi.danger {{ border-color:#fecdca; }}
@@ -1636,13 +1647,31 @@ def render_dashboard(data):
     .detail-block-wide {{ grid-column:1/-1; }}
     .listing-facts {{ display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:8px; }}
     .listing-fact {{ border:1px solid var(--line); border-radius:8px; padding:9px; background:#f8fafc; }}
+    body.detail-modal-open {{ overflow:hidden; }}
+    .detail-modal-backdrop {{ position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(16,24,40,.58); backdrop-filter:blur(2px); }}
+    .detail-modal-backdrop.open {{ display:flex; }}
+    .detail-modal-shell {{ width:min(1480px,96vw); height:min(900px,92vh); display:grid; grid-template-rows:auto auto minmax(0,1fr); overflow:hidden; border:1px solid #b8c8df; border-radius:16px; background:#f5f7fb; box-shadow:0 24px 70px rgba(16,24,40,.34); }}
+    .detail-modal-head {{ display:flex; align-items:center; justify-content:space-between; gap:18px; min-width:0; padding:16px 20px; border-bottom:1px solid var(--line); background:#fff; }}
+    .detail-modal-identity {{ display:flex; align-items:center; gap:12px; min-width:0; }}
+    .detail-modal-identity .product-thumbnail {{ flex:0 0 52px; }}
+    .detail-modal-title {{ min-width:0; }}
+    .detail-modal-title h2 {{ margin:0 0 3px; font-size:18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+    .detail-modal-title p {{ margin:0; color:var(--muted); font-size:12px; }}
+    .detail-modal-close {{ flex:0 0 auto; width:38px; height:38px; padding:0; border-radius:10px; font-size:22px; line-height:1; }}
+    .detail-modal-tabs {{ position:relative; z-index:2; display:grid; grid-auto-flow:column; grid-auto-columns:max-content; align-items:center; gap:6px; min-height:60px; padding:10px 20px; overflow-x:auto; overflow-y:hidden; border-bottom:1px solid var(--line); background:#fff; }}
+    .detail-modal-tabs button {{ display:inline-flex; align-items:center; justify-content:center; min-height:38px; line-height:1.2; white-space:nowrap; }}
+    .detail-modal-tabs button.active {{ background:#102033; color:#fff; border-color:#102033; }}
+    .detail-modal-body {{ position:relative; z-index:1; min-width:0; min-height:0; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; padding:18px 20px 28px; }}
+    .detail-modal-body .detail-grid {{ grid-template-columns:repeat(3,minmax(260px,1fr)); }}
+    .detail-modal-body .detail-block-wide {{ min-width:0; overflow-x:auto; }}
+    .detail-modal-body .child-table {{ min-width:1200px; }}
+    .detail-modal-body .child-table thead th {{ position:static; }}
+    .detail-modal-empty {{ padding:24px; border:1px dashed var(--line); border-radius:10px; background:#fff; color:var(--muted); }}
     .listing-fact b {{ display:block; margin-top:3px; color:var(--ink); }}
     .readonly-badge {{ display:inline-block; margin-bottom:8px; padding:4px 8px; border-radius:999px; background:#eef4ff; color:#1849a9; font-size:12px; font-weight:800; }}
     .price-signal {{ border-left:4px solid var(--orange); }}
     .daily-chart-card {{ position:relative; overflow:hidden; padding:16px; background:linear-gradient(180deg,#fff 0%,#fbfdff 100%); }}
     .account-daily-chart-card {{ margin:0 0 12px; padding:0; }}
-    .account-daily-chart-card > summary {{ padding:14px 16px; cursor:pointer; font-size:16px; font-weight:800; list-style-position:inside; }}
-    .account-daily-chart-card[open] > summary {{ border-bottom:1px solid var(--line); }}
     .chart-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:14px; flex-wrap:wrap; }}
     .chart-head h3 {{ margin-bottom:4px; font-size:16px; }}
     .chart-summary {{ color:var(--muted); font-size:12px; }}
@@ -1700,6 +1729,7 @@ def render_dashboard(data):
       .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
     @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .chart-head {{ align-items:stretch; }} .chart-metric-tabs {{ width:100%; }} .chart-metric-button {{ flex:1 1 auto; }} .campaign-config-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
+    @media (max-width:700px) {{ .detail-modal-backdrop {{ padding:0; }} .detail-modal-shell {{ width:100vw; max-width:100vw; height:100dvh; max-height:none; border:0; border-radius:0; }} .detail-modal-head {{ padding:12px; }} .detail-modal-tabs {{ grid-auto-flow:row; grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-columns:auto; min-width:0; min-height:98px; padding:8px 12px; overflow:hidden; }} .detail-modal-tabs button {{ width:100%; min-width:0; }} .detail-modal-body {{ padding:12px; }} .detail-modal-body .detail-grid {{ grid-template-columns:1fr; }} }}
   </style>
 </head>
 <body>
@@ -1723,7 +1753,10 @@ def render_dashboard(data):
   <main>
     {f'<section class="online-notice">{online_notice}</section>' if online_notice else ''}
     {online_period_filter}
-    <section class="kpis" id="kpis"></section>
+    <details class="card dashboard-section kpi-section">
+      <summary>Indicadores da conta</summary>
+      <div class="dashboard-section-body"><section class="kpis" id="kpis"></section></div>
+    </details>
     {account_daily_chart}
     <nav class="page-nav" aria-label="Visoes do dashboard">
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
@@ -1732,13 +1765,16 @@ def render_dashboard(data):
     </nav>
     <section class="view active" id="view-operational">
       <section class="grid">
-        <div class="card">
-          <h2>Alertas principais</h2>
+        <details class="card dashboard-section">
+          <summary>Alertas principais</summary>
+          <div class="dashboard-section-body">
           <div id="alerts"></div>
           <p class="note">A visao de investimento sem vendas usa a receita atribuida pelo ADS. Ela ajuda a evitar TACOS/ROAS falsamente bons.</p>
-        </div>
-        <div class="card">
-          <h2>Leitura auxiliar de CTR e CVR</h2>
+          </div>
+        </details>
+        <details class="card dashboard-section">
+          <summary>Leitura auxiliar de CTR e CVR</summary>
+          <div class="dashboard-section-body">
           <table>
             <tr><th>Cenario</th><th>Leitura recomendada</th></tr>
             <tr><td>CTR baixo + muitas impressoes</td><td>Revisar imagem, titulo, preco, frete e relevancia.</td></tr>
@@ -1751,8 +1787,12 @@ def render_dashboard(data):
             <tr><td>CVR alto + TACOS ruim</td><td>Vende, mas o clique esta caro ou a margem nao cobre.</td></tr>
             <tr><td>CVR baixo + TACOS bom</td><td>Nao pausar automaticamente; pode ter baixo volume ou ticket alto.</td></tr>
           </table>
-        </div>
+          </div>
+        </details>
       </section>
+      <details class="card dashboard-section operational-products-section">
+      <summary>Análise operacional dos produtos</summary>
+      <div class="dashboard-section-body">
       <div class="toolbar">
         <div class="toolbar-left">
           <div class="control-block">
@@ -1807,12 +1847,15 @@ def render_dashboard(data):
           </div>
         </div>
       </section>
+      </div>
+      </details>
     </section>
     <section class="view" id="view-abc">
-      <section class="card abc-panel">
+      <details class="card dashboard-section abc-panel">
+        <summary>Curva ABC de vendas</summary>
+        <div class="dashboard-section-body">
         <div class="abc-head">
           <div>
-            <h2>Curva ABC de vendas</h2>
             <p class="note">Classifica o que mais pesa no resultado. A fica ate 80% acumulado, B ate 95%, C o restante.</p>
           </div>
           <div class="abc-controls">
@@ -1836,13 +1879,15 @@ def render_dashboard(data):
           <input id="abcSearch" placeholder="Buscar familia, MLBU, SKU, MLB, titulo ou campanha">
         </div>
         <div class="scroll-frame" id="abcTable"></div>
-      </section>
+        </div>
+      </details>
     </section>
     <section class="view" id="view-online-beta">
-      <section class="card">
+      <details class="card dashboard-section">
+        <summary>Online Beta</summary>
+        <div class="dashboard-section-body">
         <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
           <div>
-            <h2>Online Beta</h2>
             <p class="note">Leitura somente consulta para comparar o XLSX com o dado autenticado do cliente no agente-ml. Nao altera cache, campanha nem planilha.</p>
           </div>
           <div class="muted" id="onlineBetaPeriod"></div>
@@ -1850,9 +1895,20 @@ def render_dashboard(data):
         <div class="beta-grid" id="onlineBetaSummary"></div>
         <div id="onlineBetaStatus" class="note"></div>
         <div class="scroll-frame" id="onlineBetaTable" style="margin-top:12px"></div>
-      </section>
+        </div>
+      </details>
     </section>
   </main>
+  <div class="detail-modal-backdrop" id="detailModal" aria-hidden="true">
+    <section class="detail-modal-shell" role="dialog" aria-modal="true" aria-labelledby="detailModalHeading">
+      <header class="detail-modal-head">
+        <div class="detail-modal-identity" id="detailModalIdentity"></div>
+        <button class="detail-modal-close" id="detailModalClose" type="button" aria-label="Fechar leitura">×</button>
+      </header>
+      <nav class="detail-modal-tabs" id="detailModalTabs" aria-label="Seções da leitura"></nav>
+      <div class="detail-modal-body" id="detailModalBody"></div>
+    </section>
+  </div>
   <a class="whatsapp-support" href="https://wa.me/5511998397385?text=Oi%2C%20estou%20precisando%20de%20suporte%20no%20Dash%20Ads." target="_blank" rel="noopener noreferrer" aria-label="Pedir suporte pelo WhatsApp">
     <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M19.11 17.21c-.26-.13-1.54-.76-1.78-.85-.24-.09-.41-.13-.59.13-.17.26-.67.85-.82 1.02-.15.17-.3.2-.56.07-.26-.13-1.09-.4-2.08-1.28-.77-.68-1.29-1.53-1.44-1.79-.15-.26-.02-.4.11-.53.12-.12.26-.3.39-.46.13-.15.17-.26.26-.43.09-.17.04-.33-.02-.46-.07-.13-.59-1.41-.8-1.93-.21-.51-.43-.44-.59-.45h-.5c-.17 0-.46.07-.7.33-.24.26-.91.89-.91 2.17s.93 2.52 1.06 2.69c.13.17 1.83 2.8 4.44 3.93.62.27 1.1.43 1.48.55.62.2 1.19.17 1.64.1.5-.07 1.54-.63 1.76-1.24.22-.61.22-1.13.15-1.24-.06-.12-.23-.18-.49-.31zM16.04 3.2A12.73 12.73 0 0 0 5.2 22.6L3.4 29.2l6.76-1.77a12.72 12.72 0 1 0 5.88-24.23zm0 22.88c-2.03 0-4.02-.55-5.75-1.59l-.41-.24-4.01 1.05 1.07-3.91-.27-.4a10.16 10.16 0 1 1 9.37 5.09z"/></svg>
     <span>Suporte pelo WhatsApp</span>
@@ -1891,9 +1947,12 @@ def render_dashboard(data):
     let tableZoom = (() => {{
       try {{ return Number(localStorage.getItem('dashboardAdsTableZoom')) || 1; }} catch (error) {{ return 1; }}
     }})();
-    const detailExpanded = new Set();
-    const familyCollapsed = new Set();
+    const detailItems = new Map();
+    let activeDetailKey = '';
+    let activeDetailTab = 'performance';
+    const familyExpanded = new Set();
     const mlbuExpanded = new Set();
+    const skuExpanded = new Set();
     const dailyChartMetric = new Map();
     let sortState = {{ key:'revenue', direction:1 }};
     let abcMode = 'hybrid';
@@ -2559,7 +2618,14 @@ def render_dashboard(data):
       return labels[String(value || '').toLowerCase()] || (value ? String(value) : 'Nao informado pelo cache');
     }}
     function dailySeriesFor(item) {{
-      const sources = (item.children && item.children.length) ? item.children : [item];
+      const rawSources = (item.children && item.children.length) ? item.children : [item];
+      const sourcesByCode = new Map();
+      rawSources.forEach((source, index) => {{
+        const code = String(source.code || '').trim();
+        const key = code ? `code:${{code}}` : `row:${{index}}`;
+        if (!sourcesByCode.has(key)) sourcesByCode.set(key, source);
+      }});
+      const sources = [...sourcesByCode.values()];
       const byDate = new Map();
       sources.forEach(source => (source.dailySeries || []).forEach(row => {{
         const date = String(row.date || '');
@@ -2587,10 +2653,11 @@ def render_dashboard(data):
           tacos:row.tacosBaseRevenue > 0 ? row.investment / row.tacosBaseRevenue : 0,
         }}))
         .sort((a,b) => a.date.localeCompare(b.date));
+      if (!rows.length) return rows;
       const period = DATA.meta?.onlineMode?.onlinePeriod || DATA.meta?.period || DATA.onlineBeta?.requestedPeriod || {{}};
       const dateFrom = String(period.dateFrom || period.date_from || '');
       const dateTo = String(period.dateTo || period.date_to || '');
-      if (!/^\d{{4}}-\d{{2}}-\d{{2}}$/.test(dateFrom) || !/^\d{{4}}-\d{{2}}-\d{{2}}$/.test(dateTo)) return rows;
+      if (!/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(dateFrom) || !/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(dateTo)) return rows;
       const indexed = new Map(rows.map(row => [row.date, row]));
       const complete = [];
       const cursor = new Date(`${{dateFrom}}T12:00:00`);
@@ -2894,20 +2961,79 @@ def render_dashboard(data):
         : 'Nenhum preco de teste foi calculado.';
       return `<div class="detail-block detail-block-wide price-signal"><span class="readonly-badge">PREVIA SOMENTE LEITURA</span><h3>Hipotese de preco e promocao</h3><p>${{safe(analysis)}}</p><p><b>${{safe(suggestion)}}</b></p><div class="muted">Elegibilidade de promocao: nao consultada pelo cache atual. Esta etapa nao cria promocao, nao altera preco e nao envia comandos ao Mercado Livre.</div></div>`;
     }}
-    function detailBlocks(item) {{
+    function detailEvidence(item) {{
       const evidence = [
         `Confianca: ${{item.confidence || 'hipotese'}}`,
         ...((item.confidenceReasons || []).map(value => `Evidencia: ${{value}}`)),
         ...((item.validationPoints || []).map(value => `Validar: ${{value}}`))
       ];
       if (item.campaignRevenueAmbiguous) evidence.unshift('TACOS da campanha e orientativo: o mesmo MLB aparece em mais de uma campanha.');
-      return dailyChartBlock(item)
-        + (item.detailScope ? aggregateFactsBlock(item) : listingFactsBlock(item))
-        + (item.detailScope ? '' : pricingPreviewBlock(item))
-        + listBlock('Leitura e confianca', evidence)
+      return evidence;
+    }}
+    function detailModalContent(item) {{
+      if (activeDetailTab === 'performance') {{
+        return dailyChartBlock(item) + (item.detailScope ? aggregateFactsBlock(item) : listingFactsBlock(item));
+      }}
+      if (activeDetailTab === 'diagnosis') {{
+        return listBlock('Leitura e confianca', detailEvidence(item))
         + listBlock('Causas mais provaveis', item.diagnosisHypotheses)
-        + listBlock('O que fazer agora', item.testOrder)
-        + campaignChildren(item);
+        + listBlock('O que fazer agora', item.testOrder);
+      }}
+      if (activeDetailTab === 'promotions') {{
+        return item.detailScope
+          ? '<div class="detail-modal-empty">Promoções são consultadas somente no anúncio MLB individual. Abra uma condição de venda para avaliar elegibilidade e gerar a prévia.</div>'
+          : pricingPreviewBlock(item);
+      }}
+      const campaigns = campaignChildren(item);
+      return campaigns || '<div class="detail-modal-empty">Nenhum detalhamento adicional de publicidade foi encontrado para este item.</div>';
+    }}
+    function detailModalScope(item) {{
+      if (item.detailScope === 'sku') return 'SKU consolidado';
+      if (item.detailScope === 'family') return 'Família consolidada';
+      if (item.detailScope === 'mlbu') return 'Variação / MLBU consolidado';
+      if (currentViewMode === 'campaign') return 'Campanha Ads';
+      return 'Anúncio / condição de venda';
+    }}
+    function closeDetailModal() {{
+      activeDetailKey = '';
+      const modal = document.getElementById('detailModal');
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('detail-modal-open');
+    }}
+    function renderDetailModal() {{
+      if (!activeDetailKey) return;
+      const item = detailItems.get(activeDetailKey);
+      if (!item) {{ closeDetailModal(); return; }}
+      const modal = document.getElementById('detailModal');
+      const title = item.title || item.sku || item.detailId || item.code || 'Leitura do produto';
+      const identifiers = [detailModalScope(item), item.detailId || '', item.code || '', item.sku || ''].filter(Boolean).join(' · ');
+      document.getElementById('detailModalIdentity').innerHTML = `${{productImage(item)}}<div class="detail-modal-title"><h2 id="detailModalHeading">${{safe(title)}}</h2><p>${{safe(identifiers)}}</p></div>`;
+      const tabs = [
+        ['performance', 'Desempenho'],
+        ['diagnosis', 'Diagnóstico'],
+        ['promotions', 'Promoções'],
+        ['advertising', 'Publicidade']
+      ];
+      document.getElementById('detailModalTabs').innerHTML = tabs.map(([key, label]) => `<button type="button" data-detail-tab="${{key}}" class="${{activeDetailTab === key ? 'active' : ''}}">${{label}}</button>`).join('');
+      const modalBody = document.getElementById('detailModalBody');
+      modalBody.innerHTML = `<div class="detail-grid">${{detailModalContent(item)}}</div>`;
+      modalBody.scrollTop = 0;
+      modalBody.scrollLeft = 0;
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('detail-modal-open');
+      document.querySelectorAll('[data-detail-tab]').forEach(button => button.addEventListener('click', () => {{
+        activeDetailTab = button.dataset.detailTab;
+        renderDetailModal();
+      }}));
+      activateDailyCharts();
+    }}
+    function openDetailModal(key) {{
+      activeDetailKey = key;
+      activeDetailTab = 'performance';
+      renderDetailModal();
+      document.getElementById('detailModalClose').focus();
     }}
     function productParentSummary(children) {{
       const sum = key => children.reduce((total, item) => total + Number(item[key] || 0), 0);
@@ -2983,9 +3109,9 @@ def render_dashboard(data):
     }}
     function aggregateDetailRows(item, label) {{
       const key = detailKey(item);
-      const expanded = detailExpanded.has(key);
-      return `<tr class="aggregate-reading-row"><td colspan="17"><div class="decision-wrap"><div class="decision-summary-main"><span class="summary-chip">Leitura consolidada</span><div class="decision-teaser">${{safe(item.diagnosticSummary)}}</div></div><div class="decision-summary-side"><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">${{expanded ? 'Ocultar leitura' : 'Ver leitura'}} da ${{safe(label)}}</button></div></div></td></tr>
-      <tr class="detail-row aggregate-detail-row" style="display:${{expanded ? 'table-row' : 'none'}}"><td colspan="17"><div class="detail-grid">${{detailBlocks(item)}}</div></td></tr>`;
+      detailItems.set(key, item);
+      const article = String(label).toUpperCase() === 'SKU' ? 'do' : 'da';
+      return `<tr class="aggregate-reading-row"><td colspan="17"><div class="decision-wrap"><div class="decision-summary-main"><span class="summary-chip">Leitura consolidada</span><div class="decision-teaser">${{safe(item.diagnosticSummary)}}</div></div><div class="decision-summary-side"><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura ${{article}} ${{safe(label)}}</button></div></div></td></tr>`;
     }}
     function productParentRow(item, key, expanded) {{
       return `<tr class="product-parent-row variation-parent-row">
@@ -3015,7 +3141,7 @@ def render_dashboard(data):
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
-    function skuParentRow(sku) {{
+    function skuParentRow(sku, key, expanded) {{
       const children = sku.children || [];
       const summary = children.length ? productParentSummary(children) : sku;
       const familyCount = new Set(children.map(item => item.familyId).filter(Boolean)).size;
@@ -3023,7 +3149,7 @@ def render_dashboard(data):
       const mlbCount = new Set(children.map(item => item.code).filter(Boolean)).size;
       const item = {{ ...sku, ...summary, sku:sku.sku || summary.sku || '(sem SKU)' }};
       return `<tr class="product-parent-row sku-parent-row">
-        <td>${{productImage(item)}}</td>
+        <td>${{productImageWithToggle(item, key, expanded, 'SKU', 'sku')}}</td>
         <td><span class="code">${{safe(item.sku)}}</span><div class="muted">SKU pai</div></td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.sku)}}</span>${{copyButton(item.sku,'SKU')}}</div><div class="title">Resumo consolidado de ${{num(children.length)}} registro(s)</div></td>
         <td><span class="summary-chip">SKU PAI</span></td>
@@ -3153,7 +3279,7 @@ def render_dashboard(data):
       const variationGroups = splitByMlbu(group.children);
       if (!group.familyId) return variationGroups.map(item => mlbuGroupBody(item, true)).join('');
       const key = hierarchyKey('family', group.familyId);
-      const expanded = !familyCollapsed.has(key);
+      const expanded = familyExpanded.has(key);
       const familyLabel = group.familyName || `Família ${{group.familyId}}`;
       const item = aggregateDetailItem(group.children, {{scope:'family', id:group.familyId, title:familyLabel}});
       return `<tbody class="product-group family-group">${{familyParentRow(group, item, key, expanded)}}${{aggregateDetailRows(item, 'família')}}${{expanded ? variationGroups.map(variation => mlbuGroupRows(variation, true, false)).join('') : ''}}</tbody>`;
@@ -3179,14 +3305,17 @@ def render_dashboard(data):
       return rows.map(sku => {{
         const children = sku.children || [];
         if (!children.length) return `<tbody>${{row(sku)}}</tbody>`;
-        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku)}}<tr class="product-group-note"><td colspan="17"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; detalhamento estrutural abaixo.</td></tr></tbody>`;
-        const details = sortedGroups(splitByFamily(children)).map(familyGroupBody).join('');
+        const key = hierarchyKey('sku', sku.sku || 'sem-sku');
+        const expanded = skuExpanded.has(key);
+        const item = aggregateDetailItem(children, {{scope:'sku', id:sku.sku, title:`SKU ${{sku.sku}}`, sku:sku.sku}});
+        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku, key, expanded)}}${{aggregateDetailRows(item, 'SKU')}}<tr class="product-group-note"><td colspan="17"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; use + para abrir o detalhamento estrutural.</td></tr></tbody>`;
+        const details = expanded ? sortedGroups(splitByFamily(children)).map(familyGroupBody).join('') : '';
         return summary + details;
       }}).join('');
     }}
     function row(item, extraClass = '') {{
       const key = detailKey(item);
-      const expanded = detailExpanded.has(key);
+      detailItems.set(key, item);
       const campaignMode = currentViewMode === 'campaign';
       const abcValue = campaignMode ? item.abcCampaign : currentViewMode === 'sku' ? item.abcSku : item.abcCode;
       const abcPrefix = campaignMode ? 'CAMP' : currentViewMode === 'sku' ? 'SKU' : 'MLB';
@@ -3206,12 +3335,12 @@ def render_dashboard(data):
       </tr>
       <tr class="decision-row"><td colspan="17"><div class="decision-wrap">
         <div class="decision-summary-main"><span class="pill ${{actionClass(item.action)}}">${{safe(item.action)}}</span><div class="decision-teaser"><b>Diagnostico:</b> ${{safe(item.diagnosticSummary || item.recommendation || item.reason || 'Sem leitura adicional.')}}</div></div>
-        <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">${{expanded ? 'Ocultar leitura' : 'Ver leitura'}}</button></div>
-      </div></td></tr>
-      <tr class="detail-row" style="display:${{expanded ? 'table-row' : 'none'}}"><td colspan="17"><div class="detail-grid">${{detailBlocks(item)}}</div></td></tr>`;
+        <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura</button></div>
+      </div></td></tr>`;
     }}
     function renderTable() {{
       renderAlerts();
+      detailItems.clear();
       const q = document.getElementById('search').value.toLowerCase();
       let rows = rowsByViewMode().filter(item => matchesContext(item) && itemSearchText(item, currentViewMode).includes(q));
       if (sortState.key && sortState.direction !== 0) {{
@@ -3257,20 +3386,19 @@ def render_dashboard(data):
       }}
       helpMeta.textContent = `${{num(rows.length)}} registro(s) no filtro atual`;
       applyTableZoom();
-      activateDailyCharts();
       document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {{
         const value = button.dataset.copy;
         try {{ await navigator.clipboard.writeText(value); }} catch (error) {{ const input = document.createElement('textarea'); input.value = value; document.body.appendChild(input); input.select(); document.execCommand('copy'); input.remove(); }}
       }}));
       document.querySelectorAll('[data-detail-toggle]').forEach(button => button.addEventListener('click', () => {{
-        const key = button.dataset.detailToggle;
-        if (detailExpanded.has(key)) detailExpanded.delete(key); else detailExpanded.add(key);
-        renderTable();
+        openDetailModal(button.dataset.detailToggle);
       }}));
       document.querySelectorAll('[data-hierarchy-toggle]').forEach(button => button.addEventListener('click', () => {{
         const key = button.dataset.hierarchyToggle;
         if (button.dataset.hierarchyKind === 'family') {{
-          if (familyCollapsed.has(key)) familyCollapsed.delete(key); else familyCollapsed.add(key);
+          if (familyExpanded.has(key)) familyExpanded.delete(key); else familyExpanded.add(key);
+        }} else if (button.dataset.hierarchyKind === 'sku') {{
+          if (skuExpanded.has(key)) skuExpanded.delete(key); else skuExpanded.add(key);
         }} else {{
           if (mlbuExpanded.has(key)) mlbuExpanded.delete(key); else mlbuExpanded.add(key);
         }}
@@ -3378,9 +3506,10 @@ def render_dashboard(data):
         document.querySelectorAll('#viewMode button[data-view-mode]').forEach(item => item.classList.remove('active'));
         button.classList.add('active');
         currentViewMode = button.dataset.viewMode;
-        detailExpanded.clear();
-        familyCollapsed.clear();
+        closeDetailModal();
+        familyExpanded.clear();
         mlbuExpanded.clear();
+        skuExpanded.clear();
         sortState = defaultTableSort();
         renderTable();
       }});
@@ -3418,6 +3547,13 @@ def render_dashboard(data):
     document.getElementById('tableTop').addEventListener('click', () => window.scrollTo({{ top:0, behavior:'smooth' }}));
     document.getElementById('search').addEventListener('input', renderTable);
     document.getElementById('abcSearch').addEventListener('input', renderAbc);
+    document.getElementById('detailModalClose').addEventListener('click', closeDetailModal);
+    document.getElementById('detailModal').addEventListener('click', event => {{
+      if (event.target.id === 'detailModal') closeDetailModal();
+    }});
+    document.addEventListener('keydown', event => {{
+      if (event.key === 'Escape' && activeDetailKey) closeDetailModal();
+    }});
     renderKpis(); activateAccountDailyChart(); renderAbc(); renderAlerts(); renderTable(); renderOnlineBeta();
   </script>
 </body>

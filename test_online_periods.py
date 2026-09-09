@@ -13,6 +13,52 @@ NOW = datetime(2026, 7, 31, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
 class OnlinePeriodTests(unittest.TestCase):
+    def test_product_daily_chart_does_not_turn_missing_series_into_zeroes(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        daily_series = source.split("function dailySeriesFor(item)", 1)[1].split(
+            "function chartDateLabel", 1
+        )[0]
+
+        self.assertLess(
+            daily_series.index("if (!rows.length) return rows;"),
+            daily_series.index("const period ="),
+        )
+
+    def test_consolidated_daily_series_deduplicates_repeated_mlb_rows(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        daily_series = source.split("function dailySeriesFor(item)", 1)[1].split(
+            "function chartDateLabel", 1
+        )[0]
+
+        self.assertIn("const sourcesByCode = new Map();", daily_series)
+        self.assertIn("const key = code ? `code:${{code}}` : `row:${{index}}`;", daily_series)
+
+    def test_sku_view_exposes_consolidated_reading(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+
+        self.assertIn("scope:'sku'", source)
+        self.assertIn("aggregateDetailRows(item, 'SKU')", source)
+        self.assertIn("SKU consolidado", source)
+
+    def test_dashboard_sections_and_hierarchies_start_collapsed(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        period = {"dateFrom": "2026-09-01", "dateTo": "2026-09-07"}
+        html = render_dashboard({
+            "meta": {"onlineMode": {"enabled": True, "onlinePeriod": period}},
+            "onlineBeta": {"enabled": True, "requestedPeriod": period},
+            "items": [],
+        })
+
+        self.assertGreaterEqual(html.count('<details class="card dashboard-section'), 6)
+        self.assertNotIn('<details class="card dashboard-section" open', html)
+        self.assertIn(".dashboard-section > summary::after {{ content:'+';", source)
+        self.assertIn(".dashboard-section[open] > summary::after {{ content:'−';", source)
+        self.assertIn("const familyExpanded = new Set();", source)
+        self.assertIn("const skuExpanded = new Set();", source)
+        self.assertIn("const expanded = familyExpanded.has(key);", source)
+        self.assertIn("const expanded = skuExpanded.has(key);", source)
+        self.assertIn("data-hierarchy-kind=\"${{safe(kind)}}\"", source)
+
     def test_sales_intelligence_bootstrap_is_ninety_closed_days(self):
         period = app._sales_intelligence_default_period(NOW)
         self.assertEqual(period["dateFrom"], "2026-05-02")
@@ -67,9 +113,21 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("aggregateDetailItem(group.children, {{scope:'family'", source)
         self.assertIn('data-hierarchy-toggle=', source)
         self.assertIn("data-hierarchy-kind=\"${{safe(kind)}}\"", source)
-        self.assertIn("Ver leitura'}} da ${{safe(label)}}", source)
+        self.assertIn("Ver leitura ${{article}} ${{safe(label)}}", source)
+        self.assertIn('id="detailModal"', source)
+        self.assertIn("['performance', 'Desempenho']", source)
+        self.assertIn("['diagnosis', 'Diagnóstico']", source)
+        self.assertIn("['promotions', 'Promoções']", source)
+        self.assertIn("['advertising', 'Publicidade']", source)
+        self.assertIn('grid-template-rows:auto auto minmax(0,1fr)', source)
+        self.assertIn('grid-template-columns:repeat(2,minmax(0,1fr))', source)
+        self.assertIn('overflow-x:hidden; overflow-y:auto', source)
+        self.assertIn('.detail-modal-tabs button {{ width:100%; min-width:0; }}', source)
+        self.assertIn('.detail-modal-body .child-table thead th {{ position:static;', source)
+        self.assertIn('modalBody.scrollTop = 0;', source)
+        self.assertNotIn('const detailExpanded = new Set()', source)
         self.assertIn("const expanded = mlbuExpanded.has(key)", source)
-        self.assertIn("const expanded = !familyCollapsed.has(key)", source)
+        self.assertIn("const expanded = familyExpanded.has(key)", source)
         self.assertIn('data-view-mode="family"', source)
         self.assertIn('data-view-mode="hybrid"', source)
         self.assertIn("let currentViewMode = 'hybrid'", source)
