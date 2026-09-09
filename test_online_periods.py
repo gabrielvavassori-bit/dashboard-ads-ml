@@ -24,6 +24,22 @@ class OnlinePeriodTests(unittest.TestCase):
             daily_series.index("const period ="),
         )
 
+    def test_consolidated_daily_series_deduplicates_repeated_mlb_rows(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        daily_series = source.split("function dailySeriesFor(item)", 1)[1].split(
+            "function chartDateLabel", 1
+        )[0]
+
+        self.assertIn("const sourcesByCode = new Map();", daily_series)
+        self.assertIn("const key = code ? `code:${{code}}` : `row:${{index}}`;", daily_series)
+
+    def test_sku_view_exposes_consolidated_reading(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+
+        self.assertIn("scope:'sku'", source)
+        self.assertIn("aggregateDetailRows(item, 'SKU')", source)
+        self.assertIn("SKU consolidado", source)
+
     def test_beta_dashboard_shows_confirmed_returns_and_rate_over_gross_revenue(self):
         latest = {
             "ok": True,
@@ -121,7 +137,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("aggregateDetailItem(group.children, {{scope:'family'", source)
         self.assertIn('data-hierarchy-toggle=', source)
         self.assertIn("data-hierarchy-kind=\"${{safe(kind)}}\"", source)
-        self.assertIn("Ver leitura da ${{safe(label)}}", source)
+        self.assertIn("Ver leitura ${{article}} ${{safe(label)}}", source)
         self.assertIn('id="detailModal"', source)
         self.assertIn("['performance', 'Desempenho']", source)
         self.assertIn("['diagnosis', 'Diagnóstico']", source)

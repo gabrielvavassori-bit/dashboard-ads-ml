@@ -2604,7 +2604,14 @@ def render_dashboard(data):
       return labels[String(value || '').toLowerCase()] || (value ? String(value) : 'Nao informado pelo cache');
     }}
     function dailySeriesFor(item) {{
-      const sources = (item.children && item.children.length) ? item.children : [item];
+      const rawSources = (item.children && item.children.length) ? item.children : [item];
+      const sourcesByCode = new Map();
+      rawSources.forEach((source, index) => {{
+        const code = String(source.code || '').trim();
+        const key = code ? `code:${{code}}` : `row:${{index}}`;
+        if (!sourcesByCode.has(key)) sourcesByCode.set(key, source);
+      }});
+      const sources = [...sourcesByCode.values()];
       const byDate = new Map();
       sources.forEach(source => (source.dailySeries || []).forEach(row => {{
         const date = String(row.date || '');
@@ -3077,6 +3084,7 @@ def render_dashboard(data):
       return campaigns || '<div class="detail-modal-empty">Nenhum detalhamento adicional de publicidade foi encontrado para este item.</div>';
     }}
     function detailModalScope(item) {{
+      if (item.detailScope === 'sku') return 'SKU consolidado';
       if (item.detailScope === 'family') return 'Família consolidada';
       if (item.detailScope === 'mlbu') return 'Variação / MLBU consolidado';
       if (currentViewMode === 'campaign') return 'Campanha Ads';
@@ -3199,7 +3207,8 @@ def render_dashboard(data):
     function aggregateDetailRows(item, label) {{
       const key = detailKey(item);
       detailItems.set(key, item);
-      return `<tr class="aggregate-reading-row"><td colspan="17"><div class="decision-wrap"><div class="decision-summary-main"><span class="summary-chip">Leitura consolidada</span><div class="decision-teaser">${{safe(item.diagnosticSummary)}}</div></div><div class="decision-summary-side"><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura da ${{safe(label)}}</button></div></div></td></tr>`;
+      const article = String(label).toUpperCase() === 'SKU' ? 'do' : 'da';
+      return `<tr class="aggregate-reading-row"><td colspan="17"><div class="decision-wrap"><div class="decision-summary-main"><span class="summary-chip">Leitura consolidada</span><div class="decision-teaser">${{safe(item.diagnosticSummary)}}</div></div><div class="decision-summary-side"><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura ${{article}} ${{safe(label)}}</button></div></div></td></tr>`;
     }}
     function productParentRow(item, key, expanded) {{
       return `<tr class="product-parent-row variation-parent-row">
@@ -3393,7 +3402,8 @@ def render_dashboard(data):
       return rows.map(sku => {{
         const children = sku.children || [];
         if (!children.length) return `<tbody>${{row(sku)}}</tbody>`;
-        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku)}}<tr class="product-group-note"><td colspan="17"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; detalhamento estrutural abaixo.</td></tr></tbody>`;
+        const item = aggregateDetailItem(children, {{scope:'sku', id:sku.sku, title:`SKU ${{sku.sku}}`, sku:sku.sku}});
+        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku)}}${{aggregateDetailRows(item, 'SKU')}}<tr class="product-group-note"><td colspan="17"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; detalhamento estrutural abaixo.</td></tr></tbody>`;
         const details = sortedGroups(splitByFamily(children)).map(familyGroupBody).join('');
         return summary + details;
       }}).join('');
