@@ -13,6 +13,17 @@ NOW = datetime(2026, 7, 31, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
 class OnlinePeriodTests(unittest.TestCase):
+    def test_product_daily_chart_does_not_turn_missing_series_into_zeroes(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        daily_series = source.split("function dailySeriesFor(item)", 1)[1].split(
+            "function chartDateLabel", 1
+        )[0]
+
+        self.assertLess(
+            daily_series.index("if (!rows.length) return rows;"),
+            daily_series.index("const period ="),
+        )
+
     def test_beta_dashboard_shows_confirmed_returns_and_rate_over_gross_revenue(self):
         latest = {
             "ok": True,

@@ -2632,6 +2632,7 @@ def render_dashboard(data):
           tacos:row.tacosBaseRevenue > 0 ? row.investment / row.tacosBaseRevenue : 0,
         }}))
         .sort((a,b) => a.date.localeCompare(b.date));
+      if (!rows.length) return rows;
       const period = DATA.meta?.onlineMode?.onlinePeriod || DATA.meta?.period || DATA.onlineBeta?.requestedPeriod || {{}};
       const dateFrom = String(period.dateFrom || period.date_from || '');
       const dateTo = String(period.dateTo || period.date_to || '');
