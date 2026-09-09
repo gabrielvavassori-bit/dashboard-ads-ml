@@ -84,6 +84,25 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("Taxa de devolucao", html)
         self.assertIn("o frete de retorno nao esta somado ao indicador", html)
 
+    def test_dashboard_sections_and_hierarchies_start_collapsed(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        period = {"dateFrom": "2026-09-01", "dateTo": "2026-09-07"}
+        html = render_dashboard({
+            "meta": {"onlineMode": {"enabled": True, "onlinePeriod": period}},
+            "onlineBeta": {"enabled": True, "requestedPeriod": period},
+            "items": [],
+        })
+
+        self.assertGreaterEqual(html.count('<details class="card dashboard-section'), 6)
+        self.assertNotIn('<details class="card dashboard-section" open', html)
+        self.assertIn(".dashboard-section > summary::after {{ content:'+';", source)
+        self.assertIn(".dashboard-section[open] > summary::after {{ content:'−';", source)
+        self.assertIn("const familyExpanded = new Set();", source)
+        self.assertIn("const skuExpanded = new Set();", source)
+        self.assertIn("const expanded = familyExpanded.has(key);", source)
+        self.assertIn("const expanded = skuExpanded.has(key);", source)
+        self.assertIn("data-hierarchy-kind=\"${{safe(kind)}}\"", source)
+
     def test_sales_intelligence_bootstrap_is_ninety_closed_days(self):
         period = app._sales_intelligence_default_period(NOW)
         self.assertEqual(period["dateFrom"], "2026-05-02")
@@ -152,7 +171,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn('modalBody.scrollTop = 0;', source)
         self.assertNotIn('const detailExpanded = new Set()', source)
         self.assertIn("const expanded = mlbuExpanded.has(key)", source)
-        self.assertIn("const expanded = !familyCollapsed.has(key)", source)
+        self.assertIn("const expanded = familyExpanded.has(key)", source)
         self.assertIn('data-view-mode="family"', source)
         self.assertIn('data-view-mode="hybrid"', source)
         self.assertIn("let currentViewMode = 'hybrid'", source)
