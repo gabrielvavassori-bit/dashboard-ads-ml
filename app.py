@@ -1059,6 +1059,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "client": client,
             "date_from": latest_date_from,
             "date_to": latest_date_to,
+            "background": "1",
         },
     )
     returns_available = bool(

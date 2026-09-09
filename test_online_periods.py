@@ -56,6 +56,7 @@ class OnlinePeriodTests(unittest.TestCase):
 
         def fetch(path, _params=None):
             if path == "/internal/dash-ads/returns-summary":
+                self.assertEqual(_params.get("background"), "1")
                 return {
                     "ok": True, "complete": True,
                     "date_from": "2026-09-01", "date_to": "2026-09-07",
