@@ -3031,8 +3031,10 @@ def render_dashboard(data):
         const price = Number(row.suggested_discounted_price || row.price || 0);
         action = `<div class="promotion-form"><label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label><button type="button" data-promo-campaign="${{index}}" data-promo-item="${{safe(code)}}">Gerar prévia</button></div>`;
       }}
-      const title = row.name || promotionTypeLabel(row);
-      const subtitle = row.name && row.name !== promotionTypeLabel(row) ? promotionTypeLabel(row) : row.promotion_type;
+      const typeLabel = promotionTypeLabel(row);
+      const technicalName = String(row.name || '').toUpperCase() === String(row.promotion_type || '').toUpperCase();
+      const title = row.name && !technicalName ? row.name : typeLabel;
+      const subtitle = row.name && !technicalName && row.name !== typeLabel ? typeLabel : row.promotion_type;
       return `<div class="promotion-option promotion-option-${{kindClass}}">
         <div class="promotion-card-head"><div><b>${{safe(title)}}</b><p class="muted">${{safe(subtitle)}}</p></div><span class="promotion-status promotion-status-${{statusClass}}">${{safe(promotionStatusLabel(status))}}</span></div>
         <div class="promotion-facts">${{facts}}</div>

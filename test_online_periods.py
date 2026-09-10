@@ -484,6 +484,8 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("Aporte Mercado Livre", html)
         self.assertIn("join_fixed_offer", html)
         self.assertIn("Reconecte a conta para aplicar", html)
+        self.assertIn("const technicalName =", html)
+        self.assertIn("row.name && !technicalName ? row.name : typeLabel", html)
 
     def test_governance_summary_reads_authenticated_central_bundle(self):
         bundle = {

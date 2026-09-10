@@ -930,7 +930,7 @@ class HTTPRouteTests(unittest.TestCase):
         )
         original = app._build_online_dashboard_data
         app._build_online_dashboard_data = lambda *_args, **_kwargs: ({
-            "kpis": {"clientName": "LONAS_ONLINE", "products": 0, "units": 0, "revenue": 0, "adsRevenue": 0, "adsDirectRevenue": 0, "organicRevenue": 0, "tacosBaseRevenue": 0, "investment": 0, "investmentNoAdsSales": 0, "cvr": 0, "tacos": 0, "roas": 0, "adsNoSales": 0, "adsOnlyNoTotalSales": 0, "tacosHigh": 0, "salesNoAds": 0},
+            "kpis": {"clientName": "conta-ativa", "products": 0, "units": 0, "revenue": 0, "adsRevenue": 0, "adsDirectRevenue": 0, "organicRevenue": 0, "tacosBaseRevenue": 0, "investment": 0, "investmentNoAdsSales": 0, "cvr": 0, "tacos": 0, "roas": 0, "adsNoSales": 0, "adsOnlyNoTotalSales": 0, "tacosHigh": 0, "salesNoAds": 0},
             "meta": {"onlineMode": {"notice": "Modo online beta: dados parciais."}},
             "items": [], "decisionItems": [], "adsNoSales": [], "highTacos": [], "salesNoAds": [], "skuAds": [], "campaignAds": [], "adsByProduct": [], "finishedNoSku": [], "onlineBeta": {"enabled": True},
         }, "")
@@ -940,6 +940,7 @@ class HTTPRouteTests(unittest.TestCase):
                 body = response.read().decode("utf-8", errors="replace")
             self.assertEqual(response.status, 200)
             self.assertIn("Dashboard ADS Mercado Livre", body)
+            self.assertIn("Dashboard ADS Mercado Livre - LONAS_ONLINE", body)
             self.assertIn("Modo online beta: dados parciais.", body)
             self.assertIn('data-view-mode="campaign"', body)
             self.assertIn("Ver leitura", body)

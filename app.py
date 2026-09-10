@@ -2404,6 +2404,7 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     _send_html(self, templates.render_error_page(message), 503)
                     return
+                dashboard_data.setdefault("kpis", {})["clientName"] = linked_name or client_id
                 promotion_csrf = _promotion_csrf_token(user, token)
                 dashboard_data["promotionApi"] = {
                     "enabled": bool(beta_config.BETA_MODE and promotion_csrf),
