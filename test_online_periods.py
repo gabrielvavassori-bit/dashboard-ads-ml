@@ -40,7 +40,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("aggregateDetailRows(item, 'SKU')", source)
         self.assertIn("SKU consolidado", source)
 
-    def test_only_operational_products_and_hierarchies_start_collapsed(self):
+    def test_only_product_hierarchies_start_collapsed(self):
         source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
         period = {"dateFrom": "2026-09-01", "dateTo": "2026-09-07"}
         html = render_dashboard({
@@ -49,17 +49,14 @@ class OnlinePeriodTests(unittest.TestCase):
             "items": [],
         })
 
-        self.assertEqual(html.count('<details class="card dashboard-section'), 1)
-        self.assertNotIn('<details class="card dashboard-section" open', html)
+        self.assertNotIn('<details class="card dashboard-section', html)
         self.assertNotIn('<summary>Indicadores da conta</summary>', html)
         self.assertNotIn('<summary>Desempenho diário da conta</summary>', html)
         self.assertNotIn('<summary>Alertas principais</summary>', html)
         self.assertNotIn('<summary>Leitura auxiliar de CTR e CVR</summary>', html)
         self.assertNotIn('<summary>Curva ABC de vendas</summary>', html)
         self.assertNotIn('<summary>Online Beta</summary>', html)
-        self.assertIn('<summary>Análise operacional dos produtos</summary>', html)
-        self.assertIn(".dashboard-section > summary::after {{ content:'+';", source)
-        self.assertIn(".dashboard-section[open] > summary::after {{ content:'−';", source)
+        self.assertNotIn('<summary>Análise operacional dos produtos</summary>', html)
         self.assertIn("const familyExpanded = new Set();", source)
         self.assertIn("const skuExpanded = new Set();", source)
         self.assertIn("const expanded = familyExpanded.has(key);", source)
