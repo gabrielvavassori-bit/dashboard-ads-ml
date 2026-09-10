@@ -127,6 +127,18 @@ class IntegrationTests(unittest.TestCase):
         self.assertIsNone(db.get_user_by_email("cliente@example.com"))
         self.assertEqual(event["status"], "ignored")
 
+        original_product_ids = webhook.EDUZZ_PRODUCT_IDS
+        try:
+            webhook.EDUZZ_PRODUCT_IDS = set(original_product_ids) | {"999"}
+            retry = webhook.process_event(raw, signature)
+        finally:
+            webhook.EDUZZ_PRODUCT_IDS = original_product_ids
+
+        self.assertEqual(retry["status"], 200)
+        self.assertEqual(retry["message"], "Acesso ativado")
+        self.assertEqual(db.get_webhook_event("event-wrong-product")["status"], "processed")
+        self.assertEqual(db.get_user_by_email("cliente@example.com")["status"], "active")
+
     def test_contract_created_requires_eligible_status(self):
         raw, signature = signed(payload(
             "event-contract-canceled",

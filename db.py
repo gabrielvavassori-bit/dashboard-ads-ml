@@ -1094,8 +1094,9 @@ def webhook_event_claim(
     """
     Reserve an event for processing.
 
-    Returns claimed, processed, or in_progress. Failed events can be claimed
-    again so an Eduzz retry is not discarded.
+    Returns claimed, processed, or in_progress. Failed and ignored events can
+    be claimed again so an Eduzz retry can be re-evaluated after a product
+    filter is corrected.
     """
     with _lock:
         conn = get_conn()
@@ -1106,7 +1107,7 @@ def webhook_event_claim(
                 (event_id,),
             ).fetchone()
             if row:
-                if row["status"] in ("processed", "ignored"):
+                if row["status"] == "processed":
                     conn.execute("COMMIT")
                     return "processed"
                 if row["status"] == "processing":
