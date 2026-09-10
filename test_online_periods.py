@@ -84,7 +84,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("Taxa de devolucao", html)
         self.assertIn("o frete de retorno nao esta somado ao indicador", html)
 
-    def test_dashboard_sections_and_hierarchies_start_collapsed(self):
+    def test_only_operational_products_and_hierarchies_start_collapsed(self):
         source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
         period = {"dateFrom": "2026-09-01", "dateTo": "2026-09-07"}
         html = render_dashboard({
@@ -93,8 +93,15 @@ class OnlinePeriodTests(unittest.TestCase):
             "items": [],
         })
 
-        self.assertGreaterEqual(html.count('<details class="card dashboard-section'), 6)
+        self.assertEqual(html.count('<details class="card dashboard-section'), 1)
         self.assertNotIn('<details class="card dashboard-section" open', html)
+        self.assertNotIn('<summary>Indicadores da conta</summary>', html)
+        self.assertNotIn('<summary>Desempenho diário da conta</summary>', html)
+        self.assertNotIn('<summary>Alertas principais</summary>', html)
+        self.assertNotIn('<summary>Leitura auxiliar de CTR e CVR</summary>', html)
+        self.assertNotIn('<summary>Curva ABC de vendas</summary>', html)
+        self.assertNotIn('<summary>Online Beta</summary>', html)
+        self.assertIn('<summary>Análise operacional dos produtos</summary>', html)
         self.assertIn(".dashboard-section > summary::after {{ content:'+';", source)
         self.assertIn(".dashboard-section[open] > summary::after {{ content:'−';", source)
         self.assertIn("const familyExpanded = new Set();", source)
@@ -444,7 +451,8 @@ class OnlinePeriodTests(unittest.TestCase):
 
         html = render_dashboard(data)
         self.assertIn('data-account-daily-chart', html)
-        self.assertIn("Desempenho diario da conta", html)
+        self.assertIn("<h3>Desempenho diário da conta</h3>", html)
+        self.assertNotIn("<summary>Desempenho diário da conta</summary>", html)
         self.assertLess(html.index('id="kpis"'), html.index('data-account-daily-chart'))
         self.assertLess(html.index('data-account-daily-chart'), html.index('aria-label="Visoes do dashboard"'))
         self.assertIn("Vendas diarias do periodo", html)
