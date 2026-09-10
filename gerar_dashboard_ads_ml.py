@@ -1455,11 +1455,9 @@ def render_dashboard(data):
     account_daily_chart = ""
     if online_mode.get("enabled"):
         account_daily_chart = """
-    <details class="card dashboard-section account-daily-chart-card">
-      <summary>Desempenho diário da conta</summary>
-    <section class="daily-chart-card" data-account-daily-chart data-daily-chart data-chart-key="account">
+    <section class="card daily-chart-card account-daily-chart-card" data-account-daily-chart data-daily-chart data-chart-key="account">
       <div class="chart-head">
-        <div><div class="chart-summary">Selecione uma metrica para visualizar.</div></div>
+        <div><h3>Desempenho diário da conta</h3><div class="chart-summary">Selecione uma metrica para visualizar.</div></div>
         <div class="chart-metric-tabs" role="group" aria-label="Metrica do grafico da conta">
           <button class="chart-metric-button" type="button" data-chart-metric="revenue">Faturamento</button>
           <button class="chart-metric-button" type="button" data-chart-metric="adsRevenue">Receita Ads</button>
@@ -1474,7 +1472,6 @@ def render_dashboard(data):
       <div class="chart-stage"><div class="chart-canvas"></div><div class="chart-tooltip"></div></div>
       <p class="note">Consolidacao diaria de todos os anuncios e produtos no periodo selecionado.</p>
     </section>
-    </details>
     """
     return f"""<!doctype html>
 <html lang="pt-BR">
@@ -1508,7 +1505,6 @@ def render_dashboard(data):
     .dashboard-section-body {{ min-width:0; padding:14px; }}
     .dashboard-section-body > :first-child {{ margin-top:0; }}
     .dashboard-section-body > :last-child {{ margin-bottom:0; }}
-    .kpi-section .kpis {{ margin-bottom:0; }}
     .operational-products-section .table-card {{ border:0; box-shadow:none; padding:0; }}
     .kpi small {{ color:var(--muted); display:block; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }}
     .kpi strong {{ display:block; font-size:22px; margin-top:6px; }}
@@ -1671,7 +1667,7 @@ def render_dashboard(data):
     .readonly-badge {{ display:inline-block; margin-bottom:8px; padding:4px 8px; border-radius:999px; background:#eef4ff; color:#1849a9; font-size:12px; font-weight:800; }}
     .price-signal {{ border-left:4px solid var(--orange); }}
     .daily-chart-card {{ position:relative; overflow:hidden; padding:16px; background:linear-gradient(180deg,#fff 0%,#fbfdff 100%); }}
-    .account-daily-chart-card {{ margin:0 0 12px; padding:0; }}
+    .account-daily-chart-card {{ margin:0 0 12px; }}
     .chart-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:14px; flex-wrap:wrap; }}
     .chart-head h3 {{ margin-bottom:4px; font-size:16px; }}
     .chart-summary {{ color:var(--muted); font-size:12px; }}
@@ -1753,10 +1749,7 @@ def render_dashboard(data):
   <main>
     {f'<section class="online-notice">{online_notice}</section>' if online_notice else ''}
     {online_period_filter}
-    <details class="card dashboard-section kpi-section">
-      <summary>Indicadores da conta</summary>
-      <div class="dashboard-section-body"><section class="kpis" id="kpis"></section></div>
-    </details>
+    <section class="kpis" id="kpis"></section>
     {account_daily_chart}
     <nav class="page-nav" aria-label="Visoes do dashboard">
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
@@ -1765,16 +1758,13 @@ def render_dashboard(data):
     </nav>
     <section class="view active" id="view-operational">
       <section class="grid">
-        <details class="card dashboard-section">
-          <summary>Alertas principais</summary>
-          <div class="dashboard-section-body">
+        <div class="card">
+          <h2>Alertas principais</h2>
           <div id="alerts"></div>
           <p class="note">A visao de investimento sem vendas usa a receita atribuida pelo ADS. Ela ajuda a evitar TACOS/ROAS falsamente bons.</p>
-          </div>
-        </details>
-        <details class="card dashboard-section">
-          <summary>Leitura auxiliar de CTR e CVR</summary>
-          <div class="dashboard-section-body">
+        </div>
+        <div class="card">
+          <h2>Leitura auxiliar de CTR e CVR</h2>
           <table>
             <tr><th>Cenario</th><th>Leitura recomendada</th></tr>
             <tr><td>CTR baixo + muitas impressoes</td><td>Revisar imagem, titulo, preco, frete e relevancia.</td></tr>
@@ -1787,8 +1777,7 @@ def render_dashboard(data):
             <tr><td>CVR alto + TACOS ruim</td><td>Vende, mas o clique esta caro ou a margem nao cobre.</td></tr>
             <tr><td>CVR baixo + TACOS bom</td><td>Nao pausar automaticamente; pode ter baixo volume ou ticket alto.</td></tr>
           </table>
-          </div>
-        </details>
+        </div>
       </section>
       <details class="card dashboard-section operational-products-section">
       <summary>Análise operacional dos produtos</summary>
@@ -1851,11 +1840,10 @@ def render_dashboard(data):
       </details>
     </section>
     <section class="view" id="view-abc">
-      <details class="card dashboard-section abc-panel">
-        <summary>Curva ABC de vendas</summary>
-        <div class="dashboard-section-body">
+      <section class="card abc-panel">
         <div class="abc-head">
           <div>
+            <h2>Curva ABC de vendas</h2>
             <p class="note">Classifica o que mais pesa no resultado. A fica ate 80% acumulado, B ate 95%, C o restante.</p>
           </div>
           <div class="abc-controls">
@@ -1879,15 +1867,13 @@ def render_dashboard(data):
           <input id="abcSearch" placeholder="Buscar familia, MLBU, SKU, MLB, titulo ou campanha">
         </div>
         <div class="scroll-frame" id="abcTable"></div>
-        </div>
-      </details>
+      </section>
     </section>
     <section class="view" id="view-online-beta">
-      <details class="card dashboard-section">
-        <summary>Online Beta</summary>
-        <div class="dashboard-section-body">
+      <section class="card">
         <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
           <div>
+            <h2>Online Beta</h2>
             <p class="note">Leitura somente consulta para comparar o XLSX com o dado autenticado do cliente no agente-ml. Nao altera cache, campanha nem planilha.</p>
           </div>
           <div class="muted" id="onlineBetaPeriod"></div>
@@ -1895,8 +1881,7 @@ def render_dashboard(data):
         <div class="beta-grid" id="onlineBetaSummary"></div>
         <div id="onlineBetaStatus" class="note"></div>
         <div class="scroll-frame" id="onlineBetaTable" style="margin-top:12px"></div>
-        </div>
-      </details>
+      </section>
     </section>
   </main>
   <div class="detail-modal-backdrop" id="detailModal" aria-hidden="true">
