@@ -1496,16 +1496,6 @@ def render_dashboard(data):
     main {{ width:min(1500px, calc(100vw - 28px)); margin:0 auto; padding:14px 0 28px; }}
     .kpis {{ display:grid; grid-template-columns:repeat(6,minmax(150px,1fr)); gap:10px; margin-bottom:12px; flex:0 0 auto; }}
     .card {{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; box-shadow:0 4px 14px rgba(16,24,40,.04); min-width:0; overflow:hidden; }}
-    .dashboard-section {{ margin:0 0 12px; padding:0; }}
-    .dashboard-section > summary {{ list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:52px; padding:13px 16px; font-size:16px; font-weight:800; }}
-    .dashboard-section > summary::-webkit-details-marker {{ display:none; }}
-    .dashboard-section > summary::after {{ content:'+'; display:inline-flex; align-items:center; justify-content:center; flex:0 0 28px; width:28px; height:28px; border:1px solid #98a2b3; border-radius:8px; background:#fff; color:#102033; font-size:20px; line-height:1; }}
-    .dashboard-section[open] > summary {{ border-bottom:1px solid var(--line); }}
-    .dashboard-section[open] > summary::after {{ content:'−'; }}
-    .dashboard-section-body {{ min-width:0; padding:14px; }}
-    .dashboard-section-body > :first-child {{ margin-top:0; }}
-    .dashboard-section-body > :last-child {{ margin-bottom:0; }}
-    .operational-products-section .table-card {{ border:0; box-shadow:none; padding:0; }}
     .kpi small {{ color:var(--muted); display:block; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }}
     .kpi strong {{ display:block; font-size:22px; margin-top:6px; }}
     .kpi.danger {{ border-color:#fecdca; }}
@@ -1793,9 +1783,6 @@ def render_dashboard(data):
           </table>
         </div>
       </section>
-      <details class="card dashboard-section operational-products-section">
-      <summary>Análise operacional dos produtos</summary>
-      <div class="dashboard-section-body">
       <div class="toolbar">
         <div class="toolbar-left">
           <div class="control-block">
@@ -1850,8 +1837,6 @@ def render_dashboard(data):
           </div>
         </div>
       </section>
-      </div>
-      </details>
     </section>
     <section class="view" id="view-abc">
       <section class="card abc-panel">
