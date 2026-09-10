@@ -1658,14 +1658,30 @@ def render_dashboard(data):
     .price-signal {{ border-left:4px solid var(--orange); }}
     .promotion-panel {{ margin-top:12px; padding:12px; border:1px solid #b2ddff; border-radius:10px; background:#f5fbff; }}
     .promotion-panel h4 {{ margin:0 0 8px; font-size:14px; }}
+    .promotion-panel h5 {{ margin:14px 0 4px; font-size:13px; color:var(--ink); }}
+    .promotion-group-note {{ margin:0 0 8px; color:var(--muted); font-size:12px; }}
     .promotion-panel-grid {{ display:grid; grid-template-columns:repeat(2,minmax(240px,1fr)); gap:10px; margin-top:10px; }}
     .promotion-option {{ padding:10px; border:1px solid var(--line); border-radius:9px; background:#fff; }}
+    .promotion-option-active {{ border-color:#6ce9a6; background:#f6fef9; }}
+    .promotion-option-opportunity {{ border-color:#84caff; }}
+    .promotion-option-coupon {{ background:#fffcf5; }}
     .promotion-option p {{ margin:5px 0; }}
+    .promotion-card-head {{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }}
+    .promotion-status {{ display:inline-flex; padding:3px 7px; border-radius:999px; background:#eef2f6; color:#344054; font-size:10px; font-weight:900; text-transform:uppercase; }}
+    .promotion-status-active {{ background:#dcfae6; color:#067647; }}
+    .promotion-status-candidate {{ background:#e0f2fe; color:#026aa2; }}
+    .promotion-facts {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin-top:9px; }}
+    .promotion-fact {{ padding:7px; border-radius:7px; background:#f8fafc; font-size:11px; }}
+    .promotion-fact span {{ display:block; color:var(--muted); margin-bottom:2px; }}
+    .promotion-fact b {{ display:block; color:var(--ink); }}
+    .promotion-fact-meli {{ background:#ecfdf3; }}
+    .promotion-permission {{ margin:10px 0; padding:10px; border-radius:8px; background:#fff4ed; border:1px solid #ff9c66; color:#9c2a10; font-weight:750; }}
+    .promotion-permission-ok {{ background:#ecfdf3; border-color:#6ce9a6; color:#067647; }}
     .promotion-form {{ display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:8px; }}
     .promotion-form label {{ display:flex; flex-direction:column; gap:4px; color:var(--muted); font-size:11px; font-weight:800; }}
     .promotion-form input {{ width:142px; min-width:0; padding:8px; border:1px solid var(--line); border-radius:8px; }}
     .promotion-form button, .promotion-panel > button {{ padding:9px 12px; border:0; border-radius:8px; background:#102033; color:#fff; font-weight:800; cursor:pointer; }}
-    .promotion-form button[disabled], .promotion-panel > button[disabled] {{ opacity:.55; cursor:wait; }}
+    .promotion-form button[disabled], .promotion-panel > button[disabled], .promotion-confirm[disabled] {{ opacity:.55; cursor:not-allowed; }}
     .promotion-preview {{ margin-top:10px; padding:11px; border:1px solid #fdb022; border-radius:9px; background:#fffaeb; }}
     .promotion-confirm {{ margin-top:9px; background:#b42318 !important; }}
     .promotion-success {{ margin-top:10px; padding:10px; border-radius:8px; background:#ecfdf3; color:#027a48; font-weight:800; }}
@@ -2947,6 +2963,31 @@ def render_dashboard(data):
       const number = Number(value || 0);
       return number > 0 ? brl(number) : 'Nao informado';
     }}
+    function promotionTypeLabel(row) {{
+      const labels = {{
+        PRICE_DISCOUNT:'Desconto por porcentagem', SMART:'Oferta com aporte do Mercado Livre',
+        PRICE_MATCHING:'Preço competitivo com aporte', SELLER_COUPON_CAMPAIGN:'Cupom do vendedor',
+        DEAL:'Campanha tradicional', SELLER_CAMPAIGN:'Campanha do vendedor',
+        MARKETPLACE_CAMPAIGN:'Campanha cofinanciada', LIGHTNING:'Oferta relâmpago',
+        DOD:'Oferta do dia', VOLUME:'Desconto por quantidade', PRE_NEGOTIATED:'Oferta pré-acordada',
+        UNHEALTHY_STOCK:'Liquidação de estoque Full'
+      }};
+      return labels[row.promotion_type] || row.promotion_type || 'Promoção';
+    }}
+    function promotionStatusLabel(status) {{
+      const labels = {{started:'Ativa', active:'Ativa', pending:'Programada', programmed:'Programada', candidate:'Disponível', finished:'Encerrada'}};
+      return labels[String(status || '').toLowerCase()] || String(status || 'Status não informado');
+    }}
+    function promotionDay(value) {{
+      const day = String(value || '').slice(0, 10);
+      if (!/^\d{{4}}-\d{{2}}-\d{{2}}$/.test(day)) return '';
+      const [year, month, date] = day.split('-');
+      return `${{date}}/${{month}}/${{year}}`;
+    }}
+    function promotionFact(label, value, extraClass = '') {{
+      if (value === null || value === undefined || value === '') return '';
+      return `<div class="promotion-fact ${{extraClass}}"><span>${{safe(label)}}</span><b>${{safe(value)}}</b></div>`;
+    }}
     function promotionLimits(row) {{
       const parts = [];
       if (Number(row.min_discounted_price || 0) > 0) parts.push(`minimo ${{brl(Number(row.min_discounted_price))}}`);
@@ -2959,10 +3000,44 @@ def render_dashboard(data):
       const summary = state.preview.summary || {{}};
       const period = summary.start_date ? `<div>Periodo: <b>${{safe(summary.start_date)}} a ${{safe(summary.finish_date)}}</b></div>` : '';
       const campaign = summary.promotion_name || summary.promotion_id ? `<div>Promocao: <b>${{safe(summary.promotion_name || summary.promotion_id)}}</b></div>` : '';
+      const contributions = summary.fixed_offer ? `<div>Desconto do vendedor: <b>${{Number(summary.seller_percentage || 0).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</b> (${{brl(Number(summary.seller_discount_amount || 0))}}) | aporte do Mercado Livre: <b>${{Number(summary.meli_percentage || 0).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</b> (${{brl(Number(summary.meli_discount_amount || 0))}})</div>` : '';
+      const writeBlocked = state.data?.promotion_write_access?.allowed === false;
+      const button = writeBlocked
+        ? `<button class="promotion-confirm" type="button" disabled>Reconecte a conta para aplicar</button>`
+        : `<button class="promotion-confirm" type="button" data-promo-confirm="${{safe(item.code)}}">Confirmar e aplicar no Mercado Livre</button>`;
       return `<div class="promotion-preview"><b>Previa pronta; nenhuma alteracao foi aplicada.</b>
         <div>Preco atual: ${{promotionMoney(summary.current_price)}} | preco promocional: <b>${{promotionMoney(summary.deal_price)}}</b> | desconto: ${{Number(summary.discount_percent || 0).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</div>
-        ${{campaign}}${{period}}
-        <button class="promotion-confirm" type="button" data-promo-confirm="${{safe(item.code)}}">Confirmar e aplicar no Mercado Livre</button>
+        ${{campaign}}${{period}}${{contributions}}${{button}}
+      </div>`;
+    }}
+    function promotionCard(row, index, code) {{
+      const status = String(row.status || '').toLowerCase();
+      const statusClass = ['started','active','pending','programmed'].includes(status) ? 'active' : status === 'candidate' ? 'candidate' : '';
+      const kindClass = row.promotion_type === 'SELLER_COUPON_CAMPAIGN' ? 'coupon' : statusClass === 'active' ? 'active' : status === 'candidate' ? 'opportunity' : '';
+      const buyerPrice = Number(row.buyer_price || row.price || 0);
+      const facts = [
+        promotionFact('Preço original', Number(row.original_price || 0) > 0 ? brl(Number(row.original_price)) : ''),
+        promotionFact('Preço final', buyerPrice > 0 ? brl(buyerPrice) : ''),
+        promotionFact('Desconto total', Number(row.discount_percent || 0) > 0 ? `${{Number(row.discount_percent).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%` : ''),
+        promotionFact('Seu desconto', row.seller_percentage !== null && row.seller_percentage !== undefined ? `${{Number(row.seller_percentage).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}% · ${{brl(Number(row.seller_discount_amount || 0))}}` : ''),
+        promotionFact('Aporte Mercado Livre', row.meli_percentage !== null && row.meli_percentage !== undefined ? `${{Number(row.meli_percentage).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}% · ${{brl(Number(row.meli_discount_amount || 0))}}` : '', 'promotion-fact-meli'),
+        promotionFact('Cupom', Number(row.fixed_percentage || 0) > 0 ? `${{Number(row.fixed_percentage).toLocaleString('pt-BR')}}% OFF` : Number(row.fixed_amount || 0) > 0 ? brl(Number(row.fixed_amount)) : ''),
+        promotionFact('Vigência', promotionDay(row.start_date) && promotionDay(row.finish_date) ? `${{promotionDay(row.start_date)}} a ${{promotionDay(row.finish_date)}}` : '')
+      ].join('');
+      let action = `<div class="muted">${{safe(row.read_only_reason || 'Disponível somente para consulta.')}}</div>`;
+      if (row.action_supported === true && row.action_mode === 'join_fixed_offer') {{
+        action = `<div class="promotion-form"><button type="button" data-promo-campaign="${{index}}" data-promo-item="${{safe(code)}}">Gerar prévia para participar</button></div>`;
+      }} else if (row.action_supported === true) {{
+        const price = Number(row.suggested_discounted_price || row.price || 0);
+        action = `<div class="promotion-form"><label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label><button type="button" data-promo-campaign="${{index}}" data-promo-item="${{safe(code)}}">Gerar prévia</button></div>`;
+      }}
+      const title = row.name || promotionTypeLabel(row);
+      const subtitle = row.name && row.name !== promotionTypeLabel(row) ? promotionTypeLabel(row) : row.promotion_type;
+      return `<div class="promotion-option promotion-option-${{kindClass}}">
+        <div class="promotion-card-head"><div><b>${{safe(title)}}</b><p class="muted">${{safe(subtitle)}}</p></div><span class="promotion-status promotion-status-${{statusClass}}">${{safe(promotionStatusLabel(status))}}</span></div>
+        <div class="promotion-facts">${{facts}}</div>
+        ${{['SMART','PRICE_MATCHING'].includes(row.promotion_type) ? '<p class="muted">O valor líquido a receber não vem nesta consulta; o painel não estima esse valor.</p>' : ''}}
+        ${{action}}
       </div>`;
     }}
     function promotionPanelHtml(item) {{
@@ -2971,18 +3046,27 @@ def render_dashboard(data):
       if (state.loading) return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promocoes do Mercado Livre</h4><div class="muted">Consultando elegibilidade e limites atuais...</div></div>`;
       if (!state.data) return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promocoes do Mercado Livre</h4><div class="muted">Consulte as campanhas elegiveis e os limites atuais antes de gerar uma previa.</div><button type="button" data-promo-load="${{safe(code)}}">Consultar promocoes</button>${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
       const data = state.data;
-      const campaigns = (data.promotions || []).map((row, index) => {{
-        const supported = row.action_supported === true;
-        const price = Number(row.suggested_discounted_price || row.price || item.suggestedTestPrice || 0);
-        return `<div class="promotion-option"><b>${{safe(row.name || row.promotion_id || row.promotion_type)}}</b><p class="muted">${{safe(row.promotion_type)}} | ${{safe(row.status || 'status nao informado')}}</p><p>${{safe(promotionLimits(row))}}</p>${{supported
-          ? `<div class="promotion-form"><label>Preco promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label><button type="button" data-promo-campaign="${{index}}" data-promo-item="${{safe(code)}}">Gerar previa</button></div>`
-          : `<div class="muted">Somente leitura: ${{safe(row.read_only_reason || 'tipo ainda nao suportado para adesao pelo painel')}}.</div>`}}</div>`;
-      }}).join('');
+      const rows = (data.promotions || []).map((row, index) => ({{...row, _index:index}}));
+      const active = rows.filter(row => row.promotion_type !== 'SELLER_COUPON_CAMPAIGN' && ['started','active','pending','programmed'].includes(String(row.status || '').toLowerCase()));
+      const coupons = rows.filter(row => row.promotion_type === 'SELLER_COUPON_CAMPAIGN');
+      const opportunities = rows.filter(row => String(row.status || '').toLowerCase() === 'candidate' && row.promotion_type !== 'SELLER_COUPON_CAMPAIGN');
+      const informative = rows.filter(row => !active.includes(row) && !coupons.includes(row) && !opportunities.includes(row));
+      const group = (title, note, selected) => selected.length ? `<h5>${{safe(title)}}</h5><p class="promotion-group-note">${{safe(note)}}</p><div class="promotion-panel-grid">${{selected.map(row => promotionCard(row, row._index, code)).join('')}}</div>` : '';
+      const campaigns = [
+        group('Ativas e programadas', 'O anúncio já participa destas promoções.', active),
+        group('Oportunidades para participar', 'Valores e aportes retornados agora pelo Mercado Livre.', opportunities),
+        group('Cupons vinculados', 'Cupons mostrados para consulta nesta etapa do beta.', coupons),
+        group('Outras promoções', 'Estados sem ação disponível no painel.', informative)
+      ].join('');
       const customAllowed = data.can_create_price_discount === true;
-      const custom = `<div class="promotion-option"><b>Criar desconto proprio</b><p class="muted">Desconto individual: minimo 5%, menor que 80% e duracao maxima de 14 dias.</p>${{customAllowed
+      const custom = `<h5>Novo desconto por porcentagem</h5><div class="promotion-panel-grid"><div class="promotion-option"><b>Criar desconto próprio</b><p class="muted">Desconto individual: mínimo 5%, menor que 80% e duração máxima de 14 dias.</p>${{customAllowed
         ? `<div class="promotion-form"><label>Preco promocional<input type="number" min="0.01" step="0.01" value="${{Number(item.suggestedTestPrice || 0) || ''}}" data-promo-custom-price></label><label>Inicio<input type="date" value="${{promotionDate(0)}}" data-promo-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-finish></label><button type="button" data-promo-custom="${{safe(code)}}">Gerar previa</button></div>`
-        : `<div class="muted">Indisponivel: ${{safe(data.price_discount_read_only_reason || 'o anuncio nao atende aos requisitos atuais')}}.</div>`}}</div>`;
-      return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promocoes do Mercado Livre</h4><div class="muted">Conta e anuncio validados: ${{safe(data.item?.title || code)}}; preco atual ${{promotionMoney(data.item?.price)}}. A aplicacao so ocorre depois da confirmacao final.</div><div class="promotion-panel-grid">${{campaigns || '<div class="promotion-option muted">Nenhuma campanha elegivel retornada.</div>'}}${{custom}}</div>${{promotionPreviewHtml(item, state)}}${{state.result ? '<div class="promotion-success">Promocao aplicada e confirmada pelo Mercado Livre.</div>' : ''}}${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
+        : `<div class="muted">Indisponível: ${{safe(data.price_discount_read_only_reason || 'o anúncio não atende aos requisitos atuais')}}.</div>`}}</div></div>`;
+      const access = data.promotion_write_access || {{}};
+      const permission = access.allowed === false
+        ? `<div class="promotion-permission"><b>Participação bloqueada pela permissão da conexão.</b><div>${{safe(access.reason || 'A conexão atual não permite alterar Ofertas e Promoções.')}}</div><div>Depois de ativar leitura e escrita em Ofertas no aplicativo Mercado Livre, reconecte esta conta.</div></div>`
+        : access.allowed === true ? '<div class="promotion-permission promotion-permission-ok">Conexão autorizada para alterar Ofertas e Promoções.</div>' : '';
+      return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promoções do Mercado Livre</h4><div class="muted">Conta e anúncio validados: ${{safe(data.item?.title || code)}}; preço atual ${{promotionMoney(data.item?.price)}}. Os valores abaixo são os retornados agora pela API.</div>${{permission}}${{campaigns || '<div class="promotion-option muted">Nenhuma promoção foi retornada.</div>'}}${{custom}}${{promotionPreviewHtml(item, state)}}${{state.result ? '<div class="promotion-success">Promoção aplicada e confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
     }}
     async function promotionApiRequest(path, method = 'GET', body = null) {{
       const options = {{ method, headers: {{'Accept':'application/json'}} }};
@@ -3014,10 +3098,13 @@ def render_dashboard(data):
         const state = promotionState.get(code) || {{}};
         const index = Number(button.dataset.promoCampaign);
         const row = (state.data?.promotions || [])[index];
-        const price = Number(document.querySelector(`[data-promotion-item="${{code}}"] [data-promo-campaign-price="${{index}}"]`)?.value || 0);
+        const body = {{item_id:code, promotion_type:row.promotion_type, promotion_id:row.promotion_id}};
+        if (row.action_mode !== 'join_fixed_offer') {{
+          body.deal_price = Number(document.querySelector(`[data-promotion-item="${{code}}"] [data-promo-campaign-price="${{index}}"]`)?.value || 0);
+        }}
         promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
         try {{
-          const preview = await promotionApiRequest('/api/promotions/preview', 'POST', {{item_id:code, promotion_type:row.promotion_type, promotion_id:row.promotion_id, deal_price:price}});
+          const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
           promotionStateUpdate(code, {{loading:false, preview, error:''}});
         }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
       }}));
@@ -3039,7 +3126,8 @@ def render_dashboard(data):
         promotionStateUpdate(code, {{loading:true, error:'', result:null}});
         try {{
           const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:code, preview_token:state.preview.preview_token}});
-          promotionStateUpdate(code, {{loading:false, preview:null, result, error:''}});
+          const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
+          promotionStateUpdate(code, {{loading:false, data, preview:null, result, error:''}});
         }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
       }}));
     }}
