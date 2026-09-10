@@ -480,6 +480,10 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("Gerar previa", html)
         self.assertIn("Confirmar e aplicar no Mercado Livre", html)
         self.assertIn("Aplicar esta promocao real no anuncio", html)
+        self.assertIn("Oportunidades para participar", html)
+        self.assertIn("Aporte Mercado Livre", html)
+        self.assertIn("join_fixed_offer", html)
+        self.assertIn("Reconecte a conta para aplicar", html)
 
     def test_governance_summary_reads_authenticated_central_bundle(self):
         bundle = {
