@@ -1681,6 +1681,9 @@ def render_dashboard(data):
     .promotion-form label {{ display:flex; flex-direction:column; gap:4px; color:var(--muted); font-size:11px; font-weight:800; }}
     .promotion-form input {{ width:142px; min-width:0; padding:8px; border:1px solid var(--line); border-radius:8px; }}
     .promotion-form button, .promotion-panel > button {{ padding:9px 12px; border:0; border-radius:8px; background:#102033; color:#fff; font-weight:800; cursor:pointer; }}
+    .promotion-form .promotion-secondary {{ background:#fff; color:#344054; border:1px solid #98a2b3; }}
+    .promotion-form .promotion-danger {{ background:#b42318; }}
+    .promotion-action-note {{ width:100%; margin:3px 0 0; color:var(--muted); font-size:11px; }}
     .promotion-form button[disabled], .promotion-panel > button[disabled], .promotion-confirm[disabled] {{ opacity:.55; cursor:not-allowed; }}
     .promotion-preview {{ margin-top:10px; padding:11px; border:1px solid #fdb022; border-radius:9px; background:#fffaeb; }}
     .promotion-confirm {{ margin-top:9px; background:#b42318 !important; }}
@@ -2998,19 +3001,24 @@ def render_dashboard(data):
     function promotionPreviewHtml(item, state) {{
       if (!state.preview) return '';
       const summary = state.preview.summary || {{}};
+      const action = String(summary.action || 'join');
       const period = summary.start_date ? `<div>Periodo: <b>${{safe(summary.start_date)}} a ${{safe(summary.finish_date)}}</b></div>` : '';
       const campaign = summary.promotion_name || summary.promotion_id ? `<div>Promocao: <b>${{safe(summary.promotion_name || summary.promotion_id)}}</b></div>` : '';
       const contributions = summary.fixed_offer ? `<div>Desconto do vendedor: <b>${{Number(summary.seller_percentage || 0).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</b> (${{brl(Number(summary.seller_discount_amount || 0))}}) | aporte do Mercado Livre: <b>${{Number(summary.meli_percentage || 0).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</b> (${{brl(Number(summary.meli_discount_amount || 0))}})</div>` : '';
+      const price = Number(summary.deal_price || 0) > 0 ? `<div>Preço do anúncio: ${{promotionMoney(summary.current_price)}} | preço promocional: <b>${{promotionMoney(summary.deal_price)}}</b> | desconto: ${{Number(summary.discount_percent || 0).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</div>` : '';
+      const stock = Number(summary.stock || 0) > 0 ? `<div>Estoque reservado: <b>${{Number(summary.stock).toLocaleString('pt-BR')}}</b></div>` : '';
+      const warning = action === 'replace' ? '<div><b>Atenção:</b> a API exige retirar o desconto atual antes de aplicar o novo. Se a segunda etapa for recusada, o anúncio ficará sem o desconto anterior.</div>' : '';
       const writeBlocked = state.data?.promotion_write_access?.allowed === false;
+      const labels = {{remove:'Confirmar saída da promoção', update:'Confirmar alteração no Mercado Livre', replace:'Confirmar substituição no Mercado Livre', create_campaign:'Confirmar criação da campanha', create:'Confirmar e criar no Mercado Livre', join:'Confirmar participação no Mercado Livre'}};
       const button = writeBlocked
         ? `<button class="promotion-confirm" type="button" disabled>Reconecte a conta para aplicar</button>`
-        : `<button class="promotion-confirm" type="button" data-promo-confirm="${{safe(item.code)}}">Confirmar e aplicar no Mercado Livre</button>`;
-      return `<div class="promotion-preview"><b>Previa pronta; nenhuma alteracao foi aplicada.</b>
-        <div>Preco atual: ${{promotionMoney(summary.current_price)}} | preco promocional: <b>${{promotionMoney(summary.deal_price)}}</b> | desconto: ${{Number(summary.discount_percent || 0).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</div>
-        ${{campaign}}${{period}}${{contributions}}${{button}}
+        : `<button class="promotion-confirm" type="button" data-promo-confirm="${{safe(item.code)}}">${{safe(labels[action] || 'Confirmar operação no Mercado Livre')}}</button>`;
+      return `<div class="promotion-preview"><b>Prévia pronta; nenhuma alteração foi aplicada.</b>
+        <div>Operação: <b>${{safe(summary.operation_label || action)}}</b></div>
+        ${{price}}${{campaign}}${{period}}${{stock}}${{contributions}}${{warning}}${{button}}
       </div>`;
     }}
-    function promotionCard(row, index, code) {{
+    function promotionCard(row, index, code, writeBlocked = false) {{
       const status = String(row.status || '').toLowerCase();
       const statusClass = ['started','active','pending','programmed'].includes(status) ? 'active' : status === 'candidate' ? 'candidate' : '';
       const kindClass = row.promotion_type === 'SELLER_COUPON_CAMPAIGN' ? 'coupon' : statusClass === 'active' ? 'active' : status === 'candidate' ? 'opportunity' : '';
@@ -3024,12 +3032,29 @@ def render_dashboard(data):
         promotionFact('Cupom', Number(row.fixed_percentage || 0) > 0 ? `${{Number(row.fixed_percentage).toLocaleString('pt-BR')}}% OFF` : Number(row.fixed_amount || 0) > 0 ? brl(Number(row.fixed_amount)) : ''),
         promotionFact('Vigência', promotionDay(row.start_date) && promotionDay(row.finish_date) ? `${{promotionDay(row.start_date)}} a ${{promotionDay(row.finish_date)}}` : '')
       ].join('');
-      let action = `<div class="muted">${{safe(row.read_only_reason || 'Disponível somente para consulta.')}}</div>`;
-      if (row.action_supported === true && row.action_mode === 'join_fixed_offer') {{
-        action = `<div class="promotion-form"><button type="button" data-promo-campaign="${{index}}" data-promo-item="${{safe(code)}}">Gerar prévia para participar</button></div>`;
-      }} else if (row.action_supported === true) {{
-        const price = Number(row.suggested_discounted_price || row.price || 0);
-        action = `<div class="promotion-form"><label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label><button type="button" data-promo-campaign="${{index}}" data-promo-item="${{safe(code)}}">Gerar prévia</button></div>`;
+      const disabled = writeBlocked ? ' disabled' : '';
+      const actions = [];
+      if (row.can_join === true) {{
+        const suggested = Number(row.suggested_discounted_price || row.buyer_price || row.price || 0);
+        const priceInput = ['join_with_price','join_with_price_and_stock'].includes(row.join_mode)
+          ? `<label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{suggested || ''}}" data-promo-row-price="${{index}}-join"></label>` : '';
+        const stockInput = row.join_mode === 'join_with_price_and_stock'
+          ? `<label>Estoque reservado<input type="number" min="1" step="1" value="${{Number(row.stock || 1)}}" data-promo-row-stock="${{index}}-join"></label>` : '';
+        actions.push(`<div class="promotion-form">${{priceInput}}${{stockInput}}<button type="button" data-promo-action="join" data-promo-row="${{index}}" data-promo-item="${{safe(code)}}"${{disabled}}>Gerar prévia para participar</button></div>`);
+      }}
+      if (row.can_update === true) {{
+        const price = Number(row.price || row.buyer_price || 0);
+        const dates = row.update_mode === 'replace_price_discount'
+          ? `<label>Início<input type="date" value="${{promotionDate(0)}}" data-promo-row-start="${{index}}-replace"></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-row-finish="${{index}}-replace"></label>` : '';
+        const actionName = row.update_mode === 'replace_price_discount' ? 'replace' : 'update';
+        actions.push(`<div class="promotion-form"><label>Novo preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-row-price="${{index}}-${{actionName}}"></label>${{dates}}<button type="button" data-promo-action="${{actionName}}" data-promo-row="${{index}}" data-promo-item="${{safe(code)}}"${{disabled}}>Gerar prévia de alteração</button>${{row.update_mode === 'replace_price_discount' ? '<p class="promotion-action-note">A alteração troca o desconto atual por outro; a prévia explicará as duas etapas.</p>' : ''}}</div>`);
+      }}
+      if (row.can_leave === true) {{
+        actions.push(`<div class="promotion-form"><button class="promotion-danger" type="button" data-promo-action="remove" data-promo-row="${{index}}" data-promo-item="${{safe(code)}}"${{disabled}}>Gerar prévia para sair</button></div>`);
+      }}
+      if (!actions.length) {{
+        const reason = row.join_reason || row.update_reason || row.leave_reason || row.read_only_reason || 'Disponível somente para consulta.';
+        actions.push(`<div class="muted">${{safe(reason)}}</div>`);
       }}
       const typeLabel = promotionTypeLabel(row);
       const technicalName = String(row.name || '').toUpperCase() === String(row.promotion_type || '').toUpperCase();
@@ -3039,7 +3064,7 @@ def render_dashboard(data):
         <div class="promotion-card-head"><div><b>${{safe(title)}}</b><p class="muted">${{safe(subtitle)}}</p></div><span class="promotion-status promotion-status-${{statusClass}}">${{safe(promotionStatusLabel(status))}}</span></div>
         <div class="promotion-facts">${{facts}}</div>
         ${{['SMART','PRICE_MATCHING'].includes(row.promotion_type) ? '<p class="muted">O valor líquido a receber não vem nesta consulta; o painel não estima esse valor.</p>' : ''}}
-        ${{action}}
+        ${{actions.join('')}}
       </div>`;
     }}
     function promotionPanelHtml(item) {{
@@ -3048,27 +3073,29 @@ def render_dashboard(data):
       if (state.loading) return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promocoes do Mercado Livre</h4><div class="muted">Consultando elegibilidade e limites atuais...</div></div>`;
       if (!state.data) return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promocoes do Mercado Livre</h4><div class="muted">Consulte as campanhas elegiveis e os limites atuais antes de gerar uma previa.</div><button type="button" data-promo-load="${{safe(code)}}">Consultar promocoes</button>${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
       const data = state.data;
+      const access = data.promotion_write_access || {{}};
+      const writeBlocked = access.allowed === false;
       const rows = (data.promotions || []).map((row, index) => ({{...row, _index:index}}));
       const active = rows.filter(row => row.promotion_type !== 'SELLER_COUPON_CAMPAIGN' && ['started','active','pending','programmed'].includes(String(row.status || '').toLowerCase()));
       const coupons = rows.filter(row => row.promotion_type === 'SELLER_COUPON_CAMPAIGN');
       const opportunities = rows.filter(row => String(row.status || '').toLowerCase() === 'candidate' && row.promotion_type !== 'SELLER_COUPON_CAMPAIGN');
       const informative = rows.filter(row => !active.includes(row) && !coupons.includes(row) && !opportunities.includes(row));
-      const group = (title, note, selected) => selected.length ? `<h5>${{safe(title)}}</h5><p class="promotion-group-note">${{safe(note)}}</p><div class="promotion-panel-grid">${{selected.map(row => promotionCard(row, row._index, code)).join('')}}</div>` : '';
+      const group = (title, note, selected) => selected.length ? `<h5>${{safe(title)}}</h5><p class="promotion-group-note">${{safe(note)}}</p><div class="promotion-panel-grid">${{selected.map(row => promotionCard(row, row._index, code, writeBlocked)).join('')}}</div>` : '';
       const campaigns = [
         group('Ativas e programadas', 'O anúncio já participa destas promoções.', active),
         group('Oportunidades para participar', 'Valores e aportes retornados agora pelo Mercado Livre.', opportunities),
-        group('Cupons vinculados', 'Cupons mostrados para consulta nesta etapa do beta.', coupons),
+        group('Cupons vinculados', 'Consulte, participe ou retire o anúncio conforme o estado devolvido pelo Mercado Livre.', coupons),
         group('Outras promoções', 'Estados sem ação disponível no painel.', informative)
       ].join('');
       const customAllowed = data.can_create_price_discount === true;
       const custom = `<h5>Novo desconto por porcentagem</h5><div class="promotion-panel-grid"><div class="promotion-option"><b>Criar desconto próprio</b><p class="muted">Desconto individual: mínimo 5%, menor que 80% e duração máxima de 14 dias.</p>${{customAllowed
-        ? `<div class="promotion-form"><label>Preco promocional<input type="number" min="0.01" step="0.01" value="${{Number(item.suggestedTestPrice || 0) || ''}}" data-promo-custom-price></label><label>Inicio<input type="date" value="${{promotionDate(0)}}" data-promo-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-finish></label><button type="button" data-promo-custom="${{safe(code)}}">Gerar previa</button></div>`
+        ? `<div class="promotion-form"><label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{Number(item.suggestedTestPrice || 0) || ''}}" data-promo-custom-price></label><label>Início<input type="date" value="${{promotionDate(0)}}" data-promo-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-finish></label><button type="button" data-promo-custom="${{safe(code)}}"${{writeBlocked ? ' disabled' : ''}}>Gerar prévia</button></div>`
         : `<div class="muted">Indisponível: ${{safe(data.price_discount_read_only_reason || 'o anúncio não atende aos requisitos atuais')}}.</div>`}}</div></div>`;
-      const access = data.promotion_write_access || {{}};
+      const sellerCampaign = `<h5>Nova campanha do vendedor</h5><div class="promotion-panel-grid"><div class="promotion-option"><b>Criar campanha na conta</b><p class="muted">Cria uma campanha flexível de até 14 dias. Depois da confirmação, atualize as oportunidades e escolha o preço para incluir este anúncio.</p><div class="promotion-form"><label>Nome<input type="text" maxlength="80" data-promo-campaign-name></label><label>Início<input type="date" value="${{promotionDate(0)}}" data-promo-campaign-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-campaign-finish></label><button type="button" data-promo-create-campaign="${{safe(code)}}"${{writeBlocked ? ' disabled' : ''}}>Gerar prévia da campanha</button></div></div></div>`;
       const permission = access.allowed === false
         ? `<div class="promotion-permission"><b>Participação bloqueada pela permissão da conexão.</b><div>${{safe(access.reason || 'A conexão atual não permite alterar Ofertas e Promoções.')}}</div><div>Depois de ativar leitura e escrita em Ofertas no aplicativo Mercado Livre, reconecte esta conta.</div></div>`
         : access.allowed === true ? '<div class="promotion-permission promotion-permission-ok">Conexão autorizada para alterar Ofertas e Promoções.</div>' : '';
-      return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promoções do Mercado Livre</h4><div class="muted">Conta e anúncio validados: ${{safe(data.item?.title || code)}}; preço atual ${{promotionMoney(data.item?.price)}}. Os valores abaixo são os retornados agora pela API.</div>${{permission}}${{campaigns || '<div class="promotion-option muted">Nenhuma promoção foi retornada.</div>'}}${{custom}}${{promotionPreviewHtml(item, state)}}${{state.result ? '<div class="promotion-success">Promoção aplicada e confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
+      return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promoções do Mercado Livre</h4><div class="muted">Conta e anúncio validados: ${{safe(data.item?.title || code)}}; preço atual ${{promotionMoney(data.item?.price)}}. Os valores abaixo são os retornados agora pela API.</div>${{permission}}${{campaigns || '<div class="promotion-option muted">Nenhuma promoção foi retornada.</div>'}}${{custom}}${{sellerCampaign}}${{promotionPreviewHtml(item, state)}}${{state.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
     }}
     async function promotionApiRequest(path, method = 'GET', body = null) {{
       const options = {{ method, headers: {{'Accept':'application/json'}} }};
@@ -3095,15 +3122,33 @@ def render_dashboard(data):
           promotionStateUpdate(code, {{loading:false, data, error:''}});
         }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
       }}));
-      document.querySelectorAll('[data-promo-campaign]').forEach(button => button.addEventListener('click', async () => {{
+      document.querySelectorAll('[data-promo-action]').forEach(button => button.addEventListener('click', async () => {{
         const code = button.dataset.promoItem;
         const state = promotionState.get(code) || {{}};
-        const index = Number(button.dataset.promoCampaign);
+        const index = Number(button.dataset.promoRow);
+        const action = button.dataset.promoAction;
         const row = (state.data?.promotions || [])[index];
-        const body = {{item_id:code, promotion_type:row.promotion_type, promotion_id:row.promotion_id}};
-        if (row.action_mode !== 'join_fixed_offer') {{
-          body.deal_price = Number(document.querySelector(`[data-promotion-item="${{code}}"] [data-promo-campaign-price="${{index}}"]`)?.value || 0);
-        }}
+        if (!row) return;
+        const root = document.querySelector(`[data-promotion-item="${{code}}"]`);
+        const body = {{item_id:code, action, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
+        const price = root.querySelector(`[data-promo-row-price="${{index}}-${{action}}"]`);
+        const stock = root.querySelector(`[data-promo-row-stock="${{index}}-${{action}}"]`);
+        const start = root.querySelector(`[data-promo-row-start="${{index}}-${{action}}"]`);
+        const finish = root.querySelector(`[data-promo-row-finish="${{index}}-${{action}}"]`);
+        if (price) body.deal_price = Number(price.value || 0);
+        if (stock) body.stock = Number(stock.value || 0);
+        if (start) body.start_date = start.value;
+        if (finish) body.finish_date = finish.value;
+        promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
+        try {{
+          const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
+          promotionStateUpdate(code, {{loading:false, preview, error:''}});
+        }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
+      }}));
+      document.querySelectorAll('[data-promo-create-campaign]').forEach(button => button.addEventListener('click', async () => {{
+        const code = button.dataset.promoCreateCampaign;
+        const root = document.querySelector(`[data-promotion-item="${{code}}"]`);
+        const body = {{item_id:code, action:'create_campaign', promotion_type:'SELLER_CAMPAIGN', name:root.querySelector('[data-promo-campaign-name]').value, start_date:root.querySelector('[data-promo-campaign-start]').value, finish_date:root.querySelector('[data-promo-campaign-finish]').value}};
         promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
         try {{
           const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
@@ -3124,7 +3169,9 @@ def render_dashboard(data):
         const code = button.dataset.promoConfirm;
         const state = promotionState.get(code) || {{}};
         if (!state.preview?.preview_token) return;
-        if (!window.confirm(`Aplicar esta promocao real no anuncio ${{code}}? Esta acao sera enviada ao Mercado Livre.`)) return;
+        const action = String(state.preview.summary?.action || 'join');
+        const messages = {{remove:`Sair desta promoção no anúncio ${{code}}?`, update:`Alterar esta oferta real no anúncio ${{code}}?`, replace:`Substituir o desconto atual do anúncio ${{code}}? O Mercado Livre exige remover o anterior antes de aplicar o novo.`, create_campaign:'Criar esta campanha real na conta Mercado Livre?', create:`Criar este desconto real no anúncio ${{code}}?`, join:`Participar desta promoção com o anúncio ${{code}}?`}};
+        if (!window.confirm(messages[action] || `Confirmar esta operação real no anúncio ${{code}}?`)) return;
         promotionStateUpdate(code, {{loading:true, error:'', result:null}});
         try {{
           const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:code, preview_token:state.preview.preview_token}});
