@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "canonical_catalog": "https://github.com/gabrielvavassori-bit/marketplace-governance/blob/master/knowledge/regression_catalog.json",
+  "regressions": [
+    {
+      "id": "REGRESSION-001",
+      "title": "Integridade dos snapshots financeiros do Dash Ads",
+      "severity": "CRITICA",
+      "components": ["online_financial_gate", "dash_ads_snapshot_integrity", "dashboard_exports", "sales_recommendations"],
+      "domains": ["financial_reporting", "cache_integrity", "mercado_livre_ads"],
+      "tags": ["snapshot", "coverage", "period", "fail_closed", "kpi", "export", "recommendation", "zero_evidence"],
+      "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "test_online_periods.py", "test_integrations.py", "render.yaml"],
+      "invariant": "KPIs, exportações e recomendações financeiras permanecem bloqueados até o contrato da conta e período exatos comprovar cobertura integral; datas ausentes não são preenchidas com zero.",
+      "protections": [
+        {
+          "command": ["{python}", "-m", "unittest", "-v", "test_regression_001_snapshot_integrity.py"],
+          "blocking": true
+        }
+      ]
+    }
+  ]
+}
