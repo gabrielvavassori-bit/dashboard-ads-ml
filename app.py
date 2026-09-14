@@ -101,6 +101,24 @@ ML_LINK_ATTACH_SECRET = (
 ).strip()
 ONLINE_TZ = ZoneInfo("America/Sao_Paulo")
 ONLINE_CACHE_PENDING_PREFIX = "__ONLINE_CACHE_PENDING__:"
+ONLINE_CACHE_INTEGRITY_PREFIX = "__ONLINE_CACHE_INTEGRITY__:"
+DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID = (
+    "RULE-SHARED-DASH-ADS-SNAPSHOT-COMPLETENESS-FAIL-CLOSED-20260911"
+)
+# A consulta e curta o suficiente para detectar uma mudança central de regra, mas
+# evita uma chamada remota por página aberta pelo mesmo processo Render.
+try:
+    GOVERNANCE_RULE_CACHE_TTL_SECONDS = max(
+        5, int(os.environ.get("GOVERNANCE_RULE_CACHE_TTL_SECONDS", "60"))
+    )
+except (TypeError, ValueError):
+    GOVERNANCE_RULE_CACHE_TTL_SECONDS = 60
+_governance_rule_cache_lock = threading.Lock()
+_governance_rule_cache = {
+    "key": None,
+    "expires_at": 0.0,
+    "result": None,
+}
 ADMIN_IMPERSONATION_MAX_AGE = 2 * 60 * 60
 SALES_INTELLIGENCE_HTML = pathlib.Path(__file__).resolve().parent / "assets" / "inteligencia-vendas-marketplace.html"
 
@@ -288,7 +306,13 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
     return payload if isinstance(payload, dict) else {"ok": False, "payload": payload, "http_status": status}
 
 
-def _fetch_governance_summary() -> tuple[dict, int]:
+def _fetch_governance_bundle(*, timeout: int = 20) -> tuple[dict, int]:
+    """Consulta o bundle central autenticado sem transformar suas regras.
+
+    A leitura financeira precisa validar uma regra específica como ela existe no
+    Governance; por isso o consumidor do contrato usa este payload bruto antes
+    de qualquer resumo voltado à interface administrativa.
+    """
     api_key = (os.environ.get("GOVERNANCE_READ_API_KEY") or "").strip()
     if not api_key:
         return {"ok": False, "error": "governance_read_api_key_not_configured"}, 503
@@ -298,7 +322,7 @@ def _fetch_governance_summary() -> tuple[dict, int]:
         method="GET",
     )
     try:
-        with urlopen(req, timeout=20) as response:
+        with urlopen(req, timeout=timeout) as response:
             raw = response.read(8_000_000)
             status = response.status
     except HTTPError as exc:
@@ -310,6 +334,89 @@ def _fetch_governance_summary() -> tuple[dict, int]:
         bundle = json.loads(raw.decode("utf-8", errors="replace"))
     except json.JSONDecodeError:
         return {"ok": False, "error": "governance_non_json_response"}, 502
+    if status != 200 or not isinstance(bundle, dict):
+        return (bundle if isinstance(bundle, dict) else {"ok": False, "error": "invalid_bundle"}), status
+    return bundle, 200
+
+
+def _load_snapshot_completeness_governance_rule() -> dict:
+    """Carrega do hub a regra compartilhada que autoriza KPIs online.
+
+    Não basta um recibo declarado pelo agente: o Dash confere, em TTL curto, a
+    regra canônica do Governance. Se ela não puder ser consultada ou divergir,
+    o chamador deve bloquear a saída financeira (fail-closed).
+    """
+    api_key = (os.environ.get("GOVERNANCE_READ_API_KEY") or "").strip()
+    cache_key = (GOVERNANCE_HUB_URL, api_key)
+    now = time.monotonic()
+    with _governance_rule_cache_lock:
+        cached = _governance_rule_cache.get("result")
+        if (
+            _governance_rule_cache.get("key") == cache_key
+            and isinstance(cached, dict)
+            and float(_governance_rule_cache.get("expires_at") or 0) > now
+        ):
+            return cached
+
+        try:
+            bundle, status = _fetch_governance_bundle(timeout=5)
+        except Exception as exc:  # defesa de disponibilidade: nunca abre KPI sem a regra
+            bundle, status = {"ok": False, "error": exc.__class__.__name__}, 502
+        result = {
+            "ok": False,
+            "reason": "regra central indisponível",
+            "source_file": "shared_rules.json",
+        }
+        if status == 200 and isinstance(bundle, dict):
+            files = bundle.get("files") if isinstance(bundle.get("files"), dict) else {}
+            registry = files.get("shared_rules.json") if isinstance(files.get("shared_rules.json"), dict) else {}
+            rules = registry.get("rules") if isinstance(registry.get("rules"), list) else []
+            rule = next(
+                (
+                    candidate for candidate in rules
+                    if isinstance(candidate, dict)
+                    and candidate.get("id") == DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID
+                ),
+                None,
+            )
+            if not isinstance(rule, dict):
+                result["reason"] = "regra central não foi encontrada"
+            elif rule.get("classification") != "COMPARTILHADA":
+                result["reason"] = "classificação da regra central diverge"
+            elif rule.get("active", True) is not True:
+                result["reason"] = "regra central está inativa"
+            elif str(rule.get("status") or "").strip().lower() in {"inactive", "disabled"}:
+                result["reason"] = "status da regra central está inativo"
+            elif rule.get("changes_behavior") is not True:
+                result["reason"] = "regra central não exige mudança de comportamento"
+            else:
+                result = {
+                    "ok": True,
+                    "rule": {
+                        "id": rule.get("id"),
+                        "classification": rule.get("classification"),
+                        "active": True,
+                        "changes_behavior": True,
+                        "status": rule.get("status"),
+                        "implementation_status": rule.get("implementation_status"),
+                        "source_file": "shared_rules.json",
+                    },
+                    "source_file": "shared_rules.json",
+                    "loaded_at": bundle.get("published_at") or "governance_hub",
+                }
+        elif isinstance(bundle, dict) and bundle.get("error"):
+            result["reason"] = f"regra central indisponível ({bundle['error']})"
+
+        _governance_rule_cache.update({
+            "key": cache_key,
+            "expires_at": now + GOVERNANCE_RULE_CACHE_TTL_SECONDS,
+            "result": result,
+        })
+        return result
+
+
+def _fetch_governance_summary() -> tuple[dict, int]:
+    bundle, status = _fetch_governance_bundle()
     if status != 200 or not isinstance(bundle, dict):
         return (bundle if isinstance(bundle, dict) else {"ok": False, "error": "invalid_bundle"}), status
 
@@ -549,9 +656,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     requested_at = datetime.now().astimezone().isoformat(timespec="seconds")
     requested_from = date_from or (requested_period or {}).get("dateFrom") or ""
     requested_to = date_to or (requested_period or {}).get("dateTo") or ""
-    # The dashboard must render persisted snapshots before asking the agent to
-    # refresh a missing range. The helper returns an exact partial range when
-    # available, or a separate completed seven-day fallback while refresh runs.
+    # Só um recibo completo, exato e vinculado à conta pode chegar ao cálculo.
+    # A rotina de coleta/reparo é acionada pela helper sem reutilizar cache
+    # parcial ou uma janela antiga como fallback.
     latest_payload, cache_error = _sales_intelligence_fetch_latest(
         client,
         advertiser_id,
@@ -689,10 +796,11 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     )
     partial_daily_dates = _daily_partial_snapshot_dates(daily_sales_coverage_days)
     if partial_daily_dates:
-        daily_sales_rows = [
-            row for row in daily_sales_rows
-            if str(row.get("snapshot_date") or row.get("date") or "") not in partial_daily_dates
-        ]
+        return None, (
+            f"{ONLINE_CACHE_INTEGRITY_PREFIX}Período solicitado: {requested_from or 'sem data'} a {requested_to or 'sem data'}. "
+            "Dados financeiros não foram exibidos. A fonte de snapshots diários reportou cobertura parcial "
+            f"em {', '.join(sorted(partial_daily_dates))}. Estado da reparação: blocked."
+        )
     daily_by_item_date: dict[str, dict[str, dict]] = {}
     for daily_raw in daily_sales_rows:
         daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
@@ -1082,8 +1190,26 @@ def _build_online_beta_payload(data: dict, client: str, advertiser_id: str = "")
     period = (data.get("meta") or {}).get("period") or {}
     date_from = period.get("dateFrom") or ""
     date_to = period.get("dateTo") or ""
+    if not date_from or not date_to:
+        return {
+            "enabled": False,
+            "integrityBlocked": True,
+            "integrityMessage": "Período do relatório offline ausente; a leitura online não foi iniciada.",
+        }
     context = _fetch_dash_ads_json("/internal/dash-ads/ml-context", {"client": client})
     resolved_advertiser_id = advertiser_id or context.get("advertiser_id") or ""
+    latest, integrity_message = _sales_intelligence_fetch_latest(
+        client,
+        resolved_advertiser_id,
+        date_from,
+        date_to,
+    )
+    if not latest:
+        return {
+            "enabled": False,
+            "integrityBlocked": True,
+            "integrityMessage": integrity_message.removeprefix(ONLINE_CACHE_PENDING_PREFIX).removeprefix(ONLINE_CACHE_INTEGRITY_PREFIX),
+        }
     api_reconciliation = _fetch_dash_ads_json(
         "/internal/dash-ads/ads-api-reconciliacao",
         {
@@ -1092,10 +1218,6 @@ def _build_online_beta_payload(data: dict, client: str, advertiser_id: str = "")
             "date_from": date_from,
             "date_to": date_to,
         },
-    )
-    latest = _fetch_dash_ads_json(
-        "/internal/dash-ads/online-cache-latest",
-        {"client": client, "advertiser_id": resolved_advertiser_id},
     )
     latest_period = (((latest.get("latest") or {}).get("date_from")) or latest.get("date_from") or "", ((latest.get("latest") or {}).get("date_to")) or latest.get("date_to") or "")
     period_match = bool(date_from and date_to and api_reconciliation.get("date_from") == date_from and api_reconciliation.get("date_to") == date_to)
@@ -1342,69 +1464,252 @@ def _sales_intelligence_parse_dt(value: str) -> datetime | None:
         return None
 
 
+def _online_cache_status_words(payload: dict) -> set[str]:
+    """Normaliza somente estados operacionais, sem expor detalhes do cache."""
+    values = []
+    for raw in (payload.get("status"), payload.get("background_refresh")):
+        if isinstance(raw, dict):
+            values.extend(raw.get(key) for key in ("status", "state", "error", "reason"))
+        else:
+            values.append(raw)
+    return {
+        str(value).strip().lower()
+        for value in values
+        if str(value or "").strip()
+    }
+
+
+def _online_cache_is_terminal(payload: dict, contract: dict | None = None) -> bool:
+    state = str((contract or {}).get("state") or "").strip().lower()
+    if state in {"error", "failed", "blocked", "terminal"}:
+        return True
+    terminal_markers = (
+        "error", "failed", "blocked", "terminal", "nao_encontrado",
+        "not_found", "cancelled", "canceled", "invalid",
+    )
+    return any(
+        any(marker in word for marker in terminal_markers)
+        for word in _online_cache_status_words(payload)
+    )
+
+
+def _online_cache_is_running(payload: dict) -> bool:
+    return any(word in {"running", "queued", "pending", "repair_pending"} for word in _online_cache_status_words(payload))
+
+
+def _online_cache_zero(value) -> bool:
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) == 0
+    if value is None or value == "":
+        return False
+    return _number(value) == 0
+
+
+def _online_cache_coverage_errors(coverage: dict):
+    """Aceita o nome novo e o alias legado emitidos pelo contrato do agente."""
+    if "errors" in coverage:
+        return coverage.get("errors")
+    return coverage.get("source_errors")
+
+
+def _online_cache_coverage_text(contract: dict) -> str:
+    parts = []
+    for source, label in (("sales", "vendas"), ("ads", "Ads")):
+        coverage = contract.get(source) if isinstance(contract.get(source), dict) else {}
+        expected = coverage.get("expected_item_days")
+        persisted = coverage.get("persisted_item_days")
+        missing = coverage.get("missing_item_days")
+        if expected is None or persisted is None or missing is None:
+            parts.append(f"{label}: recibo de cobertura ausente")
+            continue
+        parts.append(
+            f"{label}: {int(_number(persisted))}/{int(_number(expected))} fatos persistidos; "
+            f"faltam {int(_number(missing))}"
+        )
+    return " | ".join(parts)
+
+
+def _governance_receipt_mentions_source_file(files, source_file: str) -> bool:
+    """Aceita caminho relativo ou absoluto sem aceitar outro registro central."""
+    if not isinstance(files, list) or not source_file:
+        return False
+    normalized_source = source_file.replace("\\", "/").lower()
+    return any(
+        str(value or "").replace("\\", "/").lower().endswith(normalized_source)
+        for value in files
+    )
+
+
+def _online_cache_integrity_state(
+    payload: dict,
+    client: str,
+    advertiser_id: str,
+    date_from: str,
+    date_to: str,
+) -> dict:
+    """Aplica a regra central antes que qualquer KPI financeiro seja calculado.
+
+    O Dash não tenta inferir completude a partir das linhas disponíveis. A única
+    fonte confiável é o contrato emitido pelo agente para a mesma conta e janela.
+    """
+    latest = payload.get("latest") if isinstance(payload.get("latest"), dict) else {}
+    ads = payload.get("ads") if isinstance(payload.get("ads"), dict) else {}
+    sales = payload.get("sales") if isinstance(payload.get("sales"), dict) else {}
+    latest_from = str(latest.get("date_from") or ads.get("date_from") or sales.get("date_from") or "").strip()
+    latest_to = str(latest.get("date_to") or ads.get("date_to") or sales.get("date_to") or "").strip()
+    requested_from = str(date_from or latest_from or "").strip()
+    requested_to = str(date_to or latest_to or "").strip()
+    period_label = f"Período solicitado: {requested_from or 'sem data'} a {requested_to or 'sem data'}"
+    contract = payload.get("integrity_contract") if isinstance(payload.get("integrity_contract"), dict) else None
+    terminal = _online_cache_is_terminal(payload, contract)
+
+    def result(state: str, reason: str, *, pending: bool = False) -> dict:
+        coverage = _online_cache_coverage_text(contract) if contract else "recibo de cobertura ausente"
+        message = (
+            f"{period_label}. Dados financeiros não foram exibidos. {reason}. "
+            f"Estado da reparação: {state}. Cobertura: {coverage}."
+        )
+        return {
+            "ready": False,
+            "pending": pending and not terminal,
+            "terminal": terminal,
+            "message": message,
+        }
+
+    central_rule_result = _load_snapshot_completeness_governance_rule()
+    if not central_rule_result.get("ok"):
+        return result(
+            "blocked",
+            f"A consulta da regra central falhou: {central_rule_result.get('reason') or 'motivo não informado'}",
+        )
+    central_rule = central_rule_result.get("rule") if isinstance(central_rule_result.get("rule"), dict) else {}
+
+    # Sem contrato não há prova suficiente para abrir uma tabela financeira.
+    # Se ainda não existe janela alguma, a primeira coleta pode ser iniciada;
+    # se já há cache antigo, bloquear evita reutilização silenciosa.
+    if not contract:
+        if not latest_from and not latest_to and not terminal:
+            return result("repair_pending", "Contrato de integridade ainda não foi emitido", pending=True)
+        return result("blocked", "Contrato de integridade ausente ou não confiável")
+
+    state = str(contract.get("state") or "").strip().lower()
+    if state == "repair_pending":
+        return result("repair_pending", "A cobertura exata ainda está em reparação", pending=True)
+    if state != "complete":
+        return result(state or "blocked", "O contrato de integridade não confirmou a janela")
+
+    reasons = []
+    if contract.get("rule_id") != DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID:
+        reasons.append("regra de integridade divergente")
+    if contract.get("complete") is not True:
+        reasons.append("contrato não confirmou completude")
+    if contract.get("fail_closed") is not True:
+        reasons.append("contrato não está em modo fail-closed")
+    if "errors" not in contract or not _online_cache_zero(contract.get("errors")):
+        reasons.append("contrato reportou erro de integridade")
+    governance = contract.get("governance") if isinstance(contract.get("governance"), dict) else {}
+    if (
+        governance.get("rule_id") != central_rule.get("id")
+        or governance.get("classification") != central_rule.get("classification")
+        or governance.get("active") is not True
+        or governance.get("source") != "agent_bundle"
+        or governance.get("source_file") != central_rule.get("source_file")
+        or governance.get("status") != central_rule.get("status")
+        or governance.get("implementation_status") != central_rule.get("implementation_status")
+        or not isinstance(governance.get("consulted_files"), list)
+        or not _governance_receipt_mentions_source_file(
+            governance.get("consulted_files"), str(central_rule.get("source_file") or "")
+        )
+        or not str(governance.get("loaded_at") or "").strip()
+    ):
+        reasons.append("recibo da regra central não foi comprovado")
+    requested = contract.get("requested_period") if isinstance(contract.get("requested_period"), dict) else {}
+    if (
+        str(requested.get("date_from") or "").strip() != requested_from
+        or str(requested.get("date_to") or "").strip() != requested_to
+    ):
+        reasons.append("contrato não corresponde ao período solicitado")
+    identity = contract.get("identity") if isinstance(contract.get("identity"), dict) else {}
+    if str(identity.get("client_id") or "").strip() != str(client or "").strip():
+        reasons.append("identidade da conta não corresponde ao cliente selecionado")
+    if not str(identity.get("advertiser_id") or "").strip() or not str(identity.get("seller_id") or "").strip():
+        reasons.append("identidade de Ads/vendedor não foi comprovada")
+    if advertiser_id and str(identity.get("advertiser_id") or "").strip() != str(advertiser_id).strip():
+        reasons.append("identidade do anunciante não corresponde à conta vinculada")
+    if payload.get("period_cache_hit") is not True:
+        reasons.append("cache não confirmou a janela exata")
+    if payload.get("period_cache_complete") is not True:
+        reasons.append("cache do período não está completo")
+    if latest.get("sales") is not None and not isinstance(latest.get("sales"), dict):
+        reasons.append("estado de vendas inválido")
+    latest_sales = latest.get("sales") if isinstance(latest.get("sales"), dict) else {}
+    if latest_sales.get("complete") is not True:
+        reasons.append("vendas não estão completas")
+    for source, label in (("sales", "vendas"), ("ads", "Ads")):
+        coverage = contract.get(source) if isinstance(contract.get(source), dict) else {}
+        universe = contract.get("universe") if isinstance(contract.get("universe"), dict) else {}
+        universe_source = universe.get(source) if isinstance(universe.get(source), dict) else {}
+        if coverage.get("complete") is not True or universe_source.get("complete") is not True:
+            reasons.append(f"cobertura de {label} não foi comprovada")
+        required = ("expected_item_days", "persisted_item_days", "missing_item_days", "missing_items")
+        if any(key not in coverage for key in required) or not (
+            "errors" in coverage or "source_errors" in coverage
+        ):
+            reasons.append(f"recibo de cobertura de {label} incompleto")
+        elif (
+            _number(coverage.get("expected_item_days")) != _number(coverage.get("persisted_item_days"))
+            or not _online_cache_zero(coverage.get("missing_item_days"))
+            or not _online_cache_zero(coverage.get("missing_items"))
+            or not _online_cache_zero(_online_cache_coverage_errors(coverage))
+        ):
+            reasons.append(f"há lacuna de {label} no período")
+    universe = contract.get("universe") if isinstance(contract.get("universe"), dict) else {}
+    if universe.get("complete") is not True:
+        reasons.append("universo de itens não está completo")
+    for source_payload in (ads, sales):
+        coverage = source_payload.get("coverage") if isinstance(source_payload.get("coverage"), dict) else {}
+        if source_payload.get("complete") is False or coverage.get("complete") is False:
+            reasons.append("fonte marcou cobertura parcial")
+    for label, source in (("cache", latest), ("Ads", ads), ("vendas", sales)):
+        source_from = str(source.get("date_from") or "").strip()
+        source_to = str(source.get("date_to") or "").strip()
+        if source_from != requested_from or source_to != requested_to:
+            reasons.append(f"janela de {label} diverge do período solicitado")
+
+    if reasons:
+        return result("blocked", "; ".join(dict.fromkeys(reasons)))
+    return {"ready": True, "pending": False, "terminal": False, "message": ""}
+
+
 def _sales_intelligence_fetch_latest(client: str, advertiser_id: str, date_from: str, date_to: str) -> tuple[dict | None, str]:
     params = {"client": client, "advertiser_id": advertiser_id, "date_from": date_from, "date_to": date_to}
     latest_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-latest", params)
     if not latest_payload.get("ok"):
-        return None, "Nao foi possivel ler o cache online desta conta agora."
-    latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
-    ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
-    sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
-    latest_from = str(latest.get("date_from") or ads.get("date_from") or "").strip()
-    latest_to = str(latest.get("date_to") or ads.get("date_to") or "").strip()
-    period_cache_hit = latest_payload.get("period_cache_hit") is not False
-    period_match = (
-        period_cache_hit
-        and latest_from == date_from
-        and latest_to == date_to
-        and str(ads.get("date_from") or "").strip() == date_from
-        and str(ads.get("date_to") or "").strip() == date_to
-        and str(sales.get("date_from") or "").strip() == date_from
-        and str(sales.get("date_to") or "").strip() == date_to
+        return None, (
+            f"{ONLINE_CACHE_INTEGRITY_PREFIX}Período solicitado: {date_from or 'sem data'} a {date_to or 'sem data'}. "
+            "Dados financeiros não foram exibidos porque a integridade do cache não pôde ser verificada."
+        )
+    integrity = _online_cache_integrity_state(
+        latest_payload, client, advertiser_id, date_from, date_to
     )
-    if period_match:
-        if latest_payload.get("period_cache_complete") is False:
-            try:
-                latest_payload["background_refresh"] = _fetch_dash_ads_json(
-                    "/internal/dash-ads/online-cache-refresh", params
-                )
-            except Exception:
-                latest_payload["background_refresh"] = {"ok": False, "status": "unavailable"}
+    if integrity["ready"]:
         return latest_payload, ""
-    cached_status = latest_payload.get("status") if isinstance(latest_payload.get("status"), dict) else {}
-    refresh_payload = {}
-    if cached_status.get("status") != "running":
+    if not integrity["pending"]:
+        return None, ONLINE_CACHE_INTEGRITY_PREFIX + integrity["message"]
+
+    # Solicita no máximo uma reparação por leitura. Em estado terminal não
+    # dispara novo refresh e nunca cai para uma janela diferente/antiga.
+    if not _online_cache_is_running(latest_payload):
         try:
             refresh_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-refresh", params)
         except Exception:
             refresh_payload = {"ok": False, "status": "unavailable"}
-    fallback_payload = _fetch_dash_ads_json(
-        "/internal/dash-ads/online-cache-latest",
-        {**params, "fallback": "latest_complete_7d"},
-    )
-    fallback_period = _sales_intelligence_period_from_payload(fallback_payload)
-    fallback_info = fallback_payload.get("fallback") if isinstance(fallback_payload.get("fallback"), dict) else {}
-    if (
-        fallback_payload.get("ok")
-        and fallback_payload.get("period_cache_complete") is True
-        and fallback_info.get("reason") == "latest_complete_7d"
-        and fallback_period
-    ):
-        fallback_payload["background_refresh"] = refresh_payload
-        return fallback_payload, ""
-    if (
-        refresh_payload.get("ok")
-        and refresh_payload.get("status") == "running"
-    ) or cached_status.get("status") == "running" or not (latest_from or latest_to):
-        return None, (
-            f"{ONLINE_CACHE_PENDING_PREFIX}Preparando os dados de {date_from} a {date_to}. "
-            "A pagina sera atualizada automaticamente quando a coleta terminar."
-        )
-    return None, (
-        f"Cache online da Inteligencia fora do periodo selecionado ({latest_from or 'sem data'} a "
-        f"{latest_to or 'sem data'}). Solicitado {date_from or 'sem data'} a "
-        f"{date_to or 'sem data'}. Atualize a coleta online e tente novamente."
-    )
+        if _online_cache_is_terminal(refresh_payload):
+            return None, (
+                f"{ONLINE_CACHE_INTEGRITY_PREFIX}{integrity['message']} "
+                "A reparação automática informou falha terminal; nenhuma nova tentativa foi iniciada."
+            )
+    return None, ONLINE_CACHE_PENDING_PREFIX + integrity["message"]
 
 
 def _sales_intelligence_collect_item_meta(latest_payload: dict) -> dict[str, dict]:
@@ -1656,10 +1961,11 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
     persisted_daily_rows = list(daily_rows)
     partial_daily_dates = _daily_partial_snapshot_dates(daily_coverage_days)
     if partial_daily_dates:
-        daily_rows = [
-            row for row in daily_rows
-            if str(row.get("snapshot_date") or row.get("date") or "") not in partial_daily_dates
-        ]
+        return None, (
+            f"{ONLINE_CACHE_INTEGRITY_PREFIX}Período solicitado: {actual_period['dateFrom']} a {actual_period['dateTo']}. "
+            "Dados financeiros não foram exibidos. A fonte de snapshots diários reportou cobertura parcial "
+            f"em {', '.join(sorted(partial_daily_dates))}. Estado da reparação: blocked."
+        )
     if not item_meta and not daily_rows:
         if daily_error:
             return None, (
@@ -1801,12 +2107,6 @@ def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]
         online_notice = (
             f"Base online parcialmente materializada para {client_label}: {persisted} de {expected} "
             "item-dias ja persistidos. A coleta desta mesma janela continua em segundo plano."
-        )
-    if partial_daily_dates:
-        online_notice += (
-            " Dias parciais foram retirados dos totais e do grafico ate a fila concluir: "
-            + ", ".join(sorted(partial_daily_dates))
-            + "."
         )
     if any(daily.get("fallback_aggregate") for daily in daily_rows):
         online_notice += " Fonte: cache agregado da conta usado como fallback porque os snapshots diarios ainda nao estavam disponiveis."
@@ -2212,6 +2512,15 @@ class Handler(BaseHTTPRequestHandler):
                             202,
                         )
                         return
+                    elif message.startswith(ONLINE_CACHE_INTEGRITY_PREFIX):
+                        _send_html(
+                            self,
+                            templates.render_online_cache_blocked(
+                                message[len(ONLINE_CACHE_INTEGRITY_PREFIX):],
+                            ),
+                            409,
+                        )
+                        return
                     elif message:
                         _send_html(self, templates.render_error_page(message), 503)
                         return
@@ -2282,6 +2591,15 @@ class Handler(BaseHTTPRequestHandler):
                                 message[len(ONLINE_CACHE_PENDING_PREFIX):],
                             ),
                             202,
+                        )
+                        return
+                    if message.startswith(ONLINE_CACHE_INTEGRITY_PREFIX):
+                        _send_html(
+                            self,
+                            templates.render_online_cache_blocked(
+                                message[len(ONLINE_CACHE_INTEGRITY_PREFIX):],
+                            ),
+                            409,
                         )
                         return
                     _send_html(self, templates.render_error_page(message), 503)

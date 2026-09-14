@@ -371,6 +371,18 @@ def render_online_cache_pending(message: str, retry_seconds: int = 5) -> str:
     return _layout("Preparando dashboard", body)
 
 
+def render_online_cache_blocked(message: str) -> str:
+    """Estado fail-closed: não renderiza qualquer dado financeiro parcial."""
+    body = f"""
+    <h1>Dados financeiros indisponiveis</h1>
+    <p>O periodo selecionado nao tem uma comprovacao completa de cobertura. Por seguranca, o dashboard nao exibiu indicadores, tabelas, exportacoes ou recomendacoes financeiras.</p>
+    <div class="alert err">{_html.escape(message)}</div>
+    <p>Assim que a coleta e a reparacao concluirem, verifique novamente.</p>
+    <p><a href="javascript:window.location.reload()">Verificar novamente</a></p>
+    """
+    return _layout("Integridade de dados", body)
+
+
 def render_admin_login(error: str = "") -> str:
     err_html = f'<div class="alert err">{_html.escape(error)}</div>' if error else ""
     body = f"""

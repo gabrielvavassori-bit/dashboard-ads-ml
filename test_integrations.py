@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse, urlencode
@@ -67,6 +68,70 @@ def payload(event_id, event_name, status="upToDate", product_id="3032224"):
             "offer": {"name": "ADS ML"},
             "items": [{"productId": product_id}],
         },
+    }
+
+
+def complete_online_integrity_contract(client: str, advertiser_id: str, date_from: str, date_to: str) -> dict:
+    source = {
+        "complete": True,
+        "expected_item_days": 1,
+        "persisted_item_days": 1,
+        "missing_item_days": 0,
+        "missing_items": [],
+        "errors": [],
+        "source_errors": [],
+    }
+    return {
+        "period_cache_hit": True,
+        "period_cache_complete": True,
+        "integrity_contract": {
+            "rule_id": app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID,
+            "state": "complete",
+            "complete": True,
+            "fail_closed": True,
+            "governance": {
+                "rule_id": app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID,
+                "classification": "COMPARTILHADA",
+                "status": "D",
+                "implementation_status": "NAO_IMPLEMENTADO",
+                "active": True,
+                "source": "agent_bundle",
+                "source_file": "shared_rules.json",
+                "consulted_files": ["knowledge/shared_rules.json"],
+                "loaded_at": "2026-09-14T12:00:00-03:00",
+            },
+            "requested_period": {"date_from": date_from, "date_to": date_to, "days": 1},
+            "identity": {
+                "client_id": client,
+                "advertiser_id": advertiser_id,
+                "seller_id": "seller-test",
+            },
+            "universe": {
+                "complete": True,
+                "ads": {"complete": True, "item_ids": [], "total": 1, "error": ""},
+                "sales": {"complete": True, "item_ids": [], "total": 1, "error": ""},
+            },
+            "ads": dict(source),
+            "sales": dict(source),
+            "errors": [],
+        },
+    }
+
+
+def active_online_governance_rule() -> dict:
+    return {
+        "ok": True,
+        "rule": {
+            "id": app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID,
+            "classification": "COMPARTILHADA",
+            "active": True,
+            "changes_behavior": True,
+            "status": "D",
+            "implementation_status": "NAO_IMPLEMENTADO",
+            "source_file": "shared_rules.json",
+        },
+        "source_file": "shared_rules.json",
+        "loaded_at": "2026-09-14T12:00:00-03:00",
     }
 
 
@@ -484,6 +549,17 @@ class HTTPRouteTests(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join(timeout=3)
+
+    def setUp(self):
+        self._governance_rule_loader = patch.object(
+            app,
+            "_load_snapshot_completeness_governance_rule",
+            return_value=active_online_governance_rule(),
+        )
+        self._governance_rule_loader.start()
+
+    def tearDown(self):
+        self._governance_rule_loader.stop()
 
     def _login_cookie(self, email="cliente@example.com"):
         user_id = db.upsert_user_from_webhook(
@@ -933,6 +1009,68 @@ class HTTPRouteTests(unittest.TestCase):
         finally:
             app._build_online_dashboard_data = original
 
+    def test_online_integrity_block_hides_financial_kpis_exports_and_auto_refresh(self):
+        user_id, cookie = self._login_cookie("integrity-block@example.com")
+        db.upsert_user_ml_link(
+            user_id,
+            client_id="conta-ativa",
+            ml_user_id="14252670",
+            nickname="LONAS_ONLINE",
+            advertiser_id="164424",
+        )
+        original = app._build_online_dashboard_data
+        app._build_online_dashboard_data = lambda *_args, **_kwargs: (
+            None,
+            app.ONLINE_CACHE_INTEGRITY_PREFIX + (
+                "Período solicitado: 2026-07-01 a 2026-07-30. Dados financeiros não foram exibidos. "
+                "Estado da reparação: blocked. Cobertura: vendas: 0/1 fatos persistidos; faltam 1."
+            ),
+        )
+        try:
+            request = Request(f"{self.base_url}/online?confirmed=1", headers={"Cookie": cookie}, method="GET")
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request, timeout=5)
+            self.assertEqual(raised.exception.code, 409)
+            body = raised.exception.read().decode("utf-8", errors="replace")
+            raised.exception.close()
+        finally:
+            app._build_online_dashboard_data = original
+
+        self.assertIn("Dados financeiros indisponiveis", body)
+        self.assertIn("2026-07-01 a 2026-07-30", body)
+        for forbidden in ("Receita Total", "Gerar excel", "Baixar HTML", "data-view-mode", "Ver leitura", "setTimeout", "R$"):
+            self.assertNotIn(forbidden, body)
+
+    def test_online_repair_pending_retries_without_rendering_financial_values(self):
+        user_id, cookie = self._login_cookie("integrity-pending@example.com")
+        db.upsert_user_ml_link(
+            user_id,
+            client_id="conta-ativa",
+            ml_user_id="14252670",
+            nickname="LONAS_ONLINE",
+            advertiser_id="164424",
+        )
+        original = app._build_online_dashboard_data
+        app._build_online_dashboard_data = lambda *_args, **_kwargs: (
+            None,
+            app.ONLINE_CACHE_PENDING_PREFIX + (
+                "Período solicitado: 2026-07-01 a 2026-07-30. Dados financeiros não foram exibidos. "
+                "Estado da reparação: repair_pending. Cobertura: vendas: 0/1 fatos persistidos; faltam 1."
+            ),
+        )
+        try:
+            request = Request(f"{self.base_url}/online?confirmed=1", headers={"Cookie": cookie}, method="GET")
+            with urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8", errors="replace")
+            self.assertEqual(response.status, 202)
+        finally:
+            app._build_online_dashboard_data = original
+
+        self.assertIn("Preparando o periodo selecionado", body)
+        self.assertIn("setTimeout", body)
+        for forbidden in ("Receita Total", "Gerar excel", "Baixar HTML", "data-view-mode", "Ver leitura", "R$"):
+            self.assertNotIn(forbidden, body)
+
     def test_online_dashboard_deduplicates_exact_ads_cache_rows(self):
         duplicate_row = {
             "item_id": "MLB123",
@@ -949,6 +1087,7 @@ class HTTPRouteTests(unittest.TestCase):
             "price": 50,
         }
         payload = {
+            **complete_online_integrity_contract("conta-ativa", "164424", "2026-07-01", "2026-07-30"),
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
             "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [dict(duplicate_row), dict(duplicate_row)]},
@@ -989,6 +1128,7 @@ class HTTPRouteTests(unittest.TestCase):
             "clicks": 50,
         }
         payload = {
+            **complete_online_integrity_contract("conta-ativa", "164424", "2026-07-01", "2026-07-30"),
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
             "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [
@@ -1013,6 +1153,7 @@ class HTTPRouteTests(unittest.TestCase):
 
     def test_online_dashboard_uses_enriched_cache_metadata(self):
         payload = {
+            **complete_online_integrity_contract("conta-ativa", "164424", "2026-07-01", "2026-07-30"),
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
             "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [{
@@ -1049,6 +1190,7 @@ class HTTPRouteTests(unittest.TestCase):
 
     def test_online_dashboard_counts_sales_once_for_same_item_in_different_campaigns(self):
         payload = {
+            **complete_online_integrity_contract("conta-ativa", "164424", "2026-07-01", "2026-07-30"),
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
             "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [
@@ -1075,6 +1217,7 @@ class HTTPRouteTests(unittest.TestCase):
 
     def test_online_dashboard_includes_sales_without_ads_rows(self):
         payload = {
+            **complete_online_integrity_contract("conta-ativa", "164424", "2026-07-01", "2026-07-30"),
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
             "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [{"item_id": "MLB123", "cost": 10, "total_amount": 100}]},
@@ -1098,6 +1241,7 @@ class HTTPRouteTests(unittest.TestCase):
 
     def test_online_product_tacos_uses_indirect_revenue_without_product_sale(self):
         payload = {
+            **complete_online_integrity_contract("conta-ativa", "164424", "2026-07-01", "2026-07-30"),
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
             "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [{"item_id": "MLB123", "cost": 2000, "total_amount": 50000, "direct_amount": 0}]},
@@ -1115,8 +1259,9 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertAlmostEqual(data["items"][0]["tacos"], 0.04)
         self.assertEqual(data["kpis"]["tacosBaseRevenue"], 0)
 
-    def test_online_dashboard_marks_partial_sales_in_diagnostics(self):
+    def test_online_dashboard_blocks_partial_sales_before_calculating_kpis(self):
         payload = {
+            **complete_online_integrity_contract("conta-ativa", "164424", "2026-07-01", "2026-07-30"),
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": False}},
             "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [{"item_id": "MLB123", "campaign_id": "A", "cost": 10, "total_amount": 100}]},
@@ -1129,10 +1274,9 @@ class HTTPRouteTests(unittest.TestCase):
         finally:
             app._fetch_dash_ads_json = original_fetch
 
-        self.assertEqual(message, "")
-        self.assertFalse(data["items"][0]["salesCoverageComplete"])
-        self.assertIn("leitura parcial", data["items"][0]["diagnosticSummary"])
-        self.assertIn("faturamento e TACOS", " ".join(data["items"][0]["validationPoints"]))
+        self.assertIsNone(data)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("vendas não estão completas", message)
 
     def test_online_requires_beta_confirmation_before_redirect(self):
         user_id, cookie = self._login_cookie("warn@example.com")
@@ -1653,6 +1797,42 @@ class HTTPRouteTests(unittest.TestCase):
             self.assertIn("Leitura online beta da conta vinculada.", body)
         finally:
             app._build_sales_intelligence_memory_data = original
+
+    def test_sales_intelligence_integrity_block_hides_online_recommendations(self):
+        user_id, cookie = self._login_cookie("sales-integrity-block@example.com")
+        db.upsert_user_ml_link(
+            user_id,
+            client_id="conta-ativa",
+            ml_user_id="14252670",
+            nickname="LONAS_ONLINE",
+            advertiser_id="164424",
+        )
+        original = app._build_sales_intelligence_memory_data
+        app._build_sales_intelligence_memory_data = lambda *_args, **_kwargs: (
+            None,
+            app.ONLINE_CACHE_INTEGRITY_PREFIX + (
+                "Período solicitado: 2026-07-01 a 2026-07-30. Dados financeiros não foram exibidos. "
+                "Estado da reparação: blocked. Cobertura: Ads: 0/1 fatos persistidos; faltam 1."
+            ),
+        )
+        try:
+            request = Request(
+                f"{self.base_url}/inteligencia-vendas",
+                headers={"Cookie": cookie},
+                method="GET",
+            )
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request, timeout=5)
+            self.assertEqual(raised.exception.code, 409)
+            body = raised.exception.read().decode("utf-8", errors="replace")
+            raised.exception.close()
+        finally:
+            app._build_sales_intelligence_memory_data = original
+
+        self.assertIn("Dados financeiros indisponiveis", body)
+        self.assertNotIn("salesIntelligenceBootstrap", body)
+        self.assertNotIn("setTimeout", body)
+        self.assertNotIn("R$", body)
 
     def test_admin_can_extend_existing_user_for_x_days(self):
         user_id = db.upsert_manual_user(

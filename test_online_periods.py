@@ -12,7 +12,101 @@ from gerar_dashboard_ads_ml import aggregate_by_sku, render_dashboard
 NOW = datetime(2026, 7, 31, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
+def complete_integrity_contract(client: str, advertiser_id: str, date_from: str, date_to: str) -> dict:
+    """Representa o único contrato que pode liberar KPIs online."""
+    source = {
+        "complete": True,
+        "expected_item_days": 1,
+        "persisted_item_days": 1,
+        "missing_item_days": 0,
+        "missing_items": [],
+        "errors": [],
+        "source_errors": [],
+    }
+    return {
+        "period_cache_hit": True,
+        "period_cache_complete": True,
+        "integrity_contract": {
+            "rule_id": app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID,
+            "state": "complete",
+            "complete": True,
+            "fail_closed": True,
+            "governance": {
+                "rule_id": app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID,
+                "classification": "COMPARTILHADA",
+                "status": "D",
+                "implementation_status": "NAO_IMPLEMENTADO",
+                "active": True,
+                "source": "agent_bundle",
+                "source_file": "shared_rules.json",
+                "consulted_files": ["knowledge/shared_rules.json"],
+                "loaded_at": "2026-09-14T12:00:00-03:00",
+            },
+            "requested_period": {"date_from": date_from, "date_to": date_to, "days": 1},
+            "identity": {
+                "client_id": client,
+                "advertiser_id": advertiser_id,
+                "seller_id": "seller-test",
+            },
+            "universe": {
+                "complete": True,
+                "ads": {"complete": True, "item_ids": [], "total": 1, "error": ""},
+                "sales": {"complete": True, "item_ids": [], "total": 1, "error": ""},
+            },
+            "ads": dict(source),
+            "sales": dict(source),
+            "errors": [],
+        },
+    }
+
+
+def repair_pending_integrity_contract(client: str, advertiser_id: str, date_from: str, date_to: str) -> dict:
+    payload = complete_integrity_contract(client, advertiser_id, date_from, date_to)
+    contract = payload["integrity_contract"]
+    contract["state"] = "repair_pending"
+    contract["complete"] = False
+    contract["universe"]["complete"] = False
+    for source in ("ads", "sales"):
+        contract[source]["complete"] = False
+        contract[source]["persisted_item_days"] = 0
+        contract[source]["missing_item_days"] = 1
+        contract[source]["missing_items"] = ["pending"]
+        contract["universe"][source]["complete"] = False
+    payload["period_cache_hit"] = False
+    payload["period_cache_complete"] = False
+    return payload
+
+
+def active_snapshot_completeness_rule() -> dict:
+    """Resultado normalizado da consulta central, sem depender da rede no unit test."""
+    return {
+        "ok": True,
+        "rule": {
+            "id": app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID,
+            "classification": "COMPARTILHADA",
+            "active": True,
+            "changes_behavior": True,
+            "status": "D",
+            "implementation_status": "NAO_IMPLEMENTADO",
+            "source_file": "shared_rules.json",
+        },
+        "source_file": "shared_rules.json",
+        "loaded_at": "2026-09-14T12:00:00-03:00",
+    }
+
+
 class OnlinePeriodTests(unittest.TestCase):
+    def setUp(self):
+        self._governance_rule_loader = patch.object(
+            app,
+            "_load_snapshot_completeness_governance_rule",
+            return_value=active_snapshot_completeness_rule(),
+        )
+        self._governance_rule_loader.start()
+
+    def tearDown(self):
+        self._governance_rule_loader.stop()
+
     def test_product_daily_chart_does_not_turn_missing_series_into_zeroes(self):
         source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
         daily_series = source.split("function dailySeriesFor(item)", 1)[1].split(
@@ -163,6 +257,7 @@ class OnlinePeriodTests(unittest.TestCase):
 
     def test_online_builder_keeps_campaign_condition_and_catalog_links_separate(self):
         payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-04", "2026-08-10"),
             "ok": True,
             "latest": {
                 "date_from": "2026-08-04",
@@ -276,6 +371,7 @@ class OnlinePeriodTests(unittest.TestCase):
 
     def test_beta_product_diagnostics_keeps_prices_daily_history_and_read_only_preview(self):
         latest_payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-07", "2026-08-13"),
             "ok": True,
             "latest": {
                 "date_from": "2026-08-07",
@@ -436,6 +532,7 @@ class OnlinePeriodTests(unittest.TestCase):
 
     def test_account_daily_chart_does_not_invent_missing_snapshot_dates(self):
         latest_payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-07", "2026-08-13"),
             "ok": True,
             "latest": {
                 "date_from": "2026-08-07", "date_to": "2026-08-13",
@@ -523,6 +620,77 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(status, 503)
         self.assertFalse(payload["ok"])
 
+    def test_snapshot_rule_loader_reads_canonical_rule_once_within_ttl(self):
+        bundle = {
+            "published_at": "2026-09-14T12:00:00-03:00",
+            "files": {
+                "shared_rules.json": {
+                    "rules": [{
+                        "id": app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID,
+                        "classification": "COMPARTILHADA",
+                        "active": True,
+                        "changes_behavior": True,
+                        "status": "D",
+                        "implementation_status": "NAO_IMPLEMENTADO",
+                    }],
+                },
+            },
+        }
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit):
+                return json.dumps(bundle).encode("utf-8")
+
+        self._governance_rule_loader.stop()
+        try:
+            empty_cache = {"key": None, "expires_at": 0.0, "result": None}
+            with patch.object(app, "_governance_rule_cache", empty_cache), \
+                 patch.dict(app.os.environ, {"GOVERNANCE_READ_API_KEY": "secret"}), \
+                 patch.object(app, "urlopen", return_value=FakeResponse()) as mocked_urlopen:
+                first = app._load_snapshot_completeness_governance_rule()
+                second = app._load_snapshot_completeness_governance_rule()
+        finally:
+            self._governance_rule_loader.start()
+
+        self.assertTrue(first["ok"])
+        self.assertEqual(first["rule"]["status"], "D")
+        self.assertEqual(first["rule"]["source_file"], "shared_rules.json")
+        self.assertEqual(second, first)
+        self.assertEqual(mocked_urlopen.call_count, 1)
+
+    def test_online_integrity_blocks_when_central_rule_cannot_be_consulted(self):
+        payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-11", "2026-08-17"),
+            "ok": True,
+            "latest": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "sales": {"complete": True},
+            },
+            "ads": {"date_from": "2026-08-11", "date_to": "2026-08-17", "items": []},
+            "sales": {"date_from": "2026-08-11", "date_to": "2026-08-17", "items": {}},
+        }
+        with patch.object(
+            app,
+            "_load_snapshot_completeness_governance_rule",
+            return_value={"ok": False, "reason": "governance_read_api_key_not_configured"},
+        ):
+            integrity = app._online_cache_integrity_state(
+                payload, "conta-ativa", "adv-1", "2026-08-11", "2026-08-17"
+            )
+
+        self.assertFalse(integrity["ready"])
+        self.assertFalse(integrity["pending"])
+        self.assertIn("consulta da regra central falhou", integrity["message"])
+
     def test_closed_presets_end_yesterday(self):
         expected = {
             "7": ("2026-07-24", "2026-07-30"),
@@ -558,6 +726,7 @@ class OnlinePeriodTests(unittest.TestCase):
     def test_online_builder_forwards_selected_period_and_reports_match(self):
         calls = []
         payload = {
+            **complete_integrity_contract("cliente-teste", "adv-1", "2026-07-24", "2026-07-30"),
             "ok": True,
             "latest": {"date_from": "2026-07-24", "date_to": "2026-07-30", "updated_at": "2026-07-31T12:00:00-03:00", "sales": {"complete": True}},
             "ads": {
@@ -609,6 +778,7 @@ class OnlinePeriodTests(unittest.TestCase):
 
     def test_online_builder_does_not_refresh_cache_outside_selected_period(self):
         stale_payload = {
+            **complete_integrity_contract("conta-ativa", "123", "2026-07-24", "2026-07-30"),
             "ok": True,
             "latest": {
                 "date_from": "2026-07-31",
@@ -648,18 +818,16 @@ class OnlinePeriodTests(unittest.TestCase):
                 requested_period={"dateFrom": "2026-07-24", "dateTo": "2026-07-30"},
             )
         self.assertIsNone(data)
-        self.assertIn("fora do periodo", message)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("janela de cache diverge", message)
         self.assertEqual(
             [path for path, _ in calls],
-            [
-                "/internal/dash-ads/online-cache-latest",
-                "/internal/dash-ads/online-cache-refresh",
-                "/internal/dash-ads/online-cache-latest",
-            ],
+            ["/internal/dash-ads/online-cache-latest"],
         )
 
     def test_online_builder_rejects_ads_from_a_different_period(self):
         mixed_payload = {
+            **complete_integrity_contract("varietyshop1", "adv-1", "2026-08-11", "2026-08-17"),
             "ok": True,
             "period_cache_hit": True,
             "latest": {
@@ -689,10 +857,192 @@ class OnlinePeriodTests(unittest.TestCase):
             )
 
         self.assertIsNone(data)
-        self.assertIn("fora do periodo", message)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("janela de Ads diverge", message)
+
+    def test_online_builder_blocks_partial_ads_coverage_before_financial_rendering(self):
+        payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-11", "2026-08-17"),
+            "ok": True,
+            "latest": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "complete": False,
+                "coverage": {"complete": False},
+                "items": [{"item_id": "MLB1", "cost": 10, "total_amount": 100}],
+            },
+            "sales": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "items": {"MLB1": {"revenue_total": 120, "units_total": 1}},
+            },
+        }
+        contract = payload["integrity_contract"]
+        contract["ads"].update({
+            "complete": False,
+            "persisted_item_days": 0,
+            "missing_item_days": 1,
+            "missing_items": ["MLB1"],
+        })
+        contract["universe"]["ads"]["complete"] = False
+        contract["universe"]["complete"] = False
+
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            data, message = app._build_online_dashboard_data(
+                "conta-ativa",
+                "adv-1",
+                "2026-08-11",
+                "2026-08-17",
+                {"dateFrom": "2026-08-11", "dateTo": "2026-08-17"},
+            )
+
+        self.assertIsNone(data)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("cobertura de Ads não foi comprovada", message)
+
+    def test_online_builder_blocks_when_daily_sales_coverage_turns_partial(self):
+        payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-11", "2026-08-17"),
+            "ok": True,
+            "latest": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "items": [{
+                    "item_id": "MLB1", "cost": 10, "total_amount": 100,
+                    "thumbnail_url": "https://http2.mlstatic.com/image.jpg",
+                }],
+            },
+            "sales": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "items": {"MLB1": {"revenue_total": 120, "units_total": 1}},
+            },
+        }
+
+        def fetch(path, _params=None):
+            if path.endswith("sales-daily"):
+                return {
+                    "ok": True,
+                    "rows": [{"item_id": "MLB1", "snapshot_date": "2026-08-12", "revenue_total": 120}],
+                    "coverage_days": {"2026-08-12": {"complete": False}},
+                }
+            if path.endswith("ads-daily"):
+                return {"ok": True, "rows": []}
+            return payload
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
+            data, message = app._build_online_dashboard_data(
+                "conta-ativa", "adv-1", "2026-08-11", "2026-08-17",
+                {"dateFrom": "2026-08-11", "dateTo": "2026-08-17"},
+            )
+
+        self.assertIsNone(data)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("snapshots diários reportou cobertura parcial", message)
+
+    def test_online_builder_accepts_agent_source_errors_alias_for_complete_coverage(self):
+        payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-11", "2026-08-17"),
+            "ok": True,
+            "latest": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "items": [{"item_id": "MLB1", "cost": 10, "total_amount": 100}],
+            },
+            "sales": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "items": {"MLB1": {"revenue_total": 120, "units_total": 1}},
+            },
+        }
+        for source in ("ads", "sales"):
+            payload["integrity_contract"][source].pop("errors")
+
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            data, message = app._build_online_dashboard_data(
+                "conta-ativa", "adv-1", "2026-08-11", "2026-08-17",
+                {"dateFrom": "2026-08-11", "dateTo": "2026-08-17"},
+            )
+
+        self.assertEqual(message, "")
+        self.assertIsNotNone(data)
+
+    def test_online_builder_blocks_when_agent_governance_receipt_diverges(self):
+        payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-11", "2026-08-17"),
+            "ok": True,
+            "latest": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "sales": {"complete": True},
+            },
+            "ads": {"date_from": "2026-08-11", "date_to": "2026-08-17", "items": []},
+            "sales": {"date_from": "2026-08-11", "date_to": "2026-08-17", "items": {}},
+        }
+        payload["integrity_contract"]["governance"]["status"] = "C"
+
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            data, message = app._build_online_dashboard_data(
+                "conta-ativa", "adv-1", "2026-08-11", "2026-08-17",
+                {"dateFrom": "2026-08-11", "dateTo": "2026-08-17"},
+            )
+
+        self.assertIsNone(data)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("recibo da regra central não foi comprovado", message)
+
+    def test_offline_online_beta_skips_reconciliation_when_cache_integrity_is_untrusted(self):
+        calls = []
+        untrusted = {
+            "ok": True,
+            "status": "failed",
+            "latest": {
+                "date_from": "2026-08-11",
+                "date_to": "2026-08-17",
+                "sales": {"complete": False},
+            },
+            "ads": {"date_from": "2026-08-11", "date_to": "2026-08-17", "items": []},
+            "sales": {"date_from": "2026-08-11", "date_to": "2026-08-17", "items": {}},
+        }
+
+        def fake_fetch(path, _params):
+            calls.append(path)
+            if path.endswith("ml-context"):
+                return {"ok": True, "advertiser_id": "adv-1"}
+            if path.endswith("online-cache-latest"):
+                return untrusted
+            self.fail(f"A rota {path} não pode ser chamada sem recibo de integridade completo")
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fake_fetch):
+            result = app._build_online_beta_payload(
+                {"meta": {"period": {"dateFrom": "2026-08-11", "dateTo": "2026-08-17"}}},
+                "conta-ativa",
+                "adv-1",
+            )
+
+        self.assertFalse(result["enabled"])
+        self.assertTrue(result["integrityBlocked"])
+        self.assertIn("Dados financeiros não foram exibidos", result["integrityMessage"])
+        self.assertNotIn("ads-api-reconciliacao", calls)
 
     def test_online_builder_reports_pending_when_no_snapshot_is_available(self):
         stale_payload = {
+            **repair_pending_integrity_contract("conta-ativa", "", "2026-07-24", "2026-07-30"),
             "ok": True,
             "period_cache_hit": False,
             "period_cache_complete": False,
@@ -725,50 +1075,31 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIsNone(data)
         self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
 
-    def test_online_builder_renders_completed_snapshot_fallback_while_refresh_runs(self):
-        fallback = {
+    def test_online_builder_never_renders_a_completed_snapshot_from_another_period(self):
+        pending = {
+            **repair_pending_integrity_contract("conta-ativa", "adv-1", "2026-08-05", "2026-09-03"),
             "ok": True,
-            "period_cache_hit": True,
-            "period_cache_complete": True,
-            "fallback": {
-                "reason": "latest_complete_7d",
-                "requested": {"date_from": "2026-08-05", "date_to": "2026-09-03"},
-                "served": {"date_from": "2026-08-16", "date_to": "2026-08-22"},
-            },
-            "latest": {
-                "date_from": "2026-08-16", "date_to": "2026-08-22",
-                "sales": {"complete": True},
-            },
-            "ads": {
-                "date_from": "2026-08-16", "date_to": "2026-08-22",
-                "items": [{"item_id": "MLB123", "cost": 10, "total_amount": 100, "direct_amount": 80}],
-            },
-            "campaigns": {"campaigns": []},
-            "sales": {
-                "date_from": "2026-08-16", "date_to": "2026-08-22",
-                "items": {"MLB123": {"revenue_total": 120, "orders_count": 1, "units_total": 1}},
-            },
+            "latest": {},
+            "ads": {},
+            "sales": {},
         }
+        calls = []
 
         def fetch(path, params=None):
+            calls.append(path)
             if path.endswith("online-cache-refresh"):
                 return {"ok": True, "status": "running"}
-            if path.endswith("sales-daily") or path.endswith("ads-daily"):
-                return {"ok": True, "rows": []}
-            if params and params.get("fallback"):
-                return fallback
-            return {"ok": True, "period_cache_hit": False, "latest": {}, "ads": {}, "sales": {}}
+            return pending
 
         with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
-            data, error = app._build_online_dashboard_data(
+            data, message = app._build_online_dashboard_data(
                 "conta-ativa", "adv-1", "2026-08-05", "2026-09-03",
                 {"dateFrom": "2026-08-05", "dateTo": "2026-09-03"},
             )
 
-        self.assertEqual(error, "")
-        self.assertEqual(data["meta"]["period"], {"dateFrom": "2026-08-16", "dateTo": "2026-08-22"})
-        self.assertFalse(data["meta"]["onlineMode"]["periodMatch"])
-        self.assertIn("ultimo periodo completo", data["meta"]["onlineMode"]["notice"])
+        self.assertIsNone(data)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
+        self.assertNotIn("fallback", " ".join(calls))
 
     def test_sales_intelligence_injection_uses_real_final_body_tag(self):
         html = "<html><body><script>var sample = '</body>';</script><div>ok</div></body></html>"
@@ -840,6 +1171,25 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(data["neverSoldListings"][0]["mlb"], "MLB-NUNCA")
         self.assertEqual(data["neverSoldListings"][0]["classification"], "partial")
 
+    def test_sales_intelligence_blocks_daily_partial_coverage_before_recommendations(self):
+        latest = {
+            "latest": {"date_from": "2026-08-11", "date_to": "2026-08-17"},
+            "sales": {"complete": True, "items": {"MLB1": {"revenue_total": 120, "units_total": 1}}},
+            "ads": {"items": [{"item_id": "MLB1", "cost": 10, "total_amount": 100}]},
+        }
+        user = {"name": "Cliente", "email": "cliente@example.com"}
+        link = {"client_id": "cliente", "advertiser_id": "1", "official_store": "Loja", "nickname": ""}
+        daily_rows = [{"item_id": "MLB1", "snapshot_date": "2026-08-12", "revenue_total": 120}]
+        coverage_days = {"2026-08-12": {"complete": False}}
+
+        with patch.object(app, "_sales_intelligence_fetch_latest", return_value=(latest, "")), \
+             patch.object(app, "_sales_intelligence_fetch_daily_sales", return_value=(daily_rows, coverage_days, "")):
+            data, message = app._build_sales_intelligence_memory_data(user, link)
+
+        self.assertIsNone(data)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("snapshots diários reportou cobertura parcial", message)
+
     def test_never_sold_listing_requires_active_status_and_creation_coverage(self):
         rows = app._sales_intelligence_collect_never_sold_listings({
             "sales": {"items": {}},
@@ -861,21 +1211,22 @@ class OnlinePeriodTests(unittest.TestCase):
 
     def test_sales_intelligence_reports_pending_while_hourly_refresh_runs(self):
         stale_payload = {
+            **repair_pending_integrity_contract("conta-ativa", "adv-1", "2026-04-30", "2026-08-26"),
             "ok": True,
             "period_cache_hit": False,
             "status": {"status": "running"},
             "latest": {
-                "date_from": "2026-07-24",
-                "date_to": "2026-08-22",
+                "date_from": "2026-04-30",
+                "date_to": "2026-08-26",
             },
             "ads": {
-                "date_from": "2026-07-24",
-                "date_to": "2026-08-22",
+                "date_from": "2026-04-30",
+                "date_to": "2026-08-26",
                 "items": [],
             },
             "sales": {
-                "date_from": "2026-07-24",
-                "date_to": "2026-08-22",
+                "date_from": "2026-04-30",
+                "date_to": "2026-08-26",
                 "items": {},
             },
         }
@@ -898,7 +1249,6 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
         self.assertEqual(calls, [
             "/internal/dash-ads/online-cache-latest",
-            "/internal/dash-ads/online-cache-latest",
         ])
 
     def test_sales_intelligence_reports_pending_when_hourly_snapshot_is_not_ready(self):
@@ -920,18 +1270,19 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertIsNone(payload)
         self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
-        self.assertEqual(fetch.call_count, 3)
+        self.assertEqual(fetch.call_count, 2)
         self.assertEqual(fetch.call_args_list[0].args, (
             "/internal/dash-ads/online-cache-latest",
             {"client": "conta-ativa", "advertiser_id": "adv-1", "date_from": "2026-08-28", "date_to": "2026-09-03"},
         ))
         self.assertEqual(fetch.call_args_list[-1].args, (
-            "/internal/dash-ads/online-cache-latest",
-            {"client": "conta-ativa", "advertiser_id": "adv-1", "date_from": "2026-08-28", "date_to": "2026-09-03", "fallback": "latest_complete_7d"},
+            "/internal/dash-ads/online-cache-refresh",
+            {"client": "conta-ativa", "advertiser_id": "adv-1", "date_from": "2026-08-28", "date_to": "2026-09-03"},
         ))
 
-    def test_sales_intelligence_accepts_exact_partial_snapshot_while_backfill_runs(self):
+    def test_sales_intelligence_blocks_exact_partial_snapshot_while_backfill_runs(self):
         partial_payload = {
+            **repair_pending_integrity_contract("conta-ativa", "adv-1", "2026-08-28", "2026-09-03"),
             "ok": True,
             "period_cache_hit": True,
             "period_cache_complete": False,
@@ -944,41 +1295,51 @@ class OnlinePeriodTests(unittest.TestCase):
                 "conta-ativa", "adv-1", "2026-08-28", "2026-09-03"
             )
 
-        self.assertEqual(message, "")
-        self.assertIs(payload, partial_payload)
+        self.assertIsNone(payload)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
         self.assertEqual(fetch.call_count, 2)
 
-    def test_sales_intelligence_opens_latest_complete_window_while_requested_range_refreshes(self):
+    def test_sales_intelligence_never_opens_another_complete_window_while_requested_range_repairs(self):
         requested = {"client": "conta-ativa", "advertiser_id": "adv-1", "date_from": "2026-08-05", "date_to": "2026-09-03"}
-        fallback = {
+        pending = {
+            **repair_pending_integrity_contract("conta-ativa", "adv-1", "2026-08-05", "2026-09-03"),
             "ok": True,
-            "period_cache_hit": True,
-            "period_cache_complete": True,
-            "fallback": {
-                "reason": "latest_complete_7d",
-                "requested": {"date_from": "2026-08-05", "date_to": "2026-09-03"},
-                "served": {"date_from": "2026-08-16", "date_to": "2026-08-22"},
-            },
-            "latest": {"date_from": "2026-08-16", "date_to": "2026-08-22"},
-            "ads": {"date_from": "2026-08-16", "date_to": "2026-08-22", "items": []},
-            "sales": {"date_from": "2026-08-16", "date_to": "2026-08-22", "items": {}},
+            "latest": {},
+            "ads": {},
+            "sales": {},
         }
 
         def fake_fetch(path, params):
             if path.endswith("online-cache-refresh"):
                 return {"ok": True, "status": "running"}
-            if params.get("fallback"):
-                return fallback
-            return {"ok": True, "period_cache_hit": False, "latest": {}, "ads": {}, "sales": {}}
+            return pending
 
         with patch.object(app, "_fetch_dash_ads_json", side_effect=fake_fetch):
             payload, message = app._sales_intelligence_fetch_latest(
                 "conta-ativa", "adv-1", requested["date_from"], requested["date_to"]
             )
 
-        self.assertEqual(message, "")
-        self.assertIs(payload, fallback)
-        self.assertEqual(payload["background_refresh"]["status"], "running")
+        self.assertIsNone(payload)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
+
+    def test_sales_intelligence_does_not_retry_after_terminal_repair_failure(self):
+        failed = {
+            **repair_pending_integrity_contract("conta-ativa", "adv-1", "2026-08-05", "2026-09-03"),
+            "ok": True,
+            "status": "failed",
+            "latest": {"date_from": "2026-08-05", "date_to": "2026-09-03"},
+            "ads": {"date_from": "2026-08-05", "date_to": "2026-09-03", "items": []},
+            "sales": {"date_from": "2026-08-05", "date_to": "2026-09-03", "items": {}},
+        }
+        with patch.object(app, "_fetch_dash_ads_json", return_value=failed) as fetch:
+            payload, message = app._sales_intelligence_fetch_latest(
+                "conta-ativa", "adv-1", "2026-08-05", "2026-09-03"
+            )
+
+        self.assertIsNone(payload)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("Estado da reparação: repair_pending", message)
+        self.assertEqual(fetch.call_count, 1)
 
     def test_sales_intelligence_falls_back_to_aggregate_cache_when_daily_snapshot_fails(self):
         latest = {
@@ -1058,6 +1419,7 @@ class OnlinePeriodTests(unittest.TestCase):
 
     def test_online_builder_uses_requested_period_when_explicit_dates_are_empty(self):
         payload = {
+            **complete_integrity_contract("conta-ativa", "123", "2026-07-03", "2026-08-01"),
             "ok": True,
             "latest": {
                 "date_from": "2026-07-03",

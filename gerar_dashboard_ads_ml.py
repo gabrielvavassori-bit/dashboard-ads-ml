@@ -3390,8 +3390,12 @@ def render_dashboard(data):
       const tableNode = document.getElementById('onlineBetaTable');
       if (!beta.enabled) {{
         summaryNode.innerHTML = '';
-        periodNode.textContent = 'Online Beta indisponivel nesta analise.';
-        statusNode.textContent = 'Preencha o cliente ML no envio para habilitar a leitura online autenticada.';
+        periodNode.textContent = beta.integrityBlocked
+          ? 'Leitura online bloqueada por integridade do snapshot.'
+          : 'Online Beta indisponivel nesta analise.';
+        statusNode.textContent = beta.integrityBlocked
+          ? String(beta.integrityMessage || 'A cobertura online ainda nao foi comprovada; nenhum dado financeiro online foi exibido.')
+          : 'Preencha o cliente ML no envio para habilitar a leitura online autenticada.';
         tableNode.innerHTML = '';
         return;
       }}
