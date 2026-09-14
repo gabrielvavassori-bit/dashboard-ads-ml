@@ -673,7 +673,6 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
     latest_date_from = latest.get("date_from") or ads.get("date_from") or ""
     latest_date_to = latest.get("date_to") or ads.get("date_to") or ""
-    served_period_params = {"date_from": latest_date_from, "date_to": latest_date_to}
     period_cache_hit = latest_payload.get("period_cache_hit") is not False
     period_match = not (requested_from or requested_to) or (
         period_cache_hit
@@ -725,10 +724,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         except Exception:
             pass
     ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
-    # O cache de Ads pode conter uma janela/estado antigo mesmo quando a
-    # metadada do snapshot bate com o periodo solicitado. Nunca renderizar
-    # receita Ads maior que o faturamento bruto: tentar a reconciliacao
-    # oficial apenas nesse caso, mantendo o caminho normal intacto.
+    # A reconciliacao de Ads e somente diagnostica. Ela nunca pode substituir
+    # as linhas que alimentam KPIs depois que o contrato de integridade foi
+    # validado: uma divergencia exige bloquear esta janela e repará-la na
+    # origem, não trocar silenciosamente a fonte financeira em tela.
     cached_sales_revenue = sum(
         _number(value.get("revenue_total"))
         for value in sales_by_item.values()
@@ -739,46 +738,12 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         for value in ads_rows
         if isinstance(value, dict)
     )
-    sales_complete = bool((latest.get("sales") or {}).get("complete"))
-    if sales_complete:
-        if cached_sales_revenue > 0 and cached_ads_revenue > cached_sales_revenue + 0.01:
-            reconciliation_item_ids = sorted({
-                _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
-                for raw in ads_rows
-                if isinstance(raw, dict)
-                and _normalize_mlb_code(raw.get("item_id") or raw.get("id"))
-            })
-            reconciliation = _fetch_dash_ads_json(
-                "/internal/dash-ads/ads-api-reconciliacao",
-                {
-                    "client": client,
-                    "advertiser_id": advertiser_id,
-                    "items": ",".join(reconciliation_item_ids),
-                    **served_period_params,
-                },
-            )
-            reconciliation_from = str(reconciliation.get("date_from") or "")
-            reconciliation_to = str(reconciliation.get("date_to") or "")
-            reconciled_rows = reconciliation.get("items") if isinstance(reconciliation.get("items"), list) else []
-            reconciled_ads_revenue = sum(
-                _number(value.get("total_amount"))
-                for value in reconciled_rows
-                if isinstance(value, dict)
-            )
-            if (
-                reconciliation.get("ok")
-                and reconciled_rows
-                and reconciliation_from == requested_from
-                and reconciliation_to == requested_to
-                and reconciled_ads_revenue <= cached_sales_revenue + 0.01
-            ):
-                ads_rows = reconciled_rows
-                ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
-            else:
-                return None, (
-                    "Cache online inconsistente: a receita atribuida por Ads supera o faturamento bruto "
-                    "do periodo. A reconciliacao oficial ainda nao confirmou os dados; tente novamente."
-                )
+    if cached_ads_revenue > cached_sales_revenue + 0.01:
+        return None, (
+            f"{ONLINE_CACHE_INTEGRITY_PREFIX}Período solicitado: {requested_from or 'sem data'} a {requested_to or 'sem data'}. "
+            "Dados financeiros não foram exibidos. A receita atribuída por Ads supera o faturamento bruto "
+            "do cache completo; a janela precisa ser reparada na origem. Estado da reparação: blocked."
+        )
     daily_sales_result = _sales_intelligence_fetch_daily_sales(
         client,
         latest_date_from,
@@ -789,17 +754,28 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         daily_sales_coverage_days = {}
     else:
         daily_sales_rows, daily_sales_coverage_days, daily_sales_error = daily_sales_result
-    daily_ads_rows, daily_ads_error = _sales_intelligence_fetch_daily_ads(
+    daily_ads_rows, daily_ads_coverage_days, daily_ads_error = _sales_intelligence_fetch_daily_ads(
         client,
         latest_date_from,
         latest_date_to,
     )
-    partial_daily_dates = _daily_partial_snapshot_dates(daily_sales_coverage_days)
-    if partial_daily_dates:
+    daily_coverage_issues = [
+        issue
+        for issue in (
+            _daily_financial_coverage_issue(
+                "vendas", daily_sales_coverage_days, latest_date_from, latest_date_to, daily_sales_error
+            ),
+            _daily_financial_coverage_issue(
+                "Ads", daily_ads_coverage_days, latest_date_from, latest_date_to, daily_ads_error
+            ),
+        )
+        if issue
+    ]
+    if daily_coverage_issues:
         return None, (
             f"{ONLINE_CACHE_INTEGRITY_PREFIX}Período solicitado: {requested_from or 'sem data'} a {requested_to or 'sem data'}. "
-            "Dados financeiros não foram exibidos. A fonte de snapshots diários reportou cobertura parcial "
-            f"em {', '.join(sorted(partial_daily_dates))}. Estado da reparação: blocked."
+            f"Dados financeiros não foram exibidos. {'; '.join(daily_coverage_issues)}. "
+            "Estado da reparação: blocked."
         )
     daily_by_item_date: dict[str, dict[str, dict]] = {}
     for daily_raw in daily_sales_rows:
@@ -1891,9 +1867,10 @@ def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: 
     )
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
     coverage_days = payload.get("coverage_days") if isinstance(payload.get("coverage_days"), dict) else {}
-    if payload.get("ok") is True:
+    source_error = str(payload.get("erro") or payload.get("error") or "").strip()
+    if payload.get("ok") is True and not source_error:
         return [row for row in rows if isinstance(row, dict)], coverage_days, ""
-    return [], coverage_days, str(payload.get("erro") or payload.get("error") or "snapshots_diarios_indisponiveis")
+    return [], coverage_days, source_error or "snapshots_diarios_indisponiveis"
 
 
 def _daily_partial_snapshot_dates(coverage_days: dict) -> set[str]:
@@ -1904,7 +1881,52 @@ def _daily_partial_snapshot_dates(coverage_days: dict) -> set[str]:
     }
 
 
-def _sales_intelligence_fetch_daily_ads(client: str, date_from: str, date_to: str) -> tuple[list[dict], str]:
+def _daily_financial_coverage_issue(
+    source_label: str,
+    coverage_days,
+    date_from: str,
+    date_to: str,
+    source_error: str = "",
+) -> str:
+    """Retorna o motivo fail-closed da série diária financeira, se houver.
+
+    Linhas diárias disponíveis não provam cobertura: todo dia exato precisa do
+    recibo explícito ``complete=True`` e não pode trazer erro da fonte.
+    """
+    if str(source_error or "").strip():
+        return f"a fonte diária de {source_label} reportou erro"
+    if not isinstance(coverage_days, dict) or not coverage_days:
+        return f"o recibo de cobertura diária de {source_label} está ausente"
+    start = _parse_iso_date(date_from)
+    end = _parse_iso_date(date_to)
+    if not start or not end or end < start:
+        return f"a janela de cobertura diária de {source_label} é inválida"
+    incomplete_dates = []
+    cursor = start
+    while cursor <= end:
+        snapshot_date = cursor.isoformat()
+        coverage = coverage_days.get(snapshot_date)
+        if not isinstance(coverage, dict) or coverage.get("complete") is not True:
+            incomplete_dates.append(snapshot_date)
+        else:
+            nested_errors = coverage.get("errors")
+            legacy_errors = coverage.get("source_errors")
+            if (
+                str(coverage.get("error") or coverage.get("erro") or "").strip()
+                or bool(nested_errors)
+                or bool(legacy_errors)
+            ):
+                incomplete_dates.append(snapshot_date)
+        cursor += timedelta(days=1)
+    if incomplete_dates:
+        return (
+            f"a cobertura diária de {source_label} não foi comprovada em "
+            f"{', '.join(incomplete_dates)}"
+        )
+    return ""
+
+
+def _sales_intelligence_fetch_daily_ads(client: str, date_from: str, date_to: str) -> tuple[list[dict], dict, str]:
     payload = _fetch_dash_ads_json(
         "/internal/dash-ads/ads-daily",
         {
@@ -1914,9 +1936,11 @@ def _sales_intelligence_fetch_daily_ads(client: str, date_from: str, date_to: st
         },
     )
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
-    if payload.get("ok") is True:
-        return [row for row in rows if isinstance(row, dict)], ""
-    return [], str(payload.get("erro") or payload.get("error") or "snapshots_diarios_ads_indisponiveis")
+    coverage_days = payload.get("coverage_days") if isinstance(payload.get("coverage_days"), dict) else {}
+    source_error = str(payload.get("erro") or payload.get("error") or "").strip()
+    if payload.get("ok") is True and not source_error:
+        return [row for row in rows if isinstance(row, dict)], coverage_days, ""
+    return [], coverage_days, source_error or "snapshots_diarios_ads_indisponiveis"
 
 
 def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]:

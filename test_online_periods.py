@@ -1,6 +1,6 @@
 import unittest
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
@@ -58,6 +58,17 @@ def complete_integrity_contract(client: str, advertiser_id: str, date_from: str,
             "errors": [],
         },
     }
+
+
+def complete_daily_coverage(date_from: str, date_to: str) -> dict:
+    """Recibo explícito necessário para liberar uma série financeira diária."""
+    start = datetime.fromisoformat(date_from).date()
+    end = datetime.fromisoformat(date_to).date()
+    coverage = {}
+    while start <= end:
+        coverage[start.isoformat()] = {"complete": True}
+        start += timedelta(days=1)
+    return coverage
 
 
 def repair_pending_integrity_contract(client: str, advertiser_id: str, date_from: str, date_to: str) -> dict:
@@ -259,6 +270,7 @@ class OnlinePeriodTests(unittest.TestCase):
         payload = {
             **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-04", "2026-08-10"),
             "ok": True,
+            "coverage_days": complete_daily_coverage("2026-08-04", "2026-08-10"),
             "latest": {
                 "date_from": "2026-08-04",
                 "date_to": "2026-08-10",
@@ -436,6 +448,7 @@ class OnlinePeriodTests(unittest.TestCase):
         }
         daily_payload = {
             "ok": True,
+            "coverage_days": complete_daily_coverage("2026-08-07", "2026-08-13"),
             "rows": [
                 {"item_id": "MLB5364060738", "snapshot_date": "2026-08-11", "orders_count": 1, "units_total": 1, "revenue_total": 29.90, "last_price": 29.90},
                 {"item_id": "MLB9999999999", "snapshot_date": "2026-08-11", "orders_count": 2, "units_total": 2, "revenue_total": 100, "last_price": 50},
@@ -445,6 +458,7 @@ class OnlinePeriodTests(unittest.TestCase):
         }
         daily_ads_payload = {
             "ok": True,
+            "coverage_days": complete_daily_coverage("2026-08-07", "2026-08-13"),
             "rows": [{
                 "item_id": "MLB5364060738", "snapshot_date": "2026-08-11",
                 "campaign_id": "CAMP-1", "cost": 10, "total_amount": 50,
@@ -551,7 +565,11 @@ class OnlinePeriodTests(unittest.TestCase):
 
         def fetch(path, params=None):
             if path in ("/internal/dash-ads/sales-daily", "/internal/dash-ads/ads-daily"):
-                return {"ok": True, "rows": []}
+                return {
+                    "ok": True,
+                    "rows": [],
+                    "coverage_days": complete_daily_coverage("2026-08-07", "2026-08-13"),
+                }
             return latest_payload
 
         with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
@@ -728,6 +746,7 @@ class OnlinePeriodTests(unittest.TestCase):
         payload = {
             **complete_integrity_contract("cliente-teste", "adv-1", "2026-07-24", "2026-07-30"),
             "ok": True,
+            "coverage_days": complete_daily_coverage("2026-07-24", "2026-07-30"),
             "latest": {"date_from": "2026-07-24", "date_to": "2026-07-30", "updated_at": "2026-07-31T12:00:00-03:00", "sales": {"complete": True}},
             "ads": {
                 "date_from": "2026-07-24",
@@ -934,10 +953,17 @@ class OnlinePeriodTests(unittest.TestCase):
                 return {
                     "ok": True,
                     "rows": [{"item_id": "MLB1", "snapshot_date": "2026-08-12", "revenue_total": 120}],
-                    "coverage_days": {"2026-08-12": {"complete": False}},
+                    "coverage_days": {
+                        **complete_daily_coverage("2026-08-11", "2026-08-17"),
+                        "2026-08-12": {"complete": False},
+                    },
                 }
             if path.endswith("ads-daily"):
-                return {"ok": True, "rows": []}
+                return {
+                    "ok": True,
+                    "rows": [],
+                    "coverage_days": complete_daily_coverage("2026-08-11", "2026-08-17"),
+                }
             return payload
 
         with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
@@ -948,12 +974,132 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertIsNone(data)
         self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
-        self.assertIn("snapshots diários reportou cobertura parcial", message)
+        self.assertIn("cobertura diária de vendas não foi comprovada", message)
+
+    def test_online_builder_blocks_daily_ads_without_explicit_complete_coverage(self):
+        date_from = date_to = "2026-08-11"
+        payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", date_from, date_to),
+            "ok": True,
+            "latest": {
+                "date_from": date_from,
+                "date_to": date_to,
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": date_from,
+                "date_to": date_to,
+                "items": [{
+                    "item_id": "MLB1",
+                    "thumbnail_url": "https://http2.mlstatic.com/image.jpg",
+                    "cost": 10,
+                    "total_amount": 100,
+                }],
+            },
+            "sales": {
+                "date_from": date_from,
+                "date_to": date_to,
+                "items": {"MLB1": {"revenue_total": 120, "units_total": 1}},
+            },
+        }
+        daily_sales = {
+            "ok": True,
+            "rows": [],
+            "coverage_days": complete_daily_coverage(date_from, date_to),
+        }
+        cases = {
+            "ausente": (
+                {"ok": True, "rows": []},
+                "recibo de cobertura diária de Ads está ausente",
+            ),
+            "none": (
+                {"ok": True, "rows": [], "coverage_days": {date_from: {"complete": None}}},
+                "cobertura diária de Ads não foi comprovada",
+            ),
+            "false": (
+                {"ok": True, "rows": [], "coverage_days": {date_from: {"complete": False}}},
+                "cobertura diária de Ads não foi comprovada",
+            ),
+            "erro": (
+                {
+                    "ok": True,
+                    "rows": [],
+                    "coverage_days": complete_daily_coverage(date_from, date_to),
+                    "error": "upstream_timeout",
+                },
+                "fonte diária de Ads reportou erro",
+            ),
+        }
+
+        for label, (daily_ads, expected_reason) in cases.items():
+            with self.subTest(label=label):
+                def fetch(path, _params=None):
+                    if path.endswith("sales-daily"):
+                        return daily_sales
+                    if path.endswith("ads-daily"):
+                        return daily_ads
+                    return payload
+
+                with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
+                    data, message = app._build_online_dashboard_data(
+                        "conta-ativa", "adv-1", date_from, date_to,
+                        {"dateFrom": date_from, "dateTo": date_to},
+                    )
+
+                self.assertIsNone(data)
+                self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+                self.assertIn(expected_reason, message)
+
+    def test_online_builder_blocks_inconsistent_ads_without_diagnostic_row_replacement(self):
+        date_from = date_to = "2026-08-11"
+        payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", date_from, date_to),
+            "ok": True,
+            "latest": {
+                "date_from": date_from,
+                "date_to": date_to,
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": date_from,
+                "date_to": date_to,
+                "items": [{
+                    "item_id": "MLB1",
+                    "thumbnail_url": "https://http2.mlstatic.com/image.jpg",
+                    "cost": 10,
+                    "total_amount": 200,
+                }],
+            },
+            "sales": {
+                "date_from": date_from,
+                "date_to": date_to,
+                "items": {"MLB1": {"revenue_total": 120, "units_total": 1}},
+            },
+        }
+        calls = []
+
+        def fetch(path, _params=None):
+            calls.append(path)
+            if path.endswith("ads-api-reconciliacao"):
+                self.fail("A reconciliação diagnóstica não pode substituir linhas financeiras")
+            return payload
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
+            data, message = app._build_online_dashboard_data(
+                "conta-ativa", "adv-1", date_from, date_to,
+                {"dateFrom": date_from, "dateTo": date_to},
+            )
+
+        self.assertIsNone(data)
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("receita atribuída por Ads supera o faturamento bruto", message)
+        self.assertEqual(calls, ["/internal/dash-ads/online-cache-latest"])
 
     def test_online_builder_accepts_agent_source_errors_alias_for_complete_coverage(self):
         payload = {
             **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-11", "2026-08-17"),
             "ok": True,
+            "coverage_days": complete_daily_coverage("2026-08-11", "2026-08-17"),
             "latest": {
                 "date_from": "2026-08-11",
                 "date_to": "2026-08-17",
@@ -1421,6 +1567,7 @@ class OnlinePeriodTests(unittest.TestCase):
         payload = {
             **complete_integrity_contract("conta-ativa", "123", "2026-07-03", "2026-08-01"),
             "ok": True,
+            "coverage_days": complete_daily_coverage("2026-07-03", "2026-08-01"),
             "latest": {
                 "date_from": "2026-07-03",
                 "date_to": "2026-08-01",

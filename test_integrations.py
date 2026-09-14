@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from datetime import date, timedelta
 from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
@@ -71,6 +72,17 @@ def payload(event_id, event_name, status="upToDate", product_id="3032224"):
     }
 
 
+def complete_daily_coverage(date_from: str, date_to: str) -> dict:
+    """Emite o recibo diário explícito exigido pelo modo online fail-closed."""
+    cursor = date.fromisoformat(date_from)
+    end = date.fromisoformat(date_to)
+    coverage = {}
+    while cursor <= end:
+        coverage[cursor.isoformat()] = {"complete": True}
+        cursor += timedelta(days=1)
+    return coverage
+
+
 def complete_online_integrity_contract(client: str, advertiser_id: str, date_from: str, date_to: str) -> dict:
     source = {
         "complete": True,
@@ -84,6 +96,10 @@ def complete_online_integrity_contract(client: str, advertiser_id: str, date_fro
     return {
         "period_cache_hit": True,
         "period_cache_complete": True,
+        # Os mocks de integração retornam este mesmo payload para latest e para
+        # ambos endpoints diários; por isso o recibo precisa ser explicitamente
+        # completo para que o cenário represente uma janela financeira válida.
+        "coverage_days": complete_daily_coverage(date_from, date_to),
         "integrity_contract": {
             "rule_id": app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID,
             "state": "complete",
@@ -1245,7 +1261,12 @@ class HTTPRouteTests(unittest.TestCase):
             "ok": True,
             "latest": {"date_from": "2026-07-01", "date_to": "2026-07-30", "sales": {"complete": True}},
             "ads": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": [{"item_id": "MLB123", "cost": 2000, "total_amount": 50000, "direct_amount": 0}]},
-            "sales": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": {"MLB123": {"revenue_total": 0, "units_total": 0}}},
+            # A receita atribuída por Ads pode ser indireta para MLB123, mas o
+            # total Ads nunca pode superar o faturamento bruto exato da janela.
+            "sales": {"date_from": "2026-07-01", "date_to": "2026-07-30", "items": {
+                "MLB123": {"revenue_total": 0, "units_total": 0},
+                "MLB456": {"revenue_total": 50000, "units_total": 1},
+            }},
         }
         original_fetch = app._fetch_dash_ads_json
         app._fetch_dash_ads_json = lambda *_args, **_kwargs: payload
@@ -1255,9 +1276,10 @@ class HTTPRouteTests(unittest.TestCase):
             app._fetch_dash_ads_json = original_fetch
 
         self.assertEqual(message, "")
-        self.assertEqual(data["items"][0]["tacosBaseRevenue"], 50000)
-        self.assertAlmostEqual(data["items"][0]["tacos"], 0.04)
-        self.assertEqual(data["kpis"]["tacosBaseRevenue"], 0)
+        advertised_item = next(item for item in data["items"] if item["code"] == "MLB123")
+        self.assertEqual(advertised_item["tacosBaseRevenue"], 50000)
+        self.assertAlmostEqual(advertised_item["tacos"], 0.04)
+        self.assertEqual(data["kpis"]["tacosBaseRevenue"], 50000)
 
     def test_online_dashboard_blocks_partial_sales_before_calculating_kpis(self):
         payload = {
