@@ -406,11 +406,22 @@ class OnlinePeriodTests(unittest.TestCase):
             }],
         }
 
+        daily_visits_payload = {
+            "ok": True,
+            "rows": [{"item_id": "MLB5364060738", "snapshot_date": "2026-08-11", "visits_total": 7}],
+            "coverage_by_item": {
+                "MLB5364060738": {"complete": False, "expected_days": 7, "days": 1, "visits": 7},
+                "MLB9999999999": {"complete": False, "expected_days": 7, "days": 0, "visits": 0},
+            },
+        }
+
         def fetch(path, params=None):
             if path == "/internal/dash-ads/sales-daily":
                 return daily_payload
             if path == "/internal/dash-ads/ads-daily":
                 return daily_ads_payload
+            if path == "/internal/dash-ads/visits-daily":
+                return daily_visits_payload
             return latest_payload
 
         with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
@@ -431,6 +442,9 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertTrue(item["fastShipping"])
         self.assertEqual(item["campaignBudget"], 50)
         self.assertEqual(item["campaignTargetRoas"], 12)
+        self.assertFalse(item["visitsAvailable"])
+        self.assertIsNone(item["visits"])
+        self.assertIsNone(item["visitConversion"])
         self.assertEqual([row["date"] for row in item["dailySeries"]], ["2026-08-11", "2026-08-12", "2026-08-13"])
         self.assertEqual(item["dailySeries"][0]["adsRevenue"], 50)
         self.assertEqual(item["dailySeries"][0]["investment"], 10)
@@ -461,6 +475,9 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn('data-chart-metric="units"', html)
         self.assertIn('data-chart-metric="orders"', html)
         self.assertIn('data-chart-metric="price"', html)
+        self.assertIn('data-chart-metric="visits"', html)
+        self.assertIn('data-chart-metric="visitConversion"', html)
+        self.assertIn("A série de visitas ainda está incompleta", html)
         self.assertIn("chart-average-line", html)
         self.assertIn("Media do periodo", html)
         self.assertIn("Orcamento medio diario", html)
