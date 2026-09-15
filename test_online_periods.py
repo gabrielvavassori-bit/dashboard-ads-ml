@@ -638,6 +638,36 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(status, 503)
         self.assertFalse(payload["ok"])
 
+    def test_snapshot_rule_loader_falls_back_to_authenticated_agent_bundle(self):
+        agent_payload = {
+            "ok": True,
+            "loaded_at": "2026-09-15T10:00:00-03:00",
+            "registry": {
+                "rules": [{
+                    "id": app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID,
+                    "classification": "COMPARTILHADA",
+                    "active": True,
+                    "changes_behavior": True,
+                    "status": "D",
+                    "implementation_status": "NAO_IMPLEMENTADO",
+                }],
+            },
+        }
+
+        self._governance_rule_loader.stop()
+        try:
+            empty_cache = {"key": None, "expires_at": 0.0, "result": None}
+            with patch.object(app, "_governance_rule_cache", empty_cache), \
+                 patch.object(app, "_fetch_governance_bundle", return_value=({"ok": False}, 502)), \
+                 patch.object(app, "_fetch_dash_ads_json", return_value=agent_payload) as fetch:
+                result = app._load_snapshot_completeness_governance_rule()
+        finally:
+            self._governance_rule_loader.start()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["rule"]["id"], app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID)
+        self.assertEqual(fetch.call_args.args[0], "/internal/dash-ads/governance-rule")
+
     def test_snapshot_rule_loader_reads_canonical_rule_once_within_ttl(self):
         bundle = {
             "published_at": "2026-09-14T12:00:00-03:00",
