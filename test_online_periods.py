@@ -266,6 +266,19 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn('.price-above-avg', source)
         self.assertIn('"refresh_metadata": "1"', Path(__file__).with_name("app.py").read_text(encoding="utf-8"))
 
+    def test_campaign_reading_has_search_and_two_way_sorting_for_its_rows(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        campaign_children = source.split("function campaignChildren(item)", 1)[1].split(
+            "function listingTypeLabel", 1
+        )[0]
+
+        self.assertIn('data-campaign-child-search', campaign_children)
+        self.assertIn('data-campaign-child-sort', campaign_children)
+        self.assertIn("function campaignChildrenForDisplay(children)", campaign_children)
+        self.assertIn("campaignChildSort.direction === 'desc' ? bv - av : av - bv", campaign_children)
+        self.assertIn("campaignChildSort.direction === 'desc' ? -comparison : comparison", campaign_children)
+        self.assertIn("updatedSearch.setSelectionRange", source)
+
     def test_online_builder_keeps_campaign_condition_and_catalog_links_separate(self):
         payload = {
             **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-04", "2026-08-10"),

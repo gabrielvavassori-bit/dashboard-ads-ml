@@ -1652,6 +1652,9 @@ def render_dashboard(data):
     .detail-modal-body .detail-block-wide {{ min-width:0; overflow-x:auto; }}
     .detail-modal-body .child-table {{ min-width:1200px; }}
     .detail-modal-body .child-table thead th {{ position:static; }}
+    .campaign-child-tools {{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin:0 0 10px; }}
+    .campaign-child-tools input {{ width:min(330px,100%); min-width:0; }}
+    .campaign-child-count {{ color:#667085; font-size:12px; font-weight:700; white-space:nowrap; }}
     .detail-modal-empty {{ padding:24px; border:1px dashed var(--line); border-radius:10px; background:#fff; color:var(--muted); }}
     .listing-fact b {{ display:block; margin-top:3px; color:var(--ink); }}
     .readonly-badge {{ display:inline-block; margin-bottom:8px; padding:4px 8px; border-radius:999px; background:#eef4ff; color:#1849a9; font-size:12px; font-weight:800; }}
@@ -1714,7 +1717,7 @@ def render_dashboard(data):
       .period-form .field-group[hidden] {{ display:none; }}
       .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
-    @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .chart-head {{ align-items:stretch; }} .chart-metric-tabs {{ width:100%; }} .chart-metric-button {{ flex:1 1 auto; }} .campaign-config-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
+    @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .chart-head {{ align-items:stretch; }} .chart-metric-tabs {{ width:100%; }} .chart-metric-button {{ flex:1 1 auto; }} .campaign-config-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .campaign-child-tools {{ align-items:stretch; flex-direction:column; }} .campaign-child-tools input {{ width:100%; }} .campaign-child-count {{ white-space:normal; }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
     @media (max-width:700px) {{ .detail-modal-backdrop {{ padding:0; }} .detail-modal-shell {{ width:100vw; max-width:100vw; height:100dvh; max-height:none; border:0; border-radius:0; }} .detail-modal-head {{ padding:12px; }} .detail-modal-tabs {{ grid-auto-flow:row; grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-columns:auto; min-width:0; min-height:98px; padding:8px 12px; overflow:hidden; }} .detail-modal-tabs button {{ width:100%; min-width:0; }} .detail-modal-body {{ padding:12px; }} .detail-modal-body .detail-grid {{ grid-template-columns:1fr; }} }}
   </style>
 </head>
@@ -1920,6 +1923,8 @@ def render_dashboard(data):
     const detailItems = new Map();
     let activeDetailKey = '';
     let activeDetailTab = 'performance';
+    let campaignChildQuery = '';
+    let campaignChildSort = {{ key:'orders', direction:'desc' }};
     const familyExpanded = new Set();
     const mlbuExpanded = new Set();
     const skuExpanded = new Set();
@@ -2571,13 +2576,40 @@ def render_dashboard(data):
       return `<div class="detail-block"><h3>${{safe(title)}}</h3>${{values.length ? `<ul>${{values.map(value => `<li>${{safe(value)}}</li>`).join('')}}</ul>` : '<div class="muted">Sem informacao adicional.</div>'}}</div>`;
     }}
     function campaignChildren(item) {{
-      const children = item.children || [];
-      if (!children.length) return '';
+      const sourceChildren = item.children || [];
+      if (!sourceChildren.length) return '';
       const title = item.detailScope === 'family' ? 'Condições da família' : item.detailScope === 'mlbu' ? 'Condições da variação/MLBU' : 'Itens da campanha';
-      return `<div class="detail-block" style="grid-column:1/-1"><h3>${{safe(title)}}</h3><table class="child-table">
-        <thead><tr><th>SKU</th><th>Anuncio</th><th>Condicao/opcao</th><th>Titulo</th><th class="num">Pedidos</th><th class="num">Unidades</th><th class="num">Receita</th><th class="num">Receita ADS</th><th class="num">Invest.</th><th class="num">CTR</th><th class="num">CVR</th><th class="num">TACOS</th><th>Alerta</th></tr></thead>
+      const children = campaignChildrenForDisplay(sourceChildren);
+      const countText = children.length === sourceChildren.length ? `${{num(children.length)}} item(ns)` : `${{num(children.length)}} de ${{num(sourceChildren.length)}} item(ns)`;
+      return `<div class="detail-block" style="grid-column:1/-1"><h3>${{safe(title)}}</h3><div class="campaign-child-tools"><input type="search" data-campaign-child-search value="${{safe(campaignChildQuery)}}" placeholder="Pesquisar SKU, anúncio, título, condição ou alerta"><span class="campaign-child-count">${{countText}}</span></div><table class="child-table">
+        <thead><tr><th>${{campaignChildSortable('SKU', 'sku')}}</th><th>${{campaignChildSortable('Anúncio', 'code')}}</th><th>${{campaignChildSortable('Condição/opção', 'condition')}}</th><th>${{campaignChildSortable('Título', 'title')}}</th><th class="num">${{campaignChildSortable('Pedidos', 'orders')}}</th><th class="num">${{campaignChildSortable('Unidades', 'units')}}</th><th class="num">${{campaignChildSortable('Receita', 'revenue')}}</th><th class="num">${{campaignChildSortable('Receita ADS', 'adsRevenue')}}</th><th class="num">${{campaignChildSortable('Invest.', 'investment')}}</th><th class="num">${{campaignChildSortable('CTR', 'ctr')}}</th><th class="num">${{campaignChildSortable('CVR', 'cvr')}}</th><th class="num">${{campaignChildSortable('TACOS', 'tacos')}}</th><th>${{campaignChildSortable('Alerta', 'alert')}}</th></tr></thead>
         <tbody>${{children.map(child => `<tr><td>${{safe(child.sku || '(sem SKU)')}}</td><td>${{safe(child.code || '')}}</td><td>${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td>${{safe(child.title || '')}}</td><td class="num">${{num(child.orders || 0)}}</td><td class="num">${{num(child.units || 0)}}</td><td class="num">${{brl(child.totalRevenue || 0)}}</td><td class="num">${{brl(child.adsRevenue || 0)}}</td><td class="num">${{brl(child.investment || 0)}}</td><td class="num">${{pct(child.ctr || 0)}}</td><td class="num">${{pct(child.cvr || 0)}}</td><td class="num">${{pct(child.tacos || 0)}}</td><td>${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
       </table></div>`;
+    }}
+    const campaignChildSortKeys = {{
+      sku: child => child.sku || '', code: child => child.code || '',
+      condition: child => `${{child.conditionLabel || ''}} ${{child.catalogLabel || ''}}`,
+      title: child => child.title || '', orders: child => Number(child.orders || 0),
+      units: child => Number(child.units || 0), revenue: child => Number(child.totalRevenue || 0),
+      adsRevenue: child => Number(child.adsRevenue || 0), investment: child => Number(child.investment || 0),
+      ctr: child => Number(child.ctr || 0), cvr: child => Number(child.cvr || 0),
+      tacos: child => Number(child.tacos || 0), alert: child => child.alertText || ''
+    }};
+    function campaignChildSortable(label, key) {{
+      const indicator = campaignChildSort.key === key ? (campaignChildSort.direction === 'desc' ? ' ▼' : ' ▲') : ' ↕';
+      return `<button class="sortbtn" type="button" data-campaign-child-sort="${{key}}">${{label}}${{indicator}}</button>`;
+    }}
+    function campaignChildrenForDisplay(children) {{
+      const query = campaignChildQuery.trim().toLocaleLowerCase('pt-BR');
+      const filtered = children.filter(child => !query || [child.sku, child.code, child.conditionLabel, child.catalogLabel, child.title, child.alertText].filter(Boolean).join(' ').toLocaleLowerCase('pt-BR').includes(query));
+      const getter = campaignChildSortKeys[campaignChildSort.key];
+      if (!getter) return filtered;
+      return [...filtered].sort((a, b) => {{
+        const av = getter(a); const bv = getter(b);
+        if (typeof av === 'number' || typeof bv === 'number') return campaignChildSort.direction === 'desc' ? bv - av : av - bv;
+        const comparison = String(av).localeCompare(String(bv), 'pt-BR', {{ sensitivity:'base' }});
+        return campaignChildSort.direction === 'desc' ? -comparison : comparison;
+      }});
     }}
     function listingTypeLabel(value) {{
       const labels = {{ gold_pro:'Premium', gold_premium:'Premium', gold_special:'Classico', gold:'Classico' }};
@@ -2997,11 +3029,25 @@ def render_dashboard(data):
         activeDetailTab = button.dataset.detailTab;
         renderDetailModal();
       }}));
+      const campaignSearch = modalBody.querySelector('[data-campaign-child-search]');
+      if (campaignSearch) campaignSearch.addEventListener('input', event => {{
+        campaignChildQuery = event.target.value;
+        renderDetailModal();
+        const updatedSearch = modalBody.querySelector('[data-campaign-child-search]');
+        if (updatedSearch) {{ updatedSearch.focus(); updatedSearch.setSelectionRange(campaignChildQuery.length, campaignChildQuery.length); }}
+      }});
+      modalBody.querySelectorAll('[data-campaign-child-sort]').forEach(button => button.addEventListener('click', () => {{
+        const key = button.dataset.campaignChildSort;
+        campaignChildSort = {{ key, direction: campaignChildSort.key === key && campaignChildSort.direction === 'desc' ? 'asc' : 'desc' }};
+        renderDetailModal();
+      }}));
       activateDailyCharts();
     }}
     function openDetailModal(key) {{
       activeDetailKey = key;
       activeDetailTab = 'performance';
+      campaignChildQuery = '';
+      campaignChildSort = {{ key:'orders', direction:'desc' }};
       renderDetailModal();
       document.getElementById('detailModalClose').focus();
     }}
