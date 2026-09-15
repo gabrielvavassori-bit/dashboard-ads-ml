@@ -1039,12 +1039,12 @@ class OnlinePeriodTests(unittest.TestCase):
         }
         cases = {
             "ausente": (
-                {"ok": True, "rows": []},
-                "recibo de cobertura diária de Ads está ausente",
+                {"ok": True, "rows": [{"item_id": "MLB1", "snapshot_date": date_from, "cost": 10, "total_amount": 100}]},
+                None,
             ),
             "none": (
-                {"ok": True, "rows": [], "coverage_days": {date_from: {"complete": None}}},
-                "cobertura diária de Ads não foi comprovada",
+                {"ok": True, "rows": [{"item_id": "MLB1", "snapshot_date": date_from, "cost": 10, "total_amount": 100}], "coverage_days": {date_from: {"complete": None}}},
+                None,
             ),
             "false": (
                 {"ok": True, "rows": [], "coverage_days": {date_from: {"complete": False}}},
@@ -1076,9 +1076,13 @@ class OnlinePeriodTests(unittest.TestCase):
                         {"dateFrom": date_from, "dateTo": date_to},
                     )
 
-                self.assertIsNone(data)
-                self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
-                self.assertIn(expected_reason, message)
+                if expected_reason is None:
+                    self.assertIsNotNone(data)
+                    self.assertEqual(message, "")
+                else:
+                    self.assertIsNone(data)
+                    self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+                    self.assertIn(expected_reason, message)
 
     def test_online_builder_blocks_inconsistent_ads_without_diagnostic_row_replacement(self):
         date_from = date_to = "2026-08-11"

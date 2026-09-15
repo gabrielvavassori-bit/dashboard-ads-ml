@@ -776,6 +776,14 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         latest_date_from,
         latest_date_to,
     )
+    if not daily_sales_error and _daily_coverage_needs_exact_contract(daily_sales_coverage_days):
+        daily_sales_coverage_days = _daily_coverage_from_exact_contract(
+            latest_payload, "sales", latest_date_from, latest_date_to
+        )
+    if not daily_ads_error and _daily_coverage_needs_exact_contract(daily_ads_coverage_days):
+        daily_ads_coverage_days = _daily_coverage_from_exact_contract(
+            latest_payload, "ads", latest_date_from, latest_date_to
+        )
     daily_coverage_issues = [
         issue
         for issue in (
@@ -1896,6 +1904,54 @@ def _daily_partial_snapshot_dates(coverage_days: dict) -> set[str]:
         for snapshot_date, coverage in coverage_days.items()
         if isinstance(coverage, dict) and coverage.get("complete") is False
     }
+
+
+def _daily_coverage_from_exact_contract(
+    payload: dict,
+    source: str,
+    date_from: str,
+    date_to: str,
+) -> dict:
+    """Converte a prova agregada exata em recibos diários sem inferir zeros."""
+    contract = payload.get("integrity_contract") if isinstance(payload.get("integrity_contract"), dict) else {}
+    period = contract.get("requested_period") if isinstance(contract.get("requested_period"), dict) else {}
+    coverage = contract.get(source) if isinstance(contract.get(source), dict) else {}
+    if not (
+        contract.get("complete") is True
+        and contract.get("state") == "complete"
+        and period.get("date_from") == date_from
+        and period.get("date_to") == date_to
+        and coverage.get("complete") is True
+        and _number(coverage.get("expected_item_days")) == _number(coverage.get("persisted_item_days"))
+        and _online_cache_zero(coverage.get("missing_item_days"))
+        and _online_cache_zero(coverage.get("missing_items"))
+        and _online_cache_zero(_online_cache_coverage_errors(coverage))
+    ):
+        return {}
+    start = _parse_iso_date(date_from)
+    end = _parse_iso_date(date_to)
+    if not start or not end or end < start:
+        return {}
+    result = {}
+    cursor = start
+    while cursor <= end:
+        result[cursor.isoformat()] = {"complete": True, "source": "exact_integrity_contract"}
+        cursor += timedelta(days=1)
+    return result
+
+
+def _daily_coverage_needs_exact_contract(coverage_days) -> bool:
+    if not isinstance(coverage_days, dict) or not coverage_days:
+        return True
+    return all(
+        isinstance(receipt, dict)
+        and receipt.get("complete") is None
+        and not receipt.get("error")
+        and not receipt.get("erro")
+        and not receipt.get("errors")
+        and not receipt.get("source_errors")
+        for receipt in coverage_days.values()
+    )
 
 
 def _daily_financial_coverage_issue(
