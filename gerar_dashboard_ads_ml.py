@@ -1467,6 +1467,8 @@ def render_dashboard(data):
           <button class="chart-metric-button" type="button" data-chart-metric="units">Unidades</button>
           <button class="chart-metric-button" type="button" data-chart-metric="orders">Pedidos</button>
           <button class="chart-metric-button" type="button" data-chart-metric="price">Preco medio</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="visits">Visitas ML</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="visitConversion">Conversao por visita</button>
         </div>
       </div>
       <div class="chart-stage"><div class="chart-canvas"></div><div class="chart-tooltip"></div></div>
@@ -1976,6 +1978,8 @@ def render_dashboard(data):
       revenue: item => item.totalRevenue || 0,
       adsRevenue: item => item.adsRevenue || 0,
       investment: item => item.investment || 0,
+      visits: item => item.visitsAvailable ? item.visits || 0 : -1,
+      visitConversion: item => item.visitConversion == null ? -1 : item.visitConversion,
       cpc: item => item.cpc || 0,
       ctr: item => item.ctr || 0,
       cvr: item => item.cvr || 0,
@@ -2592,8 +2596,8 @@ def render_dashboard(data):
       if (!children.length) return '';
       const title = item.detailScope === 'family' ? 'Condições da família' : item.detailScope === 'mlbu' ? 'Condições da variação/MLBU' : 'Itens da campanha';
       return `<div class="detail-block" style="grid-column:1/-1"><h3>${{safe(title)}}</h3><table class="child-table">
-        <thead><tr><th>SKU</th><th>Anuncio</th><th>Condicao/opcao</th><th>Titulo</th><th class="num">Pedidos</th><th class="num">Unidades</th><th class="num">Receita</th><th class="num">Receita ADS</th><th class="num">Invest.</th><th class="num">CTR</th><th class="num">CVR</th><th class="num">TACOS</th><th>Alerta</th></tr></thead>
-        <tbody>${{children.map(child => `<tr><td>${{safe(child.sku || '(sem SKU)')}}</td><td>${{safe(child.code || '')}}</td><td>${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td>${{safe(child.title || '')}}</td><td class="num">${{num(child.orders || 0)}}</td><td class="num">${{num(child.units || 0)}}</td><td class="num">${{brl(child.totalRevenue || 0)}}</td><td class="num">${{brl(child.adsRevenue || 0)}}</td><td class="num">${{brl(child.investment || 0)}}</td><td class="num">${{pct(child.ctr || 0)}}</td><td class="num">${{pct(child.cvr || 0)}}</td><td class="num">${{pct(child.tacos || 0)}}</td><td>${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
+        <thead><tr><th>SKU</th><th>Anuncio</th><th>Condicao/opcao</th><th>Titulo</th><th class="num">Pedidos</th><th class="num">Unidades</th><th class="num">Receita</th><th class="num">Receita ADS</th><th class="num">Invest.</th><th class="num">Visitas ML</th><th class="num">Conv. visita</th><th class="num">CTR</th><th class="num">CVR</th><th class="num">TACOS</th><th>Alerta</th></tr></thead>
+        <tbody>${{children.map(child => `<tr><td>${{safe(child.sku || '(sem SKU)')}}</td><td>${{safe(child.code || '')}}</td><td>${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td>${{safe(child.title || '')}}</td><td class="num">${{num(child.orders || 0)}}</td><td class="num">${{num(child.units || 0)}}</td><td class="num">${{brl(child.totalRevenue || 0)}}</td><td class="num">${{brl(child.adsRevenue || 0)}}</td><td class="num">${{brl(child.investment || 0)}}</td><td class="num">${{child.visitsAvailable ? num(child.visits || 0) : 'N/D'}}</td><td class="num">${{child.visitConversion != null ? pct(child.visitConversion) : 'N/D'}}</td><td class="num">${{pct(child.ctr || 0)}}</td><td class="num">${{pct(child.cvr || 0)}}</td><td class="num">${{pct(child.tacos || 0)}}</td><td>${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
       </table></div>`;
     }}
     function listingTypeLabel(value) {{
@@ -2617,7 +2621,7 @@ def render_dashboard(data):
       sources.forEach(source => (source.dailySeries || []).forEach(row => {{
         const date = String(row.date || '');
         if (!date) return;
-        const current = byDate.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, priceFallback:0}};
+        const current = byDate.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, visits:0, visitsAvailable:true, financialAvailable:false, priceFallback:0}};
         current.orders += Number(row.orders || 0);
         current.units += Number(row.units || 0);
         current.revenue += Number(row.revenue || 0);
@@ -2629,6 +2633,9 @@ def render_dashboard(data):
         current.impressions += Number(row.impressions || 0);
         current.clicks += Number(row.clicks || 0);
         current.adsUnits += Number(row.adsUnits || 0);
+        current.visits += Number(row.visits || 0);
+        current.visitsAvailable = current.visitsAvailable && row.visitsAvailable === true;
+        current.financialAvailable = current.financialAvailable || row.financialAvailable !== false;
         if (Number(row.lastSalePrice || 0) > 0) current.priceFallback = Number(row.lastSalePrice);
         byDate.set(date, current);
       }}));
@@ -2638,6 +2645,7 @@ def render_dashboard(data):
           price:row.units > 0 ? row.revenue / row.units : row.priceFallback,
           roas:row.investment > 0 ? row.adsRevenue / row.investment : 0,
           tacos:row.tacosBaseRevenue > 0 ? row.investment / row.tacosBaseRevenue : 0,
+          visitConversion:row.visitsAvailable && row.visits > 0 ? row.orders / row.visits : null,
         }}))
         .sort((a,b) => a.date.localeCompare(b.date));
       if (!rows.length) return rows;
@@ -2651,7 +2659,7 @@ def render_dashboard(data):
       const end = new Date(`${{dateTo}}T12:00:00`);
       while (cursor <= end) {{
         const date = cursor.toISOString().slice(0, 10);
-        complete.push(indexed.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, roas:0, tacos:0, price:0, priceFallback:0}});
+        complete.push(indexed.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, visits:0, visitsAvailable:false, financialAvailable:false, visitConversion:null, roas:0, tacos:0, price:0, priceFallback:0}});
         cursor.setDate(cursor.getDate() + 1);
       }}
       return complete;
@@ -2676,6 +2684,8 @@ def render_dashboard(data):
         units:{{label:'Unidades vendidas', color:'#1570ef', format:value => num(value)}},
         orders:{{label:'Pedidos', color:'#12b76a', format:value => num(value)}},
         price:{{label:'Preco medio vendido', color:'#f79009', format:brl}},
+        visits:{{label:'Visitas ML', color:'#6941c6', format:value => num(value)}},
+        visitConversion:{{label:'Conversao por visita estimada', color:'#0e9384', format:value => pct(Number(value || 0))}},
       }};
       return configs[metric] || configs.revenue;
     }}
@@ -2744,19 +2754,34 @@ def render_dashboard(data):
     }}
     function renderDailyMetric(root, metric) {{
       const sourceRows = JSON.parse(decodeURIComponent(root.dataset.chartSeries || '%5B%5D'));
-      const rows = metric === 'price' ? sourceRows.filter(row => Number(row.price || 0) > 0) : sourceRows;
+      const visitsMetric = ['visits', 'visitConversion'].includes(metric);
+      if (visitsMetric && !sourceRows.length || visitsMetric && sourceRows.some(row => row.visitsAvailable !== true)) {{
+        root.querySelector('.chart-summary').textContent = 'Visitas ainda sem cobertura completa para esta conta, produto ou grupo.';
+        root.querySelector('.chart-canvas').innerHTML = '<div class="muted" style="padding:28px">A série de visitas ainda está incompleta. Nenhum zero foi inventado.</div>';
+        return;
+      }}
+      const financialRows = sourceRows.filter(row => row.financialAvailable !== false);
+      const rows = visitsMetric
+        ? sourceRows
+        : metric === 'price'
+          ? financialRows.filter(row => Number(row.price || 0) > 0)
+          : financialRows;
       const config = chartMetricConfig(metric);
       const values = rows.map(row => Number(row[metric] || 0));
       const totals = rows.reduce((sum, row) => ({{
         adsRevenue:sum.adsRevenue + Number(row.adsRevenue || 0),
         investment:sum.investment + Number(row.investment || 0),
         tacosBaseRevenue:sum.tacosBaseRevenue + Number(row.tacosBaseRevenue || 0),
-      }}), {{adsRevenue:0, investment:0, tacosBaseRevenue:0}});
+        orders:sum.orders + Number(row.orders || 0),
+        visits:sum.visits + Number(row.visits || 0),
+      }}), {{adsRevenue:0, investment:0, tacosBaseRevenue:0, orders:0, visits:0}});
       const arithmeticAverage = values.reduce((total, value) => total + value, 0) / Math.max(values.length, 1);
       const average = metric === 'roas'
         ? (totals.investment > 0 ? totals.adsRevenue / totals.investment : 0)
         : metric === 'tacos'
           ? (totals.tacosBaseRevenue > 0 ? totals.investment / totals.tacosBaseRevenue : 0)
+          : metric === 'visitConversion'
+            ? (totals.visits > 0 ? totals.orders / totals.visits : 0)
           : arithmeticAverage;
       const reference = metric === 'roas'
         ? Number(root.dataset.targetRoas || 0)
@@ -2766,7 +2791,7 @@ def render_dashboard(data):
       const canvas = root.querySelector('.chart-canvas');
       root.dataset.activeMetric = metric;
       root.querySelectorAll('[data-chart-metric]').forEach(button => button.classList.toggle('active', button.dataset.chartMetric === metric));
-      const summaryLabel = ['roas', 'tacos'].includes(metric) ? 'Resultado do periodo' : 'Media do periodo';
+      const summaryLabel = ['roas', 'tacos', 'visitConversion'].includes(metric) ? 'Resultado do periodo' : 'Media do periodo';
       root.querySelector('.chart-summary').textContent = `${{config.label}} por dia. ${{summaryLabel}}: ${{config.format(average)}}.`;
       if (!rows.length || (metric === 'price' && !values.some(value => value > 0))) {{
         canvas.innerHTML = '<div class="muted" style="padding:28px">O snapshot ainda nao possui preco diario suficiente para esta visualizacao.</div>';
@@ -2796,7 +2821,7 @@ def render_dashboard(data):
       const labelEvery = Math.max(1, Math.ceil(rows.length / 9));
       const xLabels = rows.map((row,index) => (index % labelEvery === 0 || index === rows.length - 1) ? `<text class="chart-axis" x="${{x(index).toFixed(1)}}" y="${{height-18}}" text-anchor="middle">${{safe(chartDateLabel(row.date))}}</text>` : '').join('');
       const barWidth = Math.max(8, Math.min(34, step * .62));
-      const lineOnly = ['price', 'roas', 'tacos'].includes(metric);
+      const lineOnly = ['price', 'roas', 'tacos', 'visitConversion'].includes(metric);
       const bars = lineOnly ? '' : rows.map((row,index) => {{
         const barY = y(values[index]);
         return `<rect class="chart-bar" x="${{(x(index)-barWidth/2).toFixed(1)}}" y="${{barY.toFixed(1)}}" width="${{barWidth.toFixed(1)}}" height="${{Math.max(0, top+chartH-barY).toFixed(1)}}" rx="${{Math.min(7,barWidth/3).toFixed(1)}}" fill="${{config.color}}" fill-opacity=".46"/>`;
@@ -2837,7 +2862,9 @@ def render_dashboard(data):
         <div class="chart-tooltip-row ${{metric === 'tacos' ? 'active' : ''}}"><span>TACOS realizado</span><span>${{safe(chartMetricConfig('tacos').format(Number(row.tacos || 0)))}}</span></div>
         <div class="chart-tooltip-row ${{metric === 'units' ? 'active' : ''}}"><span>Unidades</span><span>${{num(Number(row.units || 0))}}</span></div>
         <div class="chart-tooltip-row ${{metric === 'orders' ? 'active' : ''}}"><span>Pedidos</span><span>${{num(Number(row.orders || 0))}}</span></div>
-        <div class="chart-tooltip-row ${{metric === 'price' ? 'active' : ''}}"><span>Preco medio</span><span>${{safe(priceText)}}</span></div>`;
+        <div class="chart-tooltip-row ${{metric === 'price' ? 'active' : ''}}"><span>Preco medio</span><span>${{safe(priceText)}}</span></div>
+        <div class="chart-tooltip-row ${{metric === 'visits' ? 'active' : ''}}"><span>Visitas ML</span><span>${{row.visitsAvailable ? num(Number(row.visits || 0)) : 'N/D'}}</span></div>
+        <div class="chart-tooltip-row ${{metric === 'visitConversion' ? 'active' : ''}}"><span>Conversao por visita</span><span>${{row.visitsAvailable && row.visitConversion != null ? pct(Number(row.visitConversion)) : 'N/D'}}</span></div>`;
       const relativeX = hitRect.left - stageRect.left + hitRect.width / 2;
       tooltip.classList.add('visible');
       const halfWidth = tooltip.getBoundingClientRect().width / 2;
@@ -2889,7 +2916,7 @@ def render_dashboard(data):
       const realizedTacos = pct(Number(item.tacos || 0));
       const targetData = campaignConfig.count === 1 && campaignConfig.target != null ? campaignConfig.target : '';
       const budgetData = campaignConfig.count === 1 && campaignConfig.budget != null ? campaignConfig.budget : '';
-      return `<div class="detail-block detail-block-wide daily-chart-card" data-daily-chart data-chart-key="${{safe(key)}}" data-chart-series="${{safe(encoded)}}" data-target-roas="${{safe(targetData)}}" data-campaign-budget="${{safe(budgetData)}}"><div class="campaign-config-grid"><div class="campaign-config-card"><span>Orcamento medio diario</span><b>${{safe(budgetText)}}</b></div><div class="campaign-config-card"><span>ROAS objetivo</span><b>${{safe(targetText)}}</b></div><div class="campaign-config-card"><span>ROAS realizado</span><b>${{safe(realizedRoas)}}</b></div><div class="campaign-config-card"><span>TACOS realizado</span><b>${{safe(realizedTacos)}}</b></div></div><div class="chart-head"><div><h3>Desempenho diario do produto</h3><div class="chart-summary">Selecione uma metrica para visualizar.</div></div><div class="chart-metric-tabs" role="group" aria-label="Metrica do grafico"><button class="chart-metric-button" type="button" data-chart-metric="revenue">Faturamento</button><button class="chart-metric-button" type="button" data-chart-metric="adsRevenue">Receita Ads</button><button class="chart-metric-button" type="button" data-chart-metric="investment">Investimento</button><button class="chart-metric-button" type="button" data-chart-metric="roas">ROAS</button><button class="chart-metric-button" type="button" data-chart-metric="tacos">TACOS</button><button class="chart-metric-button" type="button" data-chart-metric="units">Unidades</button><button class="chart-metric-button" type="button" data-chart-metric="orders">Pedidos</button><button class="chart-metric-button" type="button" data-chart-metric="price">Preco medio</button></div></div><div class="chart-stage"><div class="chart-canvas"></div><div class="chart-tooltip"></div></div></div>`;
+      return `<div class="detail-block detail-block-wide daily-chart-card" data-daily-chart data-chart-key="${{safe(key)}}" data-chart-series="${{safe(encoded)}}" data-target-roas="${{safe(targetData)}}" data-campaign-budget="${{safe(budgetData)}}"><div class="campaign-config-grid"><div class="campaign-config-card"><span>Orcamento medio diario</span><b>${{safe(budgetText)}}</b></div><div class="campaign-config-card"><span>ROAS objetivo</span><b>${{safe(targetText)}}</b></div><div class="campaign-config-card"><span>ROAS realizado</span><b>${{safe(realizedRoas)}}</b></div><div class="campaign-config-card"><span>TACOS realizado</span><b>${{safe(realizedTacos)}}</b></div></div><div class="chart-head"><div><h3>Desempenho diario do produto</h3><div class="chart-summary">Selecione uma metrica para visualizar.</div></div><div class="chart-metric-tabs" role="group" aria-label="Metrica do grafico"><button class="chart-metric-button" type="button" data-chart-metric="revenue">Faturamento</button><button class="chart-metric-button" type="button" data-chart-metric="adsRevenue">Receita Ads</button><button class="chart-metric-button" type="button" data-chart-metric="investment">Investimento</button><button class="chart-metric-button" type="button" data-chart-metric="roas">ROAS</button><button class="chart-metric-button" type="button" data-chart-metric="tacos">TACOS</button><button class="chart-metric-button" type="button" data-chart-metric="units">Unidades</button><button class="chart-metric-button" type="button" data-chart-metric="orders">Pedidos</button><button class="chart-metric-button" type="button" data-chart-metric="price">Preco medio</button><button class="chart-metric-button" type="button" data-chart-metric="visits">Visitas ML</button><button class="chart-metric-button" type="button" data-chart-metric="visitConversion">Conversao por visita</button></div></div><div class="chart-stage"><div class="chart-canvas"></div><div class="chart-tooltip"></div></div></div>`;
     }}
     function shippingBadgeText(item) {{
       const price = Number(item.currentPrice || item.lastPrice || 0);
@@ -3141,6 +3168,8 @@ def render_dashboard(data):
       const adsRevenue = sum('adsRevenue');
       const impressions = sum('impressions');
       const clicks = sum('clicks');
+      const visitsAvailable = children.every(item => item.visitsAvailable === true);
+      const visits = visitsAvailable ? sum('visits') : null;
       const adsSales = sum('adsSales');
       const tacosBaseRevenue = children.reduce(
         (total, item) => total + Number(item.tacosBaseRevenue ?? item.totalRevenue ?? 0), 0
@@ -3170,7 +3199,7 @@ def render_dashboard(data):
         catalogLabel: [...catalogs].join(', '),
         thumbnailUrl: thumbnailSource ? thumbnailSource.thumbnailUrl : '',
         thumbnailCount: picturedChildren.length,
-        orders: sum('orders'), units, totalRevenue, adsRevenue, investment, impressions, clicks, adsSales, tacosBaseRevenue,
+        orders: sum('orders'), units, totalRevenue, adsRevenue, investment, impressions, clicks, visits, visitsAvailable, visitConversion: visits && visits > 0 ? sum('orders') / visits : null, adsSales, tacosBaseRevenue,
         lastSaleDate: latest ? latest.lastSaleDate : '',
         lastPrice: latest ? Number(latest.lastPrice || 0) : 0,
         avgSalePrice: units ? totalRevenue / units : 0,
@@ -3209,7 +3238,7 @@ def render_dashboard(data):
       const key = detailKey(item);
       detailItems.set(key, item);
       const article = String(label).toUpperCase() === 'SKU' ? 'do' : 'da';
-      return `<tr class="aggregate-reading-row"><td colspan="17"><div class="decision-wrap"><div class="decision-summary-main"><span class="summary-chip">Leitura consolidada</span><div class="decision-teaser">${{safe(item.diagnosticSummary)}}</div></div><div class="decision-summary-side"><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura ${{article}} ${{safe(label)}}</button></div></div></td></tr>`;
+      return `<tr class="aggregate-reading-row"><td colspan="19"><div class="decision-wrap"><div class="decision-summary-main"><span class="summary-chip">Leitura consolidada</span><div class="decision-teaser">${{safe(item.diagnosticSummary)}}</div></div><div class="decision-summary-side"><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura ${{article}} ${{safe(label)}}</button></div></div></td></tr>`;
     }}
     function productParentRow(item, key, expanded) {{
       return `<tr class="product-parent-row variation-parent-row">
@@ -3220,7 +3249,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div>${{campaignConfigInline(item)}}</td>
         <td class="text-cell">${{safe(item.parentId)}} · ${{num(item.optionCount)}} opcao(oes)<div class="muted">${{safe(item.catalogLabel)}}</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td><td class="num">${{item.visitsAvailable ? num(item.visits || 0) : 'N/D'}}</td><td class="num">${{item.visitConversion != null ? pct(item.visitConversion) : 'N/D'}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
@@ -3235,7 +3264,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
         <td class="text-cell">${{num(variationCount)}} MLBU(s)<div class="muted">${{num(group.children.length)}} MLB(s)</div></td>
         <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td><td class="num">${{item.visitsAvailable ? num(item.visits || 0) : 'N/D'}}</td><td class="num">${{item.visitConversion != null ? pct(item.visitConversion) : 'N/D'}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
@@ -3254,12 +3283,12 @@ def render_dashboard(data):
         <td class="text-cell">${{num(summary.campaignCount || 0)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
         <td class="text-cell">${{num(familyCount)}} família(s) · ${{num(variationCount)}} MLBU(s)<div class="muted">${{num(mlbCount)}} MLB(s)</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item,'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td><td class="num">${{item.visitsAvailable ? num(item.visits || 0) : 'N/D'}}</td><td class="num">${{item.visitConversion != null ? pct(item.visitConversion) : 'N/D'}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
     function productGroupNote(optionCount) {{
-      return `<tr class="product-group-note"><td colspan="17"><b>Mesmo produto:</b> pai e ${{num(optionCount)}} condicao(oes) de venda no mesmo quadro. Valores do pai sao consolidados e as taxas sao recalculadas sobre os totais.</td></tr>`;
+      return `<tr class="product-group-note"><td colspan="19"><b>Mesmo produto:</b> pai e ${{num(optionCount)}} condicao(oes) de venda no mesmo quadro. Valores do pai sao consolidados e as taxas sao recalculadas sobre os totais.</td></tr>`;
     }}
     function splitByMlbu(rows) {{
       const groups = new Map();
@@ -3406,7 +3435,7 @@ def render_dashboard(data):
         const key = hierarchyKey('sku', sku.sku || 'sem-sku');
         const expanded = skuExpanded.has(key);
         const item = aggregateDetailItem(children, {{scope:'sku', id:sku.sku, title:`SKU ${{sku.sku}}`, sku:sku.sku}});
-        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku, key, expanded)}}${{aggregateDetailRows(item, 'SKU')}}<tr class="product-group-note"><td colspan="17"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; use + para abrir o detalhamento estrutural.</td></tr></tbody>`;
+        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku, key, expanded)}}${{aggregateDetailRows(item, 'SKU')}}<tr class="product-group-note"><td colspan="19"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; use + para abrir o detalhamento estrutural.</td></tr></tbody>`;
         const details = expanded ? sortedGroups(splitByFamily(children)).map(familyGroupBody).join('') : '';
         return summary + details;
       }}).join('');
@@ -3426,12 +3455,12 @@ def render_dashboard(data):
         <td class="text-cell">${{safe(item.campaign || item.adsCampaigns || 'Sem campanha')}}<div class="muted">${{safe(item.campaignStatus || '')}}</div>${{campaignMode ? '' : campaignConfigInline(item)}}</td>
         <td class="text-cell">${{safe(item.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(item.catalogLabel || '')}}</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td><td class="num">${{item.visitsAvailable ? num(item.visits || 0) : 'N/D'}}</td><td class="num">${{item.visitConversion != null ? pct(item.visitConversion) : 'N/D'}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td>
         <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{safe(item.ctrClass || '')}}</div></td><td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{safe(item.cvrClass || '')}}</div></td>
         <td class="num">${{pct(item.tacos || 0)}}<div class="muted">${{safe(tacosNote)}}</div></td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>
-      <tr class="decision-row"><td colspan="17"><div class="decision-wrap">
+      <tr class="decision-row"><td colspan="19"><div class="decision-wrap">
         <div class="decision-summary-main"><span class="pill ${{actionClass(item.action)}}">${{safe(item.action)}}</span><div class="decision-teaser"><b>Diagnostico:</b> ${{safe(item.diagnosticSummary || item.recommendation || item.reason || 'Sem leitura adicional.')}}</div></div>
         <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura</button></div>
       </div></td></tr>`;
@@ -3464,8 +3493,8 @@ def render_dashboard(data):
                 ? groupedSkuBodies(rows)
                 : `<tbody>${{rows.map(item => row(item)).join('')}}</tbody>`;
       document.getElementById('table').innerHTML = `<table class="ops-table">
-        <colgroup><col style="width:72px"><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
-        <thead><tr><th>Imagem</th><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
+        <colgroup><col style="width:72px"><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:84px"><col style="width:98px"><col style="width:84px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
+        <thead><tr><th>Imagem</th><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('Visitas ML','visits')}}</th><th class="num">${{sortable('Conv. visita','visitConversion')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
         ${{renderedBodies}}</table>`;
       const helpText = document.getElementById('tableHelpText');
       const helpMeta = document.getElementById('tableHelpMeta');

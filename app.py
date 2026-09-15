@@ -746,6 +746,11 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         latest_date_from,
         latest_date_to,
     )
+    daily_visits_rows, visits_coverage_by_item, daily_visits_error = _sales_intelligence_fetch_daily_visits(
+        client,
+        latest_date_from,
+        latest_date_to,
+    )
     partial_daily_dates = _daily_partial_snapshot_dates(daily_sales_coverage_days)
     if partial_daily_dates:
         daily_sales_rows = [
@@ -772,6 +777,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "impressions": 0.0,
             "clicks": 0.0,
             "adsUnits": 0.0,
+            "financialAvailable": True,
         }
     for daily_raw in daily_ads_rows:
         daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
@@ -781,6 +787,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
             "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
             "lastSaleDate": "", "lastSalePrice": 0.0,
+            "financialAvailable": True,
         })
         daily.update({
             "adsRevenue": _number(daily_raw.get("total_amount")),
@@ -791,12 +798,35 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "clicks": _number(daily_raw.get("clicks")),
             "adsUnits": _number(daily_raw.get("units_quantity")),
         })
+    for daily_raw in daily_visits_rows:
+        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
+        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
+        if not daily_code or not snapshot_date:
+            continue
+        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
+            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
+            "lastSaleDate": "", "lastSalePrice": 0.0,
+            "adsRevenue": 0.0, "adsDirectRevenue": 0.0, "adsIndirectRevenue": 0.0,
+            "investment": 0.0, "impressions": 0.0, "clicks": 0.0, "adsUnits": 0.0,
+            "financialAvailable": False,
+        })
+        daily["visits"] = _number(daily_raw.get("visits_total"))
     daily_series_by_item: dict[str, list[dict]] = {}
     for daily_code, daily_by_date in daily_by_item_date.items():
         daily_series = []
+        visits_available_for_item = bool(
+            isinstance(visits_coverage_by_item.get(daily_code), dict)
+            and visits_coverage_by_item[daily_code].get("complete")
+        )
         for daily in daily_by_date.values():
             daily["tacosBaseRevenue"] = _number(daily.get("revenue")) + max(
                 0.0, _number(daily.get("adsIndirectRevenue"))
+            )
+            daily["visitsAvailable"] = visits_available_for_item
+            daily["visitConversion"] = (
+                _number(daily.get("orders")) / _number(daily.get("visits"))
+                if visits_available_for_item and _number(daily.get("visits")) > 0
+                else None
             )
             daily_series.append(daily)
         daily_series_by_item[daily_code] = sorted(daily_series, key=lambda row: row["date"])
@@ -815,18 +845,22 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 "adsDirectRevenue": 0.0,
                 "adsIndirectRevenue": 0.0,
                 "investment": 0.0,
-                "tacosBaseRevenue": 0.0,
-                "impressions": 0.0,
-                "clicks": 0.0,
-                "adsUnits": 0.0,
+            "tacosBaseRevenue": 0.0,
+            "impressions": 0.0,
+            "clicks": 0.0,
+            "adsUnits": 0.0,
+            "visits": 0.0,
+                "financialAvailable": False,
                 "priceFallback": 0.0,
             })
             for field in (
                 "orders", "units", "revenue", "adsRevenue", "adsDirectRevenue",
                 "adsIndirectRevenue", "investment", "tacosBaseRevenue", "impressions",
-                "clicks", "adsUnits",
+                "clicks", "adsUnits", "visits",
             ):
                 account_daily[field] += _number(daily.get(field))
+            if daily.get("financialAvailable") is not False:
+                account_daily["financialAvailable"] = True
             if _number(daily.get("lastSalePrice")) > 0:
                 account_daily["priceFallback"] = _number(daily.get("lastSalePrice"))
     account_daily_series = []
@@ -941,6 +975,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             fast_shipping = shipping.get("fast_shipping")
         if fast_shipping is None:
             fast_shipping = shipping.get("is_fast")
+        visit_coverage = visits_coverage_by_item.get(code) if isinstance(visits_coverage_by_item.get(code), dict) else {}
+        visits_available = bool(visit_coverage.get("complete"))
+        visits_total = _number(visit_coverage.get("visits")) if visits_available else None
+        visit_conversion = (orders / visits_total) if visits_total and visits_total > 0 else None
         item = {
             "sku": str(raw.get("sku") or "").strip() or sale_sku,
             "code": code,
@@ -1012,6 +1050,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             ).strip(),
             "impressions": impressions,
             "clicks": clicks,
+            "visits": visits_total,
+            "visitsAvailable": visits_available,
+            "visitConversion": visit_conversion,
             "adsSales": ads_sales,
             "ctr": (clicks / impressions) if impressions else 0.0,
             "cvr": (ads_sales / clicks) if clicks else 0.0,
@@ -1031,6 +1072,14 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
 
     if not items:
         return None, "O cache online nao trouxe anuncios validos para esta conta."
+    account_visits_complete = all(item.get("visitsAvailable") for item in items)
+    for account_daily in account_daily_series:
+        account_daily["visitsAvailable"] = account_visits_complete
+        account_daily["visitConversion"] = (
+            account_daily["orders"] / account_daily["visits"]
+            if account_visits_complete and account_daily.get("visits") > 0
+            else None
+        )
     mark_possible_catalog(items)
     mark_condition_context(items)
     for item in items:
@@ -1161,6 +1210,13 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 "source": "agente-ml / ads-daily",
                 "available": not bool(daily_ads_error),
                 "error": daily_ads_error,
+            },
+            "dailyVisits": {
+                "source": "agente-ml / visits-daily",
+                "available": not bool(daily_visits_error),
+                "error": daily_visits_error,
+                "metric": "total_visits",
+                "uniqueVisitorsAvailable": False,
             },
         },
         "accountDailySeries": account_daily_series,
@@ -1711,6 +1767,23 @@ def _sales_intelligence_fetch_daily_ads(client: str, date_from: str, date_to: st
     if payload.get("ok") is True:
         return [row for row in rows if isinstance(row, dict)], ""
     return [], str(payload.get("erro") or payload.get("error") or "snapshots_diarios_ads_indisponiveis")
+
+
+def _sales_intelligence_fetch_daily_visits(client: str, date_from: str, date_to: str) -> tuple[list[dict], dict, str]:
+    """Lê apenas fatos de visitas já persistidos pelo agente.
+
+    Ausência de cobertura é mantida como indisponível; esta leitura jamais
+    aciona a API do Mercado Livre durante a abertura do dashboard.
+    """
+    payload = _fetch_dash_ads_json(
+        "/internal/dash-ads/visits-daily",
+        {"client": client, "date_from": date_from, "date_to": date_to},
+    )
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    coverage = payload.get("coverage_by_item") if isinstance(payload.get("coverage_by_item"), dict) else {}
+    if payload.get("ok") is True:
+        return [row for row in rows if isinstance(row, dict)], coverage, ""
+    return [], coverage, str(payload.get("erro") or payload.get("error") or "snapshots_diarios_visitas_indisponiveis")
 
 
 def _build_sales_intelligence_memory_data(user, link) -> tuple[dict | None, str]:
