@@ -600,7 +600,7 @@ class OnlinePeriodTests(unittest.TestCase):
         )[0]
         self.assertNotIn("dailySeriesFor", account_activation)
 
-    def test_governance_summary_reads_authenticated_central_bundle(self):
+    def test_governance_summary_reads_authenticated_agent_bundle(self):
         bundle = {
             "version": "2026-08-10",
             "sha256": "abc123",
@@ -619,20 +619,14 @@ class OnlinePeriodTests(unittest.TestCase):
             },
         }
 
-        class FakeResponse:
-            status = 200
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_args):
-                return False
-
-            def read(self, _limit):
-                return json.dumps(bundle).encode("utf-8")
-
-        with patch.dict(app.os.environ, {"GOVERNANCE_READ_API_KEY": "secret"}), \
-             patch.object(app, "urlopen", return_value=FakeResponse()) as mocked_urlopen:
+        agent_payload = {
+            "ok": True,
+            "loaded_at": bundle["published_at"],
+            "bundle_sha256": "abc123",
+            "files": bundle["files"],
+            "registry": bundle["files"]["shared_rules.json"],
+        }
+        with patch.object(app, "_fetch_dash_ads_json", return_value=agent_payload) as fetch_agent:
             payload, status = app._fetch_governance_summary()
 
         self.assertEqual(status, 200)
@@ -640,21 +634,19 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(payload["central_rules_count"], 2)
         self.assertEqual(payload["shared_human_decisions_count"], 1)
         self.assertEqual(payload["project_decisions"][0]["id"], "UNC-1")
-        request = mocked_urlopen.call_args.args[0]
-        self.assertEqual(request.full_url, "https://marketplace-governance-hub.onrender.com/v1/bundle")
-        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+        self.assertEqual(fetch_agent.call_args.args[0], "/internal/dash-ads/governance-rule")
 
-    def test_governance_summary_fails_closed_without_read_key(self):
-        with patch.dict(app.os.environ, {}, clear=False):
-            app.os.environ.pop("GOVERNANCE_READ_API_KEY", None)
+    def test_governance_summary_fails_closed_when_agent_bundle_is_unavailable(self):
+        with patch.object(app, "_fetch_dash_ads_json", return_value={"ok": False, "error": "unavailable"}):
             payload, status = app._fetch_governance_summary()
-        self.assertEqual(status, 503)
+        self.assertEqual(status, 502)
         self.assertFalse(payload["ok"])
 
-    def test_snapshot_rule_loader_falls_back_to_authenticated_agent_bundle(self):
+    def test_snapshot_rule_loader_reads_authenticated_agent_bundle(self):
         agent_payload = {
             "ok": True,
             "loaded_at": "2026-09-15T10:00:00-03:00",
+            "bundle_sha256": "a" * 64,
             "registry": {
                 "rules": [{
                     "id": app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID,
@@ -671,7 +663,6 @@ class OnlinePeriodTests(unittest.TestCase):
         try:
             empty_cache = {"key": None, "expires_at": 0.0, "result": None}
             with patch.object(app, "_governance_rule_cache", empty_cache), \
-                 patch.object(app, "_fetch_governance_bundle", return_value=({"ok": False}, 502)), \
                  patch.object(app, "_fetch_dash_ads_json", return_value=agent_payload) as fetch:
                 result = app._load_snapshot_completeness_governance_rule()
         finally:
@@ -679,9 +670,10 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["rule"]["id"], app.DASH_ADS_SNAPSHOT_COMPLETENESS_RULE_ID)
+        self.assertEqual(result["rule"]["bundle_sha256"], "a" * 64)
         self.assertEqual(fetch.call_args.args[0], "/internal/dash-ads/governance-rule")
 
-    def test_snapshot_rule_loader_reads_canonical_rule_once_within_ttl(self):
+    def test_snapshot_rule_loader_uses_agent_bundle_once_within_ttl(self):
         bundle = {
             "published_at": "2026-09-14T12:00:00-03:00",
             "files": {
@@ -698,24 +690,17 @@ class OnlinePeriodTests(unittest.TestCase):
             },
         }
 
-        class FakeResponse:
-            status = 200
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_args):
-                return False
-
-            def read(self, _limit):
-                return json.dumps(bundle).encode("utf-8")
-
+        agent_payload = {
+            "ok": True,
+            "loaded_at": bundle["published_at"],
+            "bundle_sha256": "b" * 64,
+            "registry": bundle["files"]["shared_rules.json"],
+        }
         self._governance_rule_loader.stop()
         try:
             empty_cache = {"key": None, "expires_at": 0.0, "result": None}
             with patch.object(app, "_governance_rule_cache", empty_cache), \
-                 patch.dict(app.os.environ, {"GOVERNANCE_READ_API_KEY": "secret"}), \
-                 patch.object(app, "urlopen", return_value=FakeResponse()) as mocked_urlopen:
+                 patch.object(app, "_fetch_dash_ads_json", return_value=agent_payload) as fetch_agent:
                 first = app._load_snapshot_completeness_governance_rule()
                 second = app._load_snapshot_completeness_governance_rule()
         finally:
@@ -725,7 +710,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(first["rule"]["status"], "D")
         self.assertEqual(first["rule"]["source_file"], "shared_rules.json")
         self.assertEqual(second, first)
-        self.assertEqual(mocked_urlopen.call_count, 1)
+        self.assertEqual(fetch_agent.call_count, 1)
 
     def test_online_integrity_blocks_when_central_rule_cannot_be_consulted(self):
         payload = {
@@ -751,6 +736,26 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertFalse(integrity["ready"])
         self.assertFalse(integrity["pending"])
         self.assertIn("consulta da regra central falhou", integrity["message"])
+
+    def test_online_integrity_blocks_when_agent_bundle_hash_diverges(self):
+        date_from, date_to = "2026-08-11", "2026-08-17"
+        payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", date_from, date_to),
+            "ok": True,
+            "latest": {"date_from": date_from, "date_to": date_to, "sales": {"complete": True}},
+            "ads": {"date_from": date_from, "date_to": date_to, "items": []},
+            "sales": {"date_from": date_from, "date_to": date_to, "items": {}},
+        }
+        payload["integrity_contract"]["governance"]["bundle_sha256"] = "a" * 64
+        central = active_snapshot_completeness_rule()
+        central["rule"]["bundle_sha256"] = "b" * 64
+        with patch.object(app, "_load_snapshot_completeness_governance_rule", return_value=central):
+            integrity = app._online_cache_integrity_state(
+                payload, "conta-ativa", "adv-1", date_from, date_to
+            )
+
+        self.assertFalse(integrity["ready"])
+        self.assertIn("recibo da regra central não foi comprovado", integrity["message"])
 
     def test_closed_presets_end_yesterday(self):
         expected = {
