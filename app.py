@@ -339,6 +339,21 @@ def _fetch_governance_bundle(*, timeout: int = 20) -> tuple[dict, int]:
     return bundle, 200
 
 
+def _fetch_governance_bundle_from_agent() -> tuple[dict, int]:
+    """Lê a mesma regra que o agente usa, pelo canal interno já autenticado."""
+    payload = _fetch_dash_ads_json("/internal/dash-ads/governance-rule")
+    registry = payload.get("registry") if isinstance(payload.get("registry"), dict) else {}
+    if payload.get("ok") is True and isinstance(registry.get("rules"), list):
+        return {
+            "files": {"shared_rules.json": registry},
+            "published_at": payload.get("loaded_at") or "agent_bundle",
+        }, 200
+    return {
+        "ok": False,
+        "error": str(payload.get("error") or payload.get("erro") or "agent_governance_unavailable"),
+    }, int(payload.get("http_status") or 502)
+
+
 def _load_snapshot_completeness_governance_rule() -> dict:
     """Carrega do hub a regra compartilhada que autoriza KPIs online.
 
@@ -347,7 +362,7 @@ def _load_snapshot_completeness_governance_rule() -> dict:
     o chamador deve bloquear a saída financeira (fail-closed).
     """
     api_key = (os.environ.get("GOVERNANCE_READ_API_KEY") or "").strip()
-    cache_key = (GOVERNANCE_HUB_URL, api_key)
+    cache_key = (GOVERNANCE_HUB_URL, api_key, AGENTE_ML_BASE_URL)
     now = time.monotonic()
     with _governance_rule_cache_lock:
         cached = _governance_rule_cache.get("result")
@@ -362,6 +377,8 @@ def _load_snapshot_completeness_governance_rule() -> dict:
             bundle, status = _fetch_governance_bundle(timeout=5)
         except Exception as exc:  # defesa de disponibilidade: nunca abre KPI sem a regra
             bundle, status = {"ok": False, "error": exc.__class__.__name__}, 502
+        if status != 200:
+            bundle, status = _fetch_governance_bundle_from_agent()
         result = {
             "ok": False,
             "reason": "regra central indisponível",
