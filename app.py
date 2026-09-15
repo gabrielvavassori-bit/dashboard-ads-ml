@@ -36,8 +36,6 @@ Variaveis de ambiente:
   DEFAULT_ACCESS_DAYS     Dias de acesso quando o payload nao traz nextChargeDate
   ADMIN_EMAIL             Email do admin
   ADMIN_PASSWORD          Senha do admin (so usada no boot para criar/atualizar)
-  GOVERNANCE_HUB_URL      URL do MARKETPLACE GOVERNANCE central
-  GOVERNANCE_READ_API_KEY Chave de leitura do Governance central
   MAX_UPLOAD_MB           Limite por arquivo (padrao 20)
 """
 import html as _html
@@ -90,10 +88,6 @@ MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 # Limita 2 arquivos + overhead de multipart
 MAX_BODY_BYTES = MAX_UPLOAD_BYTES * 2 + 1 * 1024 * 1024
 AGENTE_ML_BASE_URL = os.environ.get("AGENTE_ML_BASE_URL", "https://agente-ml.onrender.com").rstrip("/")
-GOVERNANCE_HUB_URL = os.environ.get(
-    "GOVERNANCE_HUB_URL",
-    "https://marketplace-governance-hub.onrender.com",
-).rstrip("/")
 ML_LINK_ATTACH_SECRET = (
     os.environ.get("ML_LINK_ATTACH_SECRET")
     or os.environ.get("DASH_ADS_INTERNAL_SECRET")
@@ -306,47 +300,18 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
     return payload if isinstance(payload, dict) else {"ok": False, "payload": payload, "http_status": status}
 
 
-def _fetch_governance_bundle(*, timeout: int = 20) -> tuple[dict, int]:
-    """Consulta o bundle central autenticado sem transformar suas regras.
-
-    A leitura financeira precisa validar uma regra específica como ela existe no
-    Governance; por isso o consumidor do contrato usa este payload bruto antes
-    de qualquer resumo voltado à interface administrativa.
-    """
-    api_key = (os.environ.get("GOVERNANCE_READ_API_KEY") or "").strip()
-    if not api_key:
-        return {"ok": False, "error": "governance_read_api_key_not_configured"}, 503
-    req = Request(
-        f"{GOVERNANCE_HUB_URL}/v1/bundle",
-        headers={"Accept": "application/json", "Authorization": f"Bearer {api_key}"},
-        method="GET",
-    )
-    try:
-        with urlopen(req, timeout=timeout) as response:
-            raw = response.read(8_000_000)
-            status = response.status
-    except HTTPError as exc:
-        raw = exc.read(8_000_000)
-        status = exc.code
-    except (URLError, TimeoutError) as exc:
-        return {"ok": False, "error": exc.__class__.__name__}, 502
-    try:
-        bundle = json.loads(raw.decode("utf-8", errors="replace"))
-    except json.JSONDecodeError:
-        return {"ok": False, "error": "governance_non_json_response"}, 502
-    if status != 200 or not isinstance(bundle, dict):
-        return (bundle if isinstance(bundle, dict) else {"ok": False, "error": "invalid_bundle"}), status
-    return bundle, 200
-
-
-def _fetch_governance_bundle_from_agent() -> tuple[dict, int]:
-    """Lê a mesma regra que o agente usa, pelo canal interno já autenticado."""
+def _fetch_governance_bundle() -> tuple[dict, int]:
+    """Lê a regra efetivamente usada pelo agente, via canal interno autenticado."""
     payload = _fetch_dash_ads_json("/internal/dash-ads/governance-rule")
+    files = payload.get("files") if isinstance(payload.get("files"), dict) else {}
     registry = payload.get("registry") if isinstance(payload.get("registry"), dict) else {}
     if payload.get("ok") is True and isinstance(registry.get("rules"), list):
         return {
-            "files": {"shared_rules.json": registry},
+            "files": files if isinstance(
+                (files.get("shared_rules.json") if isinstance(files, dict) else None), dict
+            ) else {"shared_rules.json": registry},
             "published_at": payload.get("loaded_at") or "agent_bundle",
+            "bundle_sha256": str(payload.get("bundle_sha256") or "").strip(),
         }, 200
     return {
         "ok": False,
@@ -355,14 +320,12 @@ def _fetch_governance_bundle_from_agent() -> tuple[dict, int]:
 
 
 def _load_snapshot_completeness_governance_rule() -> dict:
-    """Carrega do hub a regra compartilhada que autoriza KPIs online.
+    """Carrega a regra local do agente que autoriza KPIs online.
 
-    Não basta um recibo declarado pelo agente: o Dash confere, em TTL curto, a
-    regra canônica do Governance. Se ela não puder ser consultada ou divergir,
-    o chamador deve bloquear a saída financeira (fail-closed).
+    O Dashboard não depende de um Hub externo: confere a regra carregada pelo
+    agente no mesmo canal interno que fornece os contratos financeiros.
     """
-    api_key = (os.environ.get("GOVERNANCE_READ_API_KEY") or "").strip()
-    cache_key = (GOVERNANCE_HUB_URL, api_key, AGENTE_ML_BASE_URL)
+    cache_key = AGENTE_ML_BASE_URL
     now = time.monotonic()
     with _governance_rule_cache_lock:
         cached = _governance_rule_cache.get("result")
@@ -374,11 +337,9 @@ def _load_snapshot_completeness_governance_rule() -> dict:
             return cached
 
         try:
-            bundle, status = _fetch_governance_bundle(timeout=5)
+            bundle, status = _fetch_governance_bundle()
         except Exception as exc:  # defesa de disponibilidade: nunca abre KPI sem a regra
             bundle, status = {"ok": False, "error": exc.__class__.__name__}, 502
-        if status != 200:
-            bundle, status = _fetch_governance_bundle_from_agent()
         result = {
             "ok": False,
             "reason": "regra central indisponível",
@@ -417,9 +378,10 @@ def _load_snapshot_completeness_governance_rule() -> dict:
                         "status": rule.get("status"),
                         "implementation_status": rule.get("implementation_status"),
                         "source_file": "shared_rules.json",
+                        "bundle_sha256": str(bundle.get("bundle_sha256") or "").strip(),
                     },
                     "source_file": "shared_rules.json",
-                    "loaded_at": bundle.get("published_at") or "governance_hub",
+                    "loaded_at": bundle.get("published_at") or "agent_bundle",
                 }
         elif isinstance(bundle, dict) and bundle.get("error"):
             result["reason"] = f"regra central indisponível ({bundle['error']})"
@@ -1620,6 +1582,12 @@ def _online_cache_integrity_state(
         or not isinstance(governance.get("consulted_files"), list)
         or not _governance_receipt_mentions_source_file(
             governance.get("consulted_files"), str(central_rule.get("source_file") or "")
+        )
+        or (
+            str(governance.get("bundle_sha256") or "").strip()
+            and str(central_rule.get("bundle_sha256") or "").strip()
+            and str(governance.get("bundle_sha256") or "").strip()
+            != str(central_rule.get("bundle_sha256") or "").strip()
         )
         or not str(governance.get("loaded_at") or "").strip()
     ):
