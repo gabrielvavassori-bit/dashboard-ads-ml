@@ -181,6 +181,58 @@ class OnlinePeriodTests(unittest.TestCase):
         )[0]
         self.assertNotIn("online-cache-refresh", builder)
 
+    def test_missing_thumbnail_does_not_refresh_a_ready_financial_snapshot(self):
+        date_from = date_to = "2026-08-10"
+        payload = {
+            **complete_integrity_contract("conta-ativa", "adv-1", date_from, date_to),
+            "ok": True,
+            "latest": {
+                "date_from": date_from,
+                "date_to": date_to,
+                "sales": {"complete": True},
+            },
+            "ads": {
+                "date_from": date_from,
+                "date_to": date_to,
+                "items": [{
+                    "item_id": "MLB123",
+                    "cost": 10,
+                    "total_amount": 100,
+                    "direct_amount": 80,
+                    "prints": 100,
+                    "clicks": 10,
+                    "units_quantity": 1,
+                }],
+            },
+            "campaigns": {"campaigns": []},
+            "sales": {
+                "date_from": date_from,
+                "date_to": date_to,
+                "items": {"MLB123": {"revenue_total": 120, "units_total": 2}},
+            },
+        }
+        calls = []
+
+        def fetch(path, params):
+            calls.append((path, params))
+            if path.endswith("online-cache-refresh"):
+                self.fail("Miniatura ausente nao pode acionar refresh financeiro")
+            return payload
+
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=fetch):
+            data, error = app._build_online_dashboard_data(
+                "conta-ativa", "adv-1", date_from, date_to,
+                {"dateFrom": date_from, "dateTo": date_to},
+            )
+
+        self.assertEqual(error, "")
+        self.assertIsNotNone(data)
+        self.assertEqual(calls[0][0], "/internal/dash-ads/online-cache-latest")
+        self.assertNotIn(
+            "/internal/dash-ads/online-cache-refresh",
+            [path for path, _params in calls],
+        )
+
     def test_daily_snapshots_expose_partial_dates_to_the_dashboard(self):
         with patch.object(app, "_fetch_dash_ads_json", return_value={
             "ok": True,
@@ -264,7 +316,10 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn('const above = ratio > 0;', source)
         self.assertIn("if (context === 'priceAboveAvg') return hasPriceAboveAverage(item, 0.05);", source)
         self.assertIn('.price-above-avg', source)
-        self.assertIn('"refresh_metadata": "1"', Path(__file__).with_name("app.py").read_text(encoding="utf-8"))
+        online_builder = Path(__file__).with_name("app.py").read_text(encoding="utf-8").split(
+            "def _build_online_dashboard_data", 1
+        )[1].split("def _build_online_beta_payload", 1)[0]
+        self.assertNotIn('"refresh_metadata": "1"', online_builder)
 
     def test_campaign_reading_has_search_and_two_way_sorting_for_its_rows(self):
         source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")

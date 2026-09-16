@@ -717,35 +717,12 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     sales_by_item = sales.get("items") if isinstance(sales.get("items"), dict) else {}
     if not ads_rows:
         return None, "Ainda nao existem dados de publicidade em cache para esta conta. Aguarde a coleta online e tente novamente."
-    def cached_thumbnail(raw: dict) -> str:
-        sale = sales_by_item.get(_normalize_mlb_code(raw.get("item_id") or raw.get("id")))
-        sale = sale if isinstance(sale, dict) else {}
-        return str(
-            raw.get("thumbnail_url")
-            or raw.get("secure_thumbnail")
-            or raw.get("thumbnail")
-            or sale.get("thumbnail_url")
-            or sale.get("secure_thumbnail")
-            or sale.get("thumbnail")
-            or sale.get("picture")
-            or ""
-        ).strip()
-
-    has_cached_thumbnail = any(cached_thumbnail(raw) for raw in ads_rows if isinstance(raw, dict))
-    if not has_cached_thumbnail:
-        try:
-            _fetch_dash_ads_json(
-                "/internal/dash-ads/online-cache-refresh",
-                {
-                    "client": client,
-                    "advertiser_id": advertiser_id,
-                    "date_from": latest_date_from,
-                    "date_to": latest_date_to,
-                    "refresh_metadata": "1",
-                },
-            )
-        except Exception:
-            pass
+    # A ausencia de miniatura e apenas um problema de metadado visual. Ela nao
+    # pode disparar um refresh financeiro da mesma janela: aquele refresh
+    # invalida o commit enquanto coleta e transforma um painel pronto em
+    # ``repair_pending``. Enquanto nao houver um enriquecimento proprio, a
+    # imagem pode aparecer como ausente; este leitor permanece estritamente
+    # read-only para o snapshot financeiro.
     ads_rows, ads_deduplication = _deduplicate_online_ads_rows(ads_rows)
     # A reconciliacao de Ads e somente diagnostica. Ela nunca pode substituir
     # as linhas que alimentam KPIs depois que o contrato de integridade foi
