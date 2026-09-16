@@ -1,0 +1,18 @@
+{
+  "description": "Executa a protecao antirregressao seletiva antes de um turno Codex encerrar.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/antiregression_stop.py\"",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& python (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/antiregression_stop.py')\"",
+            "timeout": 120,
+            "statusMessage": "Executando antirregressao seletiva"
+          }
+        ]
+      }
+    ]
+  }
+}

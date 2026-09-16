@@ -6,14 +6,14 @@
       "id": "REGRESSION-001",
       "title": "Integridade dos snapshots financeiros do Dash Ads",
       "severity": "CRITICA",
-      "components": ["online_financial_gate", "dash_ads_snapshot_integrity", "dashboard_exports", "sales_recommendations"],
-      "domains": ["financial_reporting", "cache_integrity", "mercado_livre_ads"],
-      "tags": ["snapshot", "coverage", "period", "fail_closed", "kpi", "export", "recommendation", "zero_evidence"],
-      "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "test_online_periods.py", "test_integrations.py", "render.yaml"],
-      "invariant": "KPIs, exportações e recomendações financeiras permanecem bloqueados até o contrato da conta e período exatos comprovar cobertura integral; datas ausentes não são preenchidas com zero.",
+      "components": ["online_financial_gate", "dash_ads_snapshot_integrity", "dashboard_exports", "sales_recommendations", "dashboard_financial_rendering", "daily_snapshot_consumption", "online_period_selection"],
+      "domains": ["financial_reporting", "cache_integrity", "mercado_livre_ads", "orders"],
+      "tags": ["snapshot", "coverage", "period", "fail_closed", "kpi", "export", "recommendation", "zero_evidence", "period_match", "financial_kpi"],
+      "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "auth.py", "beta_bridge.py", "test_regression_001_snapshot_integrity.py", "test_online_periods.py", "test_integrations.py", "test_antiregression_hook.py", "scripts/regression_guard.py", ".codex/hooks.json", ".codex/hooks/antiregression_stop.py", ".github/workflows/critical-regressions.yml", "AGENTS.md", "render.yaml", "render-beta.yaml"],
+      "invariant": "Nenhum KPI financeiro, exportacao, recomendacao ou tabela financeira pode ser exibido sem prova da conta e do periodo exatos, identidade, universo, paginas e cobertura diaria completos; ausencia nunca vira zero sem evidencia. Cache de outra janela nao pode substituir o periodo solicitado.",
       "protections": [
         {
-          "command": ["{python}", "-m", "unittest", "-v", "test_regression_001_snapshot_integrity.py"],
+          "command": ["{python}", "-m", "unittest", "-v", "test_regression_001_snapshot_integrity.py", "test_online_periods.OnlinePeriodTests.test_online_integrity_blocks_when_central_rule_cannot_be_consulted", "test_online_periods.OnlinePeriodTests.test_online_builder_blocks_partial_ads_coverage_before_financial_rendering", "test_online_periods.OnlinePeriodTests.test_online_builder_blocks_when_daily_sales_coverage_turns_partial", "test_online_periods.OnlinePeriodTests.test_online_builder_blocks_daily_ads_without_explicit_complete_coverage", "test_online_periods.OnlinePeriodTests.test_online_builder_never_renders_a_completed_snapshot_from_another_period", "test_online_periods.OnlinePeriodTests.test_online_builder_reports_pending_when_no_snapshot_is_available", "test_online_periods.OnlinePeriodTests.test_sales_intelligence_blocks_daily_partial_coverage_before_recommendations", "test_online_periods.OnlinePeriodTests.test_never_sold_listing_requires_active_status_and_creation_coverage", "test_integrations.HTTPRouteTests.test_online_integrity_block_hides_financial_kpis_exports_and_auto_refresh", "test_integrations.HTTPRouteTests.test_online_repair_pending_retries_without_rendering_financial_values", "test_integrations.HTTPRouteTests.test_online_dashboard_blocks_partial_sales_before_calculating_kpis", "test_integrations.HTTPRouteTests.test_sales_intelligence_integrity_block_hides_online_recommendations", "test_antiregression_hook.AntiregressionStopHookTests"],
           "blocking": true
         }
       ]
