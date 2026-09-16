@@ -31,3 +31,4 @@ jobs:
           test_integrations.HTTPRouteTests.test_online_repair_pending_retries_without_rendering_financial_values
           test_integrations.HTTPRouteTests.test_online_dashboard_blocks_partial_sales_before_calculating_kpis
           test_integrations.HTTPRouteTests.test_sales_intelligence_integrity_block_hides_online_recommendations
+          test_antiregression_hook.AntiregressionStopHookTests

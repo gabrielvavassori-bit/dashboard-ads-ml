@@ -3,7 +3,8 @@
 ## Protecao antirregressao
 
 - Antes de alterar comportamento com regressão conhecida — especialmente cache online, snapshots diários, períodos, KPIs, exportações, recomendações financeiras ou integração com `agente-ml` — consulte `regressions/manifest.json` por arquivo, componente, domínio e tags e execute as proteções associadas.
-- Execute `scripts/regression_guard.py` antes da publicação e com `--run` depois da alteração. Uma regressão crítica relacionada bloqueia conclusão, push para a branch publicada e deploy enquanto qualquer proteção falhar ou estiver ausente.
+- O hook `Stop` em `.codex/hooks.json` examina o diff pendente e chama o seletor automaticamente ao encerrar um turno. Ele executa somente as proteções relacionadas; `FAIL`, `VALIDATION ERROR`, `NOT RUN` ou ausência de evidência nunca equivalem a `PASS`.
+- Execute `scripts/regression_guard.py` antes da publicação e com `--run` depois da alteração. Uma regressão crítica relacionada bloqueia conclusão, push para a branch publicada e deploy enquanto qualquer proteção falhar ou estiver ausente. FAST CHECK: `python scripts/regression_guard.py --changed-file <arquivo>`; FULL REGRESSION CHECK: repita com `--run`.
 - O catálogo canônico e a Skill `$marketplace-antiregression` ficam no `MARKETPLACE GOVERNANCE`; o manifesto local associa as regras aos testes executáveis deste repositório.
 - Não trate memória, texto, `/healthz` ou cache legado como prova de integridade financeira. A validação de produção exige a revisão ativa e uma execução funcional autenticada.
 
