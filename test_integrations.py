@@ -37,6 +37,7 @@ import beta_bridge
 import eduzz_api
 import webhook
 import app
+import templates
 from gerar_dashboard_ads_ml import detect_ads_period
 
 
@@ -549,6 +550,72 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(result["activated"], 1)
         self.assertEqual(user["status"], "active")
         self.assertGreater(user["expires_at"], int(app.time.time()) + (30 * 86400))
+
+
+class AdminRecoveryObservabilityTests(unittest.TestCase):
+    def test_admin_recovery_view_maps_all_accounts_and_keeps_non_financial_projection(self):
+        users = [{
+            "id": 1,
+            "name": "Cliente A",
+            "email": "cliente@example.com",
+            "status": "active",
+            "plan": "teste",
+            "password_hash": "hash",
+            "access_origin": "manual",
+            "beta_enabled": None,
+            "sales_enabled": 1,
+            "expires_at": None,
+            "created_at": None,
+            "ml_slot_limit": 2,
+            "ml_link_label": "Conta Um",
+            "ml_link_detail": "conta-um",
+            "ml_link_count": 2,
+            "ml_links": [
+                {"client_id": "conta-um", "nickname": "Conta Um"},
+                {"client_id": "conta-dois", "official_store": "Conta Dois"},
+            ],
+        }]
+        payload = {
+            "ok": True,
+            "read_only": True,
+            "financial_values_included": False,
+            "records_include_tokens": False,
+            "clients": [{
+                "client_id": "conta-dois",
+                "records": [{
+                    "date_from": "2026-08-16",
+                    "date_to": "2026-09-14",
+                    "status": "repair_pending",
+                    "attempts": 4,
+                    "coverage_missing_item_days": 42,
+                    "stalled": True,
+                    "reason": "integrity_repair_stalled",
+                    "next_retry_at": "2026-09-16T15:00:00+00:00",
+                    "revenue_total": 999999,
+                    "access_token": "must-not-render",
+                }],
+            }],
+        }
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload) as fetch:
+            view = app._admin_integrity_recovery_view(users)
+        self.assertEqual(fetch.call_args.args[0], "/internal/dash-ads/integrity-recovery-admin")
+        self.assertTrue(view["available"])
+        self.assertEqual(view["rows"][0]["account"], "Conta Dois")
+        self.assertEqual(view["rows"][0]["coverage_missing_item_days"], 42)
+        rendered = templates.render_admin_users(users, recovery_view=view)
+        self.assertIn("Recuperacao de integridade por conta", rendered)
+        self.assertIn("Conta Dois", rendered)
+        self.assertNotIn("999999", rendered)
+        self.assertNotIn("must-not-render", rendered)
+        self.assertNotIn("access_token", rendered)
+
+    def test_admin_recovery_view_fails_closed_when_agent_is_unavailable(self):
+        with patch.object(app, "_fetch_dash_ads_json", return_value={"ok": False}):
+            view = app._admin_integrity_recovery_view([])
+        self.assertFalse(view["available"])
+        rendered = templates.render_admin_users([], recovery_view=view)
+        self.assertIn("Diagnostico de recuperacao indisponivel", rendered)
+        self.assertIn("Nenhuma acao de coleta foi iniciada", rendered)
 
 
 class HTTPRouteTests(unittest.TestCase):

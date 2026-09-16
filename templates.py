@@ -399,9 +399,10 @@ def render_admin_login(error: str = "") -> str:
     return _layout("Admin - Login", body)
 
 
-def render_admin_users(users, query: str = "", info: str = "") -> str:
+def render_admin_users(users, query: str = "", info: str = "", recovery_view: dict | None = None) -> str:
     import time
     info_html = f'<div class="alert ok">{_html.escape(info)}</div>' if info else ""
+    recovery_view = recovery_view if isinstance(recovery_view, dict) else {"available": False, "rows": []}
 
     def fmt_ts(ts):
         if not ts:
@@ -519,6 +520,38 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
           </td>
         </tr>""")
 
+    recovery_rows = []
+    for record in recovery_view.get("rows") or []:
+        if not isinstance(record, dict):
+            continue
+        state = "Estagnada" if record.get("stalled") else "Pendente"
+        recovery_rows.append(f"""
+          <tr>
+            <td>{_html.escape(str(record.get('account') or '-'))}<div style="font-size:12px;color:#667085">{_html.escape(str(record.get('user') or '-'))}</div></td>
+            <td>{_html.escape(str(record.get('date_from') or '-'))} a {_html.escape(str(record.get('date_to') or '-'))}</td>
+            <td><span class="pill {'suspended' if record.get('stalled') else 'pending'}">{state}</span></td>
+            <td>{int(record.get('attempts') or 0)}</td>
+            <td>{int(record.get('coverage_missing_item_days') or 0)}</td>
+            <td>{_html.escape(str(record.get('reason') or '-'))}</td>
+            <td>{_html.escape(str(record.get('next_retry_at') or '-'))}</td>
+          </tr>""")
+    if recovery_view.get("available"):
+        recovery_html = f"""
+        <div style="border:1px solid #f0c36d;border-radius:12px;padding:16px;margin:18px 0 22px;background:#fffaf0">
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap">
+            <div style="font-weight:800;font-size:16px">Recuperacao de integridade por conta</div>
+            <div style="font-size:12px;color:#667085">Somente leitura: nao inicia coleta e nao exibe valores financeiros.</div>
+          </div>
+          <div style="font-size:13px;color:#667085;margin:8px 0 14px">{len(recovery_rows)} janela(s) pendente(s), {int(recovery_view.get('stalled') or 0)} estagnada(s), {int(recovery_view.get('coverage_missing_item_days') or 0)} dias-item de cobertura pendente.</div>
+          <div style="overflow-x:auto"><table style="min-width:940px;margin:0">
+            <thead><tr><th>Conta / cliente</th><th>Janela</th><th>Estado</th><th>Tentativas</th><th>Cobertura pendente</th><th>Motivo seguro</th><th>Proxima tentativa</th></tr></thead>
+            <tbody>{''.join(recovery_rows) if recovery_rows else '<tr><td colspan="7" style="text-align:center;color:#1b5e20;padding:18px">Nenhuma janela pendente registrada.</td></tr>'}</tbody>
+          </table></div>
+        </div>"""
+    else:
+        recovery_html = f"""
+        <div class="alert pending" style="margin:18px 0">{_html.escape(str(recovery_view.get('message') or 'Diagnostico de recuperacao indisponivel no agente.'))} Nenhuma acao de coleta foi iniciada.</div>"""
+
     extra_css = "main { max-width: 1100px; }"
     body = f"""
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -526,6 +559,7 @@ def render_admin_users(users, query: str = "", info: str = "") -> str:
       <div><a href="/admin/logout">sair</a></div>
     </div>
     {info_html}
+    {recovery_html}
     <form method="get" action="/admin" style="margin:18px 0">
       <input type="text" name="q" value="{_html.escape(query)}" placeholder="Buscar por email ou nome">
       <button type="submit" style="width:auto;display:inline-block;margin-left:8px">Buscar</button>

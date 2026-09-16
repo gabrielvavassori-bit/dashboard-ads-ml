@@ -300,6 +300,50 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
     return payload if isinstance(payload, dict) else {"ok": False, "payload": payload, "http_status": status}
 
 
+def _admin_integrity_recovery_view(users: list[dict]) -> dict:
+    """Prepara uma visão administrativa não financeira e somente de leitura."""
+    labels: dict[str, dict] = {}
+    for user in users:
+        for link in user.get("ml_links") or []:
+            client_id = str(link.get("client_id") or "").strip()
+            if client_id:
+                labels[client_id] = {
+                    "account": link.get("official_store") or link.get("nickname") or client_id,
+                    "user": user.get("name") or user.get("email") or "Cliente",
+                }
+    payload = _fetch_dash_ads_json("/internal/dash-ads/integrity-recovery-admin")
+    if not payload.get("ok"):
+        return {"available": False, "rows": [], "message": "Diagnostico de recuperacao indisponivel no agente."}
+    rows: list[dict] = []
+    for client in payload.get("clients") or []:
+        if not isinstance(client, dict):
+            continue
+        client_id = str(client.get("client_id") or "").strip()
+        label = labels.get(client_id, {"account": client_id or "Conta nao mapeada", "user": "Nao associado"})
+        for record in client.get("records") or []:
+            if not isinstance(record, dict):
+                continue
+            rows.append({
+                "account": str(label["account"]),
+                "user": str(label["user"]),
+                "date_from": str(record.get("date_from") or "-"),
+                "date_to": str(record.get("date_to") or "-"),
+                "status": str(record.get("status") or "repair_pending"),
+                "attempts": max(0, int(record.get("attempts") or 0)),
+                "coverage_missing_item_days": max(0, int(record.get("coverage_missing_item_days") or 0)),
+                "stalled": bool(record.get("stalled")),
+                "reason": str(record.get("reason") or "integrity_repair_snapshot_not_ready"),
+                "next_retry_at": str(record.get("next_retry_at") or "-"),
+            })
+    rows.sort(key=lambda row: (not row["stalled"], row["account"], row["date_from"], row["date_to"]))
+    return {
+        "available": True,
+        "rows": rows,
+        "stalled": sum(1 for row in rows if row["stalled"]),
+        "coverage_missing_item_days": sum(row["coverage_missing_item_days"] for row in rows),
+    }
+
+
 def _fetch_governance_bundle() -> tuple[dict, int]:
     """Lê a regra efetivamente usada pelo agente, via canal interno autenticado."""
     payload = _fetch_dash_ads_json("/internal/dash-ads/governance-rule")
@@ -2492,6 +2536,7 @@ class Handler(BaseHTTPRequestHandler):
                 for raw_user in db.list_users(q):
                     user = dict(raw_user)
                     links = db.list_active_ml_links_for_user(user["id"])
+                    user["ml_links"] = [dict(link) for link in links]
                     if links:
                         link = links[0]
                         user["ml_link_label"] = (
@@ -2513,7 +2558,8 @@ class Handler(BaseHTTPRequestHandler):
                         user["ml_link_detail"] = ""
                     users.append(user)
                 info = (qs.get("info", [""])[0] or "")
-                _send_html(self, templates.render_admin_users(users, q, info))
+                recovery_view = _admin_integrity_recovery_view(users)
+                _send_html(self, templates.render_admin_users(users, q, info, recovery_view))
                 return
             if path == "/":
                 user, token = _current_user(self)
