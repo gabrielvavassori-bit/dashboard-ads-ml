@@ -1,5 +1,9 @@
 # Regras do Dashboard Ads
 
+## Excecao operacional autorizada em 2026-09-17
+
+Consultar `docs/EMERGENCY_OPERATIONAL_AVAILABILITY_20260917.md` e o manifest antes de alterar o gate. O Dash principal abre com cache parcial explicitamente sinalizado, da conta e periodo exatos; Billing/completude nao bloqueiam essa consulta. A inteligencia financeira continua estrita. Esta regra substitui a exigencia geral de bloqueio do Dash principal abaixo.
+
 ## Protecao antirregressao
 
 - Antes de alterar comportamento com regressão conhecida — especialmente cache online, snapshots diários, períodos, KPIs, exportações, recomendações financeiras ou integração com `agente-ml` — consulte `regressions/manifest.json` por arquivo, componente, domínio e tags e execute as proteções associadas.
