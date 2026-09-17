@@ -682,7 +682,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     # Só um recibo completo, exato e vinculado à conta pode chegar ao cálculo.
     # A rotina de coleta/reparo é acionada pela helper sem reutilizar cache
     # parcial ou uma janela antiga como fallback.
-    latest_payload, cache_error = _sales_intelligence_fetch_latest(
+    latest_payload, cache_error = _dash_ads_fetch_operational_latest(
         client,
         advertiser_id,
         requested_from,
@@ -715,7 +715,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     }
     ads_rows = ads.get("items") if isinstance(ads.get("items"), list) else []
     sales_by_item = sales.get("items") if isinstance(sales.get("items"), dict) else {}
-    if not ads_rows:
+    if not ads_rows and not sales_by_item:
         return None, "Ainda nao existem dados de publicidade em cache para esta conta. Aguarde a coleta online e tente novamente."
     # A ausencia de miniatura e apenas um problema de metadado visual. Ela nao
     # pode disparar um refresh financeiro da mesma janela: aquele refresh
@@ -738,13 +738,13 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         for value in ads_rows
         if isinstance(value, dict)
     )
-    if cached_ads_revenue > cached_sales_revenue + 0.01:
+    if not latest_payload.get("operational_partial") and cached_ads_revenue > cached_sales_revenue + 0.01:
         return None, (
             f"{ONLINE_CACHE_INTEGRITY_PREFIX}Período solicitado: {requested_from or 'sem data'} a {requested_to or 'sem data'}. "
             "Dados financeiros não foram exibidos. A receita atribuída por Ads supera o faturamento bruto "
             "do cache completo; a janela precisa ser reparada na origem. Estado da reparação: blocked."
         )
-    daily_sales_result = _sales_intelligence_fetch_daily_sales(
+    daily_sales_result = (latest_payload.get("daily_sales", []), {}, "partial_operational_cache") if latest_payload.get("operational_partial") else _sales_intelligence_fetch_daily_sales(
         client,
         latest_date_from,
         latest_date_to,
@@ -754,7 +754,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         daily_sales_coverage_days = {}
     else:
         daily_sales_rows, daily_sales_coverage_days, daily_sales_error = daily_sales_result
-    daily_ads_rows, daily_ads_coverage_days, daily_ads_error = _sales_intelligence_fetch_daily_ads(
+    daily_ads_rows, daily_ads_coverage_days, daily_ads_error = (latest_payload.get("daily_ads", []), {}, "partial_operational_cache") if latest_payload.get("operational_partial") else _sales_intelligence_fetch_daily_ads(
         client,
         latest_date_from,
         latest_date_to,
@@ -779,7 +779,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         )
         if issue
     ]
-    if daily_coverage_issues:
+    if daily_coverage_issues and not latest_payload.get("operational_partial"):
         return None, (
             f"{ONLINE_CACHE_INTEGRITY_PREFIX}Período solicitado: {requested_from or 'sem data'} a {requested_to or 'sem data'}. "
             f"Dados financeiros não foram exibidos. {'; '.join(daily_coverage_issues)}. "
@@ -1108,6 +1108,13 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         f"Modo online beta: leitura autenticada do faturamento bruto do cache da conta. A cobertura de vendas esta {cache_status}; "
         "confira pelo XLSX detalhado antes de qualquer decisao financeira definitiva."
     )
+    if latest_payload.get("operational_partial"):
+        notice = (
+            "DADOS PARCIAIS — consulta operacional do cache disponível para esta conta e período. "
+            "Pedidos, faturamento, Ads e taxas são provisórios e podem mudar após a coleta. "
+            "A divergência ainda não foi medida; não há garantia de diferença inferior a 5%. "
+            "A conciliação financeira por pedido não bloqueia este painel."
+        )
     fallback_info = latest_payload.get("fallback") if isinstance(latest_payload.get("fallback"), dict) else {}
     if fallback_info.get("reason") == "latest_complete_7d":
         notice += (
@@ -1669,6 +1676,24 @@ def _online_cache_integrity_state(
     if reasons:
         return result("blocked", "; ".join(dict.fromkeys(reasons)))
     return {"ready": True, "pending": False, "terminal": False, "message": ""}
+
+
+def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_from: str, date_to: str) -> tuple[dict | None, str]:
+    """Main Ads may display explicitly partial data, never another account/window."""
+    payload = _fetch_dash_ads_json("/internal/dash-ads/operational-cache", {
+        "client": client, "advertiser_id": advertiser_id, "date_from": date_from, "date_to": date_to,
+    })
+    if not payload.get("ok"):
+        return None, "Ainda não há dados operacionais disponíveis no cache desta conta e período."
+    if payload.get("client_id") != client or payload.get("operational_partial") is not True:
+        return None, "A identificação do cache operacional não corresponde à conta solicitada."
+    for key in ("latest", "ads", "sales"):
+        source = payload.get(key) or {}
+        if (source.get("client_id") != client or source.get("date_from") != date_from
+                or source.get("date_to") != date_to
+                or (advertiser_id and str(source.get("advertiser_id") or "") != advertiser_id)):
+            return None, "A conta ou o período do cache operacional não corresponde à consulta."
+    return payload, ""
 
 
 def _sales_intelligence_fetch_latest(client: str, advertiser_id: str, date_from: str, date_to: str) -> tuple[dict | None, str]:
