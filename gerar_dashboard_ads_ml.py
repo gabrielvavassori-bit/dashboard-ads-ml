@@ -3031,26 +3031,33 @@ def render_dashboard(data):
     function promotionDiscountBreakdown(row) {{
       const original = Number(row.original_price);
       const price = Number(row.price);
-      const totalAmount = Number.isFinite(original) && Number.isFinite(price) && original > price
+      const totalRaw = row.discount_percentage;
+      const sellerRaw = row.seller_percentage;
+      const meliRaw = row.meli_percentage;
+      const boostAmountRaw = row.discount_meli_boost_amount;
+      const boostPercentRaw = row.discount_meli_boosted_percentage;
+      const totalAmount = Number.isFinite(original) && Number.isFinite(price) && original > 0 && price > 0 && original > price
         ? original - price : null;
-      const totalPercent = totalAmount !== null ? (totalAmount / original) * 100 : Number(row.discount_percentage);
-      const sellerPercent = Number(row.seller_percentage);
-      const meliPercent = Number(row.meli_percentage);
-      const hasSeller = Number.isFinite(sellerPercent) && sellerPercent >= 0;
-      const hasMeli = Number.isFinite(meliPercent) && meliPercent >= 0;
+      const totalPercent = totalAmount !== null ? (totalAmount / original) * 100 : Number(totalRaw);
+      const sellerPercent = Number(sellerRaw);
+      const meliPercent = Number(meliRaw);
+      const hasSeller = sellerRaw !== null && sellerRaw !== undefined && sellerRaw !== '' && Number.isFinite(sellerPercent) && sellerPercent >= 0;
+      const hasMeli = meliRaw !== null && meliRaw !== undefined && meliRaw !== '' && Number.isFinite(meliPercent) && meliPercent >= 0;
       const percent = value => `${{value.toLocaleString('pt-BR', {{minimumFractionDigits:0, maximumFractionDigits:2}})}}%`;
       const amountFromPercent = value => Number.isFinite(original) && original > 0 ? brl(original * value / 100) : 'N/D';
-      const total = Number.isFinite(totalPercent) && totalPercent >= 0
+      const total = totalAmount !== null || (totalRaw !== null && totalRaw !== undefined && totalRaw !== '' && Number.isFinite(totalPercent) && totalPercent >= 0)
         ? `${{totalAmount !== null ? brl(totalAmount) + ' | ' : ''}}${{percent(totalPercent)}}`
         : 'N/D';
       const seller = hasSeller ? `${{amountFromPercent(sellerPercent)}} | ${{percent(sellerPercent)}}` : 'N/D';
       const meli = hasMeli ? `${{amountFromPercent(meliPercent)}} | ${{percent(meliPercent)}}` : 'N/D';
-      const boostAmount = Number(row.discount_meli_boost_amount);
-      const boostPercent = Number(row.discount_meli_boosted_percentage);
-      const hasBoost = row.boosted_offer === true || (Number.isFinite(boostAmount) && boostAmount > 0) || (Number.isFinite(boostPercent) && boostPercent > 0);
+      const boostAmount = Number(boostAmountRaw);
+      const boostPercent = Number(boostPercentRaw);
+      const hasBoostAmount = boostAmountRaw !== null && boostAmountRaw !== undefined && boostAmountRaw !== '' && Number.isFinite(boostAmount) && boostAmount > 0;
+      const hasBoostPercent = boostPercentRaw !== null && boostPercentRaw !== undefined && boostPercentRaw !== '' && Number.isFinite(boostPercent) && boostPercent > 0;
+      const hasBoost = row.boosted_offer === true || hasBoostAmount || hasBoostPercent;
       const boostParts = [];
-      if (Number.isFinite(boostAmount) && boostAmount > 0) boostParts.push(brl(boostAmount));
-      if (Number.isFinite(boostPercent) && boostPercent > 0) boostParts.push(percent(boostPercent));
+      if (hasBoostAmount) boostParts.push(brl(boostAmount));
+      if (hasBoostPercent) boostParts.push(percent(boostPercent));
       const boost = hasBoost ? (boostParts.length ? boostParts.join(' | ') : 'Informado pelo Mercado Livre') : 'N/D';
       return `<div class="promotion-discount-breakdown"><div><span>Desconto total</span><b>${{total}}</b></div><div><span>Parte do vendedor</span><b>${{seller}}</b></div><div><span>Parte Mercado Livre</span><b>${{meli}}</b></div><div><span>Rebate nas tarifas ML</span><b>${{boost}}</b></div></div>`;
     }}
