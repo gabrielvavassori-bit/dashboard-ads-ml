@@ -227,7 +227,7 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertEqual(error, "")
         self.assertIsNotNone(data)
-        self.assertEqual(calls[0][0], "/internal/dash-ads/online-cache-latest")
+        self.assertEqual(calls[0][0], "/internal/dash-ads/operational-cache")
         self.assertNotIn(
             "/internal/dash-ads/online-cache-refresh",
             [path for path, _params in calls],
@@ -947,7 +947,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("janela de cache diverge", message)
         self.assertEqual(
             [path for path, _ in calls],
-            ["/internal/dash-ads/online-cache-latest"],
+            ["/internal/dash-ads/operational-cache"],
         )
 
     def test_online_builder_rejects_ads_from_a_different_period(self):
@@ -1203,7 +1203,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIsNone(data)
         self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
         self.assertIn("receita atribuída por Ads supera o faturamento bruto", message)
-        self.assertEqual(calls, ["/internal/dash-ads/online-cache-latest"])
+        self.assertEqual(calls, ["/internal/dash-ads/operational-cache"])
 
     def test_online_builder_accepts_agent_source_errors_alias_for_complete_coverage(self):
         payload = {
@@ -1329,7 +1329,8 @@ class OnlinePeriodTests(unittest.TestCase):
             )
 
         self.assertIsNone(data)
-        self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("reparação", message)
 
     def test_online_builder_never_renders_a_completed_snapshot_from_another_period(self):
         pending = {
@@ -1354,7 +1355,8 @@ class OnlinePeriodTests(unittest.TestCase):
             )
 
         self.assertIsNone(data)
-        self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("reparação", message)
         self.assertNotIn("fallback", " ".join(calls))
 
     def test_sales_intelligence_injection_uses_real_final_body_tag(self):

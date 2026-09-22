@@ -40,6 +40,12 @@ import app
 import templates
 from gerar_dashboard_ads_ml import detect_ads_period
 
+# Outros módulos de teste podem carregar app/webhook antes de estas variáveis
+# serem definidas. Recarregamos somente os módulos que congelam secrets no
+# import, preservando a verificação de assinatura e o segredo interno reais.
+webhook = importlib.reload(webhook)
+app = importlib.reload(app)
+
 
 def signed(payload):
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")

@@ -1153,13 +1153,15 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     total_tacos_base = total_revenue
     total_clicks = sum(item["clicks"] for item in items)
     total_ads_sales = sum(item["adsSales"] for item in items)
-    returns_payload = _fetch_dash_ads_json(
-        "/internal/dash-ads/returns-summary",
-        {
-            "client": client,
-            "date_from": latest_date_from,
-            "date_to": latest_date_to,
-        },
+    returns_payload = (
+        {} if latest_payload.get("operational_partial") else _fetch_dash_ads_json(
+            "/internal/dash-ads/returns-summary",
+            {
+                "client": client,
+                "date_from": latest_date_from,
+                "date_to": latest_date_to,
+            },
+        )
     )
     returns_available = bool(
         returns_payload.get("ok") is True
@@ -1791,6 +1793,14 @@ def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_fro
     })
     if not payload.get("ok"):
         return None, "Ainda não há dados operacionais disponíveis no cache desta conta e período."
+    # Compatibilidade transitória com agentes que ainda retornam o recibo
+    # financeiro completo na rota operacional. Nunca aceita esse formato se a
+    # prova de conta, período e cobertura não for exatamente a solicitada.
+    if payload.get("client_id") is None and payload.get("operational_partial") is None:
+        integrity = _online_cache_integrity_state(payload, client, advertiser_id, date_from, date_to)
+        if integrity["ready"]:
+            return payload, ""
+        return None, ONLINE_CACHE_INTEGRITY_PREFIX + integrity["message"]
     if payload.get("client_id") != client or payload.get("operational_partial") is not True:
         return None, "A identificação do cache operacional não corresponde à conta solicitada."
     for key in ("latest", "ads", "sales"):
