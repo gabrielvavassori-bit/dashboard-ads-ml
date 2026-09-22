@@ -120,6 +120,11 @@ SALES_INTELLIGENCE_HTML = pathlib.Path(__file__).resolve().parent / "assets" / "
 # 2 dashboards em paralelo eh saudavel ate em 512MB-1GB RAM.
 _dashboard_semaphore = threading.Semaphore(int(os.environ.get("MAX_PARALLEL_DASHBOARDS", "2")))
 
+# Limita threads simultaneas em /online (ThreadingHTTPServer nao tem teto proprio).
+# Valor acima do total de clientes conectados hoje: nao bloqueia uso legitimo,
+# so evita que threads presas esperando o agente-ml se acumulem sem limite.
+_online_dashboard_semaphore = threading.Semaphore(int(os.environ.get("MAX_PARALLEL_ONLINE", "8")))
+
 
 # ------------------ Helpers HTTP ------------------
 
@@ -274,7 +279,7 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
     )
     try:
         max_response_bytes = 64_000_000 if path.endswith('/order-financials') else 8_000_000
-        with urlopen(req, timeout=45) as response:
+        with urlopen(req, timeout=18) as response:
             raw = response.read(max_response_bytes)
             status = response.status
     except HTTPError as exc:
@@ -2689,13 +2694,14 @@ class Handler(BaseHTTPRequestHandler):
                     db.mark_user_ml_link_disconnected(user["id"], link["id"])
                     _redirect(self, "/ml-link/start?return_to=/online?confirmed=1")
                     return
-                dashboard_data, message = _build_online_dashboard_data(
-                    client_id,
-                    advertiser_id=(link["advertiser_id"] or "").strip(),
-                    date_from=period["dateFrom"],
-                    date_to=period["dateTo"],
-                    requested_period=period,
-                )
+                with _online_dashboard_semaphore:
+                    dashboard_data, message = _build_online_dashboard_data(
+                        client_id,
+                        advertiser_id=(link["advertiser_id"] or "").strip(),
+                        date_from=period["dateFrom"],
+                        date_to=period["dateTo"],
+                        requested_period=period,
+                    )
                 if not dashboard_data:
                     if message.startswith(ONLINE_CACHE_PENDING_PREFIX):
                         _send_html(
