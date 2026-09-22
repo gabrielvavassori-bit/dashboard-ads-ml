@@ -1612,6 +1612,9 @@ def render_dashboard(data):
     .abc-table {{ width:1280px; table-layout:fixed; }}
     .scroll-frame thead th {{ top:0; }}
     .muted {{ color:var(--muted); font-size:12px; }}
+    .trend {{ margin-top:3px; font-size:11px; font-weight:800; white-space:nowrap; }}
+    .trend-up {{ color:#067647; }}
+    .trend-down {{ color:#b42318; }}
     .copyline {{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }}
     .copybtn {{ border:1px solid var(--line); background:#f8fafc; color:#344054; width:24px; height:24px; padding:0; border-radius:6px; font-size:13px; line-height:1; cursor:pointer; }}
     .copybtn:hover {{ background:#eef4ff; border-color:#b2ccff; }}
@@ -2736,6 +2739,41 @@ def render_dashboard(data):
       if (Number.isNaN(parsed.getTime())) return value;
       return new Intl.DateTimeFormat('pt-BR', {{day:'numeric', month:'short'}}).format(parsed).replace(/\\s+de\\s+/g, ' ');
     }}
+    function observedDailyRevenueFor(item) {{
+      const rawSources = (item.children && item.children.length) ? item.children : [item];
+      const sourcesByCode = new Map();
+      rawSources.forEach((source, index) => {{
+        const code = String(source.code || '').trim();
+        const key = code ? `code:${{code}}` : `row:${{index}}`;
+        if (!sourcesByCode.has(key)) sourcesByCode.set(key, source);
+      }});
+      const byDate = new Map();
+      [...sourcesByCode.values()].forEach(source => (source.dailySeries || []).forEach(row => {{
+        const date = String(row.date || '');
+        if (!/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(date)) return;
+        byDate.set(date, (byDate.get(date) || 0) + Number(row.revenue || 0));
+      }}));
+      return [...byDate.entries()].map(([date, revenue]) => ({{date, revenue}})).sort((a, b) => a.date.localeCompare(b.date));
+    }}
+    function salesTrendInline(item) {{
+      if (item.salesCoverageComplete === false) return '<div class="muted">7d: cobertura parcial</div>';
+      const rows = observedDailyRevenueFor(item);
+      const last14 = rows.slice(-14);
+      if (last14.length < 14) return '<div class="muted">7d: série insuficiente</div>';
+      for (let index = 1; index < last14.length; index += 1) {{
+        const previous = new Date(`${{last14[index - 1].date}}T12:00:00`);
+        const current = new Date(`${{last14[index].date}}T12:00:00`);
+        if (Number.isNaN(previous.getTime()) || Number.isNaN(current.getTime()) || current - previous !== 86400000) return '<div class="muted">7d: série incompleta</div>';
+      }}
+      const previous = last14.slice(0, 7).reduce((total, row) => total + row.revenue, 0);
+      const current = last14.slice(7).reduce((total, row) => total + row.revenue, 0);
+      if (previous <= 0 && current <= 0) return '<div class="muted">→ 7d sem vendas</div>';
+      if (previous <= 0) return '<div class="trend trend-up">↑ 7d nova venda</div>';
+      const change = (current - previous) / previous;
+      if (Math.abs(change) < .02) return '<div class="muted">→ 7d estável</div>';
+      const label = `${{Math.abs(change * 100).toLocaleString('pt-BR', {{maximumFractionDigits:1}})}}%`;
+      return `<div class="trend ${{change > 0 ? 'trend-up' : 'trend-down'}}">${{change > 0 ? '↑' : '↓'}} 7d ${{label}}</div>`;
+    }}
     function chartLongDate(value) {{
       const parsed = new Date(`${{value}}T12:00:00`);
       if (Number.isNaN(parsed.getTime())) return value;
@@ -3072,6 +3110,37 @@ def render_dashboard(data):
         <button class="promotion-confirm" type="button" data-promo-confirm="${{safe(item.code)}}">Confirmar e aplicar no Mercado Livre</button>
       </div>`;
     }}
+    function promotionScopeLabel(item) {{
+      return item.detailScope === 'family' ? 'família' : item.detailScope === 'mlbu' ? 'variação/MLBU' : item.detailScope === 'sku' ? 'SKU' : 'grupo';
+    }}
+    function promotionScopeItems(item) {{
+      const sources = (item.children && item.children.length) ? item.children : [item];
+      const seen = new Set();
+      return sources.filter(source => {{
+        const code = String(source.code || '').toUpperCase();
+        if (!/^MLB[0-9]+$/.test(code) || seen.has(code)) return false;
+        seen.add(code);
+        return true;
+      }});
+    }}
+    function promotionScopeKey(item) {{
+      return `scope:${{detailKey(item)}}`;
+    }}
+    function promotionScopePanelHtml(item) {{
+      const sources = promotionScopeItems(item);
+      const key = promotionScopeKey(item);
+      const state = promotionState.get(key) || {{}};
+      const label = promotionScopeLabel(item);
+      if (state.loading) return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consultando ${{num(sources.length)}} anúncio(s) individualmente...</div></div>`;
+      if (!state.results) return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta em lote somente leitura de ${{num(sources.length)}} MLB(s). Nenhuma promoção será criada, alterada ou encerrada.</div><button type="button" data-promo-load-scope="${{safe(key)}}" data-promo-scope-codes="${{safe(sources.map(source => String(source.code || '').toUpperCase()).join(','))}}">Consultar promoções da ${{safe(label)}}</button>${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
+      const results = state.results.map(result => {{
+        const title = result.data?.item?.title || result.code;
+        if (result.error) return `<div class="promotion-option"><b>${{safe(result.code)}}</b><p class="muted">${{safe(title)}}</p><div class="promotion-error">${{safe(result.error)}}</div></div>`;
+        const promotions = (result.data?.promotions || []).map(row => `<div class="promotion-option"><b>${{safe(row.name || row.promotion_id || row.promotion_type)}}</b><p class="muted">${{safe(row.promotion_type || '')}} | ${{safe(row.status || 'status não informado')}}</p>${{promotionDiscountBreakdown(row)}}</div>`).join('');
+        return `<div class="promotion-option"><b>${{safe(result.code)}}</b><p class="muted">${{safe(title)}}</p><div class="promotion-panel-grid">${{promotions || '<div class="muted">Nenhuma campanha elegível retornada.</div>'}}</div></div>`;
+      }}).join('');
+      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Para criar, alterar ou sair de uma promoção, abra o anúncio individual.</div><div class="promotion-panel-grid">${{results}}</div></div>`;
+    }}
     function promotionPanelHtml(item) {{
       const code = String(item.code || '').toUpperCase();
       const state = promotionState.get(code) || {{}};
@@ -3106,6 +3175,7 @@ def render_dashboard(data):
     function promotionStateUpdate(code, patch) {{
       promotionState.set(code, {{...(promotionState.get(code) || {{}}), ...patch}});
       renderTable();
+      if (activeDetailKey) renderDetailModal();
     }}
     function activatePromotionPanels() {{
       document.querySelectorAll('[data-promo-load]').forEach(button => button.addEventListener('click', async () => {{
@@ -3115,6 +3185,24 @@ def render_dashboard(data):
           const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
           promotionStateUpdate(code, {{loading:false, data, error:''}});
         }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
+      }}));
+      document.querySelectorAll('[data-promo-load-scope]').forEach(button => button.addEventListener('click', async () => {{
+        const key = button.dataset.promoLoadScope;
+        const codes = [...new Set(String(button.dataset.promoScopeCodes || '').split(',').map(code => code.trim().toUpperCase()).filter(code => /^MLB\\d+$/.test(code)))];
+        if (!codes.length) {{ promotionStateUpdate(key, {{loading:false, results:[], error:'Nenhum MLB individual foi encontrado neste grupo.'}}); return; }}
+        promotionStateUpdate(key, {{loading:true, results:null, error:''}});
+        const pending = [...codes];
+        const results = [];
+        const worker = async () => {{
+          while (pending.length) {{
+            const code = pending.shift();
+            try {{ results.push({{code, data:await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`)}}); }}
+            catch (error) {{ results.push({{code, error:error.message}}); }}
+          }}
+        }};
+        await Promise.all(Array.from({{length:Math.min(3, pending.length)}}, worker));
+        results.sort((a, b) => a.code.localeCompare(b.code, 'pt-BR'));
+        promotionStateUpdate(key, {{loading:false, results, error:''}});
       }}));
       document.querySelectorAll('[data-promo-campaign]').forEach(button => button.addEventListener('click', async () => {{
         const code = button.dataset.promoItem;
@@ -3160,9 +3248,13 @@ def render_dashboard(data):
         ? `Teste sugerido: ${{brl(item.suggestedTestPrice)}}. O valor preserva 60% do aumento observado e deve ser validado com margem, tarifa e frete.`
         : 'Nenhum preco de teste foi calculado.';
       const exactMlb = /^MLB\\d+$/.test(String(item.code || '').toUpperCase());
-      const enabled = DATA.promotionApi?.enabled === true && exactMlb;
+      const grouped = Boolean(item.detailScope);
+      const hasGroupMlbs = promotionScopeItems(item).length > 0;
+      const enabled = DATA.promotionApi?.enabled === true && (exactMlb || (grouped && hasGroupMlbs));
       const mode = enabled ? '<span class="readonly-badge">BETA TRANSACIONAL COM CONFIRMACAO</span>' : '<span class="readonly-badge">ANALISE INFORMATIVA</span>';
-      const action = enabled ? promotionPanelHtml(item) : `<div class="muted">A promocao online exige o beta, uma conta selecionada e um anuncio MLB individual. Produto pai e agrupamentos permanecem somente leitura.</div>`;
+      const action = enabled
+        ? (grouped ? promotionScopePanelHtml(item) : promotionPanelHtml(item))
+        : `<div class="muted">A promoção online exige o beta, uma conta selecionada e ao menos um anúncio MLB individual no grupo.</div>`;
       return `<div class="detail-block detail-block-wide price-signal">${{mode}}<h3>Hipotese de preco e promocao</h3><p>${{safe(analysis)}}</p><p><b>${{safe(suggestion)}}</b></p>${{action}}</div>`;
     }}
     function detailEvidence(item) {{
@@ -3183,11 +3275,7 @@ def render_dashboard(data):
         + listBlock('Causas mais provaveis', item.diagnosisHypotheses)
         + listBlock('O que fazer agora', item.testOrder);
       }}
-      if (activeDetailTab === 'promotions') {{
-        return item.detailScope
-          ? '<div class="detail-modal-empty">Promoções são consultadas somente no anúncio MLB individual. Abra uma condição de venda para avaliar elegibilidade e gerar a prévia.</div>'
-          : pricingPreviewBlock(item);
-      }}
+      if (activeDetailTab === 'promotions') return pricingPreviewBlock(item);
       const campaigns = campaignChildren(item);
       return campaigns || '<div class="detail-modal-empty">Nenhum detalhamento adicional de publicidade foi encontrado para este item.</div>';
     }}
@@ -3341,7 +3429,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div>${{campaignConfigInline(item)}}</td>
         <td class="text-cell">${{safe(item.parentId)}} · ${{num(item.optionCount)}} opcao(oes)<div class="muted">${{safe(item.catalogLabel)}}</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}${{salesTrendInline(item)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
@@ -3356,7 +3444,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
         <td class="text-cell">${{num(variationCount)}} MLBU(s)<div class="muted">${{num(group.children.length)}} MLB(s)</div></td>
         <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}${{salesTrendInline(item)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
@@ -3375,7 +3463,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(summary.campaignCount || 0)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
         <td class="text-cell">${{num(familyCount)}} família(s) · ${{num(variationCount)}} MLBU(s)<div class="muted">${{num(mlbCount)}} MLB(s)</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item,'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}${{salesTrendInline(item)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
@@ -3547,7 +3635,7 @@ def render_dashboard(data):
         <td class="text-cell">${{safe(item.campaign || item.adsCampaigns || 'Sem campanha')}}<div class="muted">${{safe(item.campaignStatus || '')}}</div>${{campaignMode ? '' : campaignConfigInline(item)}}</td>
         <td class="text-cell">${{safe(item.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(item.catalogLabel || '')}}</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}${{salesTrendInline(item)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td>
         <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{safe(item.ctrClass || '')}}</div></td><td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{safe(item.cvrClass || '')}}</div></td>
         <td class="num">${{pct(item.tacos || 0)}}<div class="muted">${{safe(tacosNote)}}</div></td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>

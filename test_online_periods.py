@@ -619,6 +619,12 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("Parte Mercado Livre", html)
         self.assertIn("Rebate nas tarifas ML", html)
         self.assertIn("discount_meli_boost_amount", html)
+        self.assertIn("function salesTrendInline(item)", html)
+        self.assertIn("7d: série insuficiente", html)
+        self.assertIn("data-promo-load-scope", html)
+        self.assertIn("Consulta em lote somente leitura", html)
+        self.assertIn("Math.min(3, pending.length)", html)
+        self.assertIn("if (activeDetailKey) renderDetailModal();", html)
 
     def test_account_daily_chart_does_not_invent_missing_snapshot_dates(self):
         latest_payload = {
