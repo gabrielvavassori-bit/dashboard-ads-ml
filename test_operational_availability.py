@@ -41,10 +41,24 @@ class OperationalAvailabilityTests(unittest.TestCase):
         self.assertIsNotNone(data)
 
     def test_empty_cache_not_presented_as_zero(self):
-        with patch.object(app, "_fetch_dash_ads_json", return_value={"ok": False}):
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=[{"ok": False}, {"status": {}}]):
             data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
         self.assertIsNone(data)
         self.assertIn("não há dados", error)
+
+    def test_initial_collection_is_presented_as_pending_without_triggering_refresh(self):
+        with patch.object(
+            app,
+            "_fetch_dash_ads_json",
+            side_effect=[{"ok": False}, {"ok": False, "status": {"status": "running"}}],
+        ) as fetch:
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertIsNone(data)
+        self.assertTrue(error.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
+        self.assertIn("coleta inicial", error)
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(fetch.call_args_list[0].args[0], "/internal/dash-ads/operational-cache")
+        self.assertEqual(fetch.call_args_list[1].args[0], "/internal/dash-ads/online-cache-status")
 
     def test_intelligence_remains_strict(self):
         with patch.object(app, "_fetch_dash_ads_json", return_value=self.payload()):
