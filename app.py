@@ -120,10 +120,15 @@ SALES_INTELLIGENCE_HTML = pathlib.Path(__file__).resolve().parent / "assets" / "
 # 2 dashboards em paralelo eh saudavel ate em 512MB-1GB RAM.
 _dashboard_semaphore = threading.Semaphore(int(os.environ.get("MAX_PARALLEL_DASHBOARDS", "2")))
 
-# Limita threads simultaneas em /online (ThreadingHTTPServer nao tem teto proprio).
-# Valor acima do total de clientes conectados hoje: nao bloqueia uso legitimo,
-# so evita que threads presas esperando o agente-ml se acumulem sem limite.
-_online_dashboard_semaphore = threading.Semaphore(int(os.environ.get("MAX_PARALLEL_ONLINE", "8")))
+# /online expande milhares de linhas do cache em objetos Python e depois as
+# serializa para HTML. No plano Starter (512 MB), uma unica conta grande pode
+# usar quase todo o limite durante essa etapa. Mantenha uma renderizacao por vez
+# e segure a vaga ate a resposta terminar de ser escrita.
+try:
+    MAX_PARALLEL_ONLINE = max(1, min(2, int(os.environ.get("MAX_PARALLEL_ONLINE", "1"))))
+except (TypeError, ValueError):
+    MAX_PARALLEL_ONLINE = 1
+_online_dashboard_semaphore = threading.Semaphore(MAX_PARALLEL_ONLINE)
 
 
 # ------------------ Helpers HTTP ------------------
@@ -2702,28 +2707,28 @@ class Handler(BaseHTTPRequestHandler):
                         date_to=period["dateTo"],
                         requested_period=period,
                     )
-                if not dashboard_data:
-                    if message.startswith(ONLINE_CACHE_PENDING_PREFIX):
-                        _send_html(
-                            self,
-                            templates.render_online_cache_pending(
-                                message[len(ONLINE_CACHE_PENDING_PREFIX):],
-                            ),
-                            202,
-                        )
+                    if not dashboard_data:
+                        if message.startswith(ONLINE_CACHE_PENDING_PREFIX):
+                            _send_html(
+                                self,
+                                templates.render_online_cache_pending(
+                                    message[len(ONLINE_CACHE_PENDING_PREFIX):],
+                                ),
+                                202,
+                            )
+                            return
+                        if message.startswith(ONLINE_CACHE_INTEGRITY_PREFIX):
+                            _send_html(
+                                self,
+                                templates.render_online_cache_blocked(
+                                    message[len(ONLINE_CACHE_INTEGRITY_PREFIX):],
+                                ),
+                                409,
+                            )
+                            return
+                        _send_html(self, templates.render_error_page(message), 503)
                         return
-                    if message.startswith(ONLINE_CACHE_INTEGRITY_PREFIX):
-                        _send_html(
-                            self,
-                            templates.render_online_cache_blocked(
-                                message[len(ONLINE_CACHE_INTEGRITY_PREFIX):],
-                            ),
-                            409,
-                        )
-                        return
-                    _send_html(self, templates.render_error_page(message), 503)
-                    return
-                _send_html(self, render_dashboard(dashboard_data))
+                    _send_html(self, render_dashboard(dashboard_data))
                 return
             if path in ("/teste", "/teste/"):
                 self._beta_entry()

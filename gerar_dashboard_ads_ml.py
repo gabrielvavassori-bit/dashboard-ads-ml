@@ -1367,8 +1367,39 @@ def anonymize_dashboard_data(data):
     return demo
 
 
+def _compact_dashboard_transport(data):
+    """Remove copias derivaveis antes de embutir o dashboard no HTML.
+
+    O builder usa as listas completas no servidor para calcular KPIs, mas o
+    navegador consegue reconstruir os filtros a partir de ``items``. Manter as
+    mesmas linhas em cinco listas e ainda anexar o snapshot bruto multiplicava
+    o JSON de contas grandes e derrubava a instancia de 512 MB durante dumps.
+    """
+    transport = dict(data)
+    for key in ("decisionItems", "adsNoSales", "highTacos", "salesNoAds", "adsByProduct", "finishedNoSku"):
+        transport.pop(key, None)
+
+    online_beta = transport.get("onlineBeta")
+    if isinstance(online_beta, dict):
+        online_beta = dict(online_beta)
+        latest = online_beta.pop("latest", None)
+        if isinstance(latest, dict):
+            latest_meta = latest.get("latest") if isinstance(latest.get("latest"), dict) else {}
+            ads = latest.get("ads") if isinstance(latest.get("ads"), dict) else {}
+            sales = latest.get("sales") if isinstance(latest.get("sales"), dict) else {}
+            ads_items = ads.get("items") if isinstance(ads.get("items"), list) else []
+            sales_items = sales.get("items") if isinstance(sales.get("items"), dict) else {}
+            online_beta["cacheSummary"] = {
+                "updatedAt": latest_meta.get("updated_at") or latest.get("updated_at") or "",
+                "adsItems": ads.get("items_total") if ads.get("items_total") is not None else len(ads_items),
+                "salesItems": sales.get("items_cached") if sales.get("items_cached") is not None else len(sales_items),
+            }
+        transport["onlineBeta"] = online_beta
+    return transport
+
+
 def render_dashboard(data):
-    payload = json.dumps(data, ensure_ascii=False)
+    payload = json.dumps(_compact_dashboard_transport(data), ensure_ascii=False)
     logo_uri = logo_data_uri()
     client_name = data.get("kpis", {}).get("clientName") or ""
     title_suffix = f" - {html.escape(client_name)}" if client_name else ""
@@ -1888,6 +1919,13 @@ def render_dashboard(data):
   </a>
   <script>
     const DATA = {payload};
+    const allItems = Array.isArray(DATA.items) ? DATA.items : [];
+    DATA.decisionItems ??= allItems.filter(item => item && item.sku);
+    DATA.adsNoSales ??= allItems.filter(item => Number(item?.investment || 0) > 0 && Number(item?.adsRevenue || 0) <= 0);
+    DATA.highTacos ??= allItems.filter(item => Number(item?.investment || 0) > 0 && Number(item?.tacos || 0) > 0.03);
+    DATA.salesNoAds ??= allItems.filter(item => Number(item?.units || 0) > 0 && Number(item?.investment || 0) === 0);
+    DATA.adsByProduct ??= DATA.decisionItems;
+    DATA.finishedNoSku ??= allItems.filter(item => !item?.sku);
     const brl = value => value.toLocaleString('pt-BR', {{ style:'currency', currency:'BRL' }});
     const pct = value => (value * 100).toLocaleString('pt-BR', {{ minimumFractionDigits:2, maximumFractionDigits:2 }}) + '%';
     const num = value => value.toLocaleString('pt-BR', {{ maximumFractionDigits:0 }});
@@ -3463,15 +3501,13 @@ def render_dashboard(data):
         ['Itens OK', num(summary.matchedItems || 0), 'good'],
         ['Itens divergentes', num((summary.divergentItems || 0) + (summary.missingItems || 0)), (summary.divergentItems || summary.missingItems) ? 'danger' : 'good'],
       ].map(([label, value, cls]) => `<div class="card kpi ${{cls}}"><small>${{label}}</small><strong>${{value}}</strong></div>`).join('');
-      const latest = beta.latest || {{}};
-      const latestAds = latest.ads || {{}};
-      const latestSales = latest.latest?.sales || latest.sales || {{}};
+      const cacheSummary = beta.cacheSummary || {{}};
       const warning = requested.warning ? `<span class="status-warn">${{safe(requested.warning)}}</span><br>` : '';
       statusNode.innerHTML = `
         <span class="${{periodMatch ? 'status-ok' : 'status-warn'}}">${{periodMatch ? 'Periodo solicitado aplicado ao cache online.' : 'O cache retornou outro intervalo; leitura deve ser conferida.'}}</span><br>
         ${{warning}}
     Fonte: ${{safe(snapshot.snapshotSource || 'cache online')}} | Frequência prevista: ${{safe(snapshot.snapshotCadence || '-')}}<br>
-    Cache online: ${{safe(latest.latest?.updated_at || latest.updated_at || '-')}} | Ads online: ${{num(latestAds.items_total || 0)}} linhas | Vendas online em cache: ${{num(latestSales.items_cached || 0)}} itens.
+    Cache online: ${{safe(cacheSummary.updatedAt || '-')}} | Ads online: ${{num(cacheSummary.adsItems || 0)}} linhas | Vendas online em cache: ${{num(cacheSummary.salesItems || 0)}} itens.
       `;
       const rows = (beta.items || []).map(item => `
         <tr>
