@@ -3245,7 +3245,7 @@ def render_dashboard(data):
         const source = {{...item, code:result.code, currentPrice:result.data?.item?.price || item.currentPrice}};
         return `<div class="promotion-option"><b>${{safe(result.code)}}</b><p class="muted">${{safe(title)}}</p>${{promotionTableHtml(source, result.data?.promotions || [], false)}}</div>`;
       }}).join('');
-      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Para criar, alterar ou sair de uma promoção, abra o anúncio individual.</div><div class="promotion-panel-grid">${{results}}</div></div>`;
+      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. A consulta em grupo é somente leitura; para participar, abra o anúncio individual.</div><div class="promotion-panel-grid">${{results}}</div></div>`;
     }}
     function promotionPanelHtml(item) {{
       const code = String(item.code || '').toUpperCase();
@@ -3258,7 +3258,7 @@ def render_dashboard(data):
       const custom = `<div class="promotion-option"><b>Criar desconto proprio</b><p class="muted">Desconto individual: minimo 5%, menor que 80% e duracao maxima de 14 dias.</p>${{customAllowed
         ? `<div class="promotion-form"><label>Preco promocional<input type="number" min="0.01" step="0.01" value="${{Number(item.suggestedTestPrice || 0) || ''}}" data-promo-custom-price></label><label>Inicio<input type="date" value="${{promotionDate(0)}}" data-promo-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-finish></label><button type="button" data-promo-custom="${{safe(code)}}">Gerar previa</button></div>`
         : `<div class="muted">Indisponivel: ${{safe(data.price_discount_read_only_reason || 'o anuncio nao atende aos requisitos atuais')}}.</div>`}}</div>`;
-      return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promoções do Mercado Livre</h4><div class="muted">Conta e anúncio validados: ${{safe(data.item?.title || code)}}; preço atual ${{promotionMoney(data.item?.price)}}. Participar ou Alterar gera uma prévia; a aplicação só ocorre depois da confirmação final.</div>${{campaigns}}<div class="promotion-panel-grid">${{custom}}</div>${{promotionPreviewHtml(item, state)}}${{state.result ? '<div class="promotion-success">Promoção aplicada e confirmada pelo Mercado Livre.</div>' : ''}}${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
+      return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promoções do Mercado Livre</h4><div class="muted">Conta e anúncio validados: ${{safe(data.item?.title || code)}}; preço atual ${{promotionMoney(data.item?.price)}}. Participar gera uma prévia; a aplicação só ocorre depois da confirmação final.</div>${{campaigns}}<div class="promotion-panel-grid">${{custom}}</div>${{promotionPreviewHtml(item, state)}}${{state.result ? '<div class="promotion-success">Promoção aplicada e confirmada pelo Mercado Livre.</div>' : ''}}${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
     }}
     async function promotionApiRequest(path, method = 'GET', body = null) {{
       const options = {{ method, headers: {{'Accept':'application/json'}} }};
