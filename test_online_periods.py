@@ -625,6 +625,12 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("Consulta em lote somente leitura", html)
         self.assertIn("Math.min(3, pending.length)", html)
         self.assertIn("if (activeDetailKey) renderDetailModal();", html)
+        self.assertIn('class="promotion-table"', html)
+        self.assertIn("function promotionTableRow(item, row, index, allowAction)", html)
+        self.assertIn(">Mercado Livre</th>", html)
+        self.assertIn(">Vendedor</th>", html)
+        self.assertIn(">Rebate ML</th>", html)
+        self.assertIn("Ativa: alteração e saída ainda não disponíveis", html)
 
     def test_account_daily_chart_does_not_invent_missing_snapshot_dates(self):
         latest_payload = {
