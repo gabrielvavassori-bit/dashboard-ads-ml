@@ -1700,11 +1700,14 @@ def render_dashboard(data):
     .promotion-table {{ width:100%; min-width:980px; border-collapse:collapse; font-size:12px; }}
     .promotion-table th {{ padding:9px 8px; background:#f8fafc; color:#667085; font-size:10px; letter-spacing:.03em; text-align:left; text-transform:uppercase; white-space:nowrap; }}
     .promotion-table td {{ padding:9px 8px; border-top:1px solid #eaecf0; vertical-align:top; }}
+    .promotion-table tr.promotion-best-discount {{ background:#f0fdf4; }}
+    .promotion-table tr.promotion-best-subsidy {{ box-shadow:inset 3px 0 0 #12b76a; }}
     .promotion-table td.num {{ text-align:right; white-space:nowrap; }}
     .promotion-table b {{ display:block; color:var(--ink); }}
     .promotion-table small {{ display:block; margin-top:2px; color:var(--muted); }}
     .promotion-status {{ display:inline-block; margin-top:4px; padding:2px 6px; border-radius:999px; background:#ecfdf3; color:#027a48; font-size:10px; font-weight:800; text-transform:uppercase; }}
     .promotion-status.candidate {{ background:#eff8ff; color:#175cd3; }}
+    .promotion-rank {{ display:inline-block; margin-top:4px; padding:2px 6px; border-radius:999px; background:#d1fadf; color:#027a48; font-size:10px; font-weight:800; white-space:nowrap; }}
     .promotion-table .promotion-form {{ margin:0; min-width:170px; }}
     .promotion-table .promotion-form input {{ width:104px; }}
     .promotion-option {{ padding:10px; border:1px solid var(--line); border-radius:9px; background:#fff; }}
@@ -3137,16 +3140,60 @@ def render_dashboard(data):
       }}
       return promotionValueCell(row.discount_percentage, original);
     }}
+    function promotionFriendlyType(row) {{
+      const type = String(row.promotion_type || '').toUpperCase();
+      const labels = {{
+        LIGHTNING:'Oferta relâmpago', PRICE_DISCOUNT:'Desconto por porcentagem',
+        SELLER_CAMPAIGN:'Campanha do vendedor', MARKETPLACE_CAMPAIGN:'Campanha Mercado Livre',
+        DEAL:'Oferta especial', SELLER_COUPON_CAMPAIGN:'Cupom do vendedor'
+      }};
+      return labels[type] || 'Promoção';
+    }}
+    function promotionDisplayName(row) {{
+      const name = String(row.name || '').trim();
+      const type = String(row.promotion_type || '').trim();
+      return !name || name.toUpperCase() === type.toUpperCase() ? promotionFriendlyType(row) : name;
+    }}
+    function promotionDateLabel(value) {{
+      const match = String(value || '').match(/^(\\d{{4}})-(\\d{{2}})-(\\d{{2}})/);
+      return match ? `${{match[3]}}/${{match[2]}}/${{match[1]}}` : 'Não informado';
+    }}
     function promotionPeriod(row) {{
-      const start = String(row.start_date || '').slice(0, 10);
-      const finish = String(row.finish_date || '').slice(0, 10);
-      return start || finish ? `${{start || 'sem início'}} a ${{finish || 'sem fim'}}` : 'Vigência não informada';
+      return `Início: ${{promotionDateLabel(row.start_date)}} · Encerramento: ${{promotionDateLabel(row.finish_date)}}`;
+    }}
+    function promotionStatusLabel(row) {{
+      const status = String(row.status || '').toLowerCase();
+      if (status === 'started' || status === 'active') return 'Ativa';
+      if (status === 'scheduled') return 'Programada';
+      if (status === 'candidate') return 'Elegível';
+      return status ? 'Disponível' : 'Status não informado';
     }}
     function promotionStatusClass(row) {{
       const status = String(row.status || '').toLowerCase();
       return status === 'started' || status === 'active' ? '' : 'candidate';
     }}
-    function promotionTableRow(item, row, index, allowAction) {{
+    function promotionPayoutScore(row, item) {{
+      const price = Number(row.suggested_discounted_price || row.price || item.suggestedTestPrice || 0);
+      const rebate = Number(row.discount_meli_boost_amount || 0);
+      return (Number.isFinite(price) ? price : 0) + (Number.isFinite(rebate) ? rebate : 0);
+    }}
+    function promotionRankRows(item, rows) {{
+      const normalized = rows.map((row, index) => ({{row, index, total:Number(promotionTotalCellValue(row)), subsidy:Number(row.meli_percentage), rebate:Number(row.discount_meli_boost_amount), payout:promotionPayoutScore(row, item)}}));
+      const highestDiscount = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.total) ? entry.total : 0));
+      const highestSubsidy = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.subsidy) ? entry.subsidy : 0));
+      return normalized.sort((a, b) =>
+        (b.total - a.total) || (b.subsidy - a.subsidy) || (b.rebate - a.rebate) || (b.payout - a.payout) || a.index - b.index
+      ).map(entry => ({{...entry, bestDiscount:entry.total > 0 && entry.total === highestDiscount, bestSubsidy:entry.subsidy > 0 && entry.subsidy === highestSubsidy}}));
+    }}
+    function promotionTotalCellValue(row) {{
+      const original = Number(row.original_price);
+      const price = Number(row.suggested_discounted_price || row.price);
+      if (Number.isFinite(original) && Number.isFinite(price) && original > price && price > 0) return (original - price) / original * 100;
+      const percentage = Number(row.discount_percentage);
+      return Number.isFinite(percentage) ? percentage : 0;
+    }}
+    function promotionTableRow(item, entry, allowAction) {{
+      const {{row, index, bestDiscount, bestSubsidy}} = entry;
       const original = Number(row.original_price || item.currentPrice || item.lastPrice || 0);
       const price = Number(row.suggested_discounted_price || row.price || item.suggestedTestPrice || 0);
       const status = String(row.status || 'status não informado');
@@ -3158,12 +3205,16 @@ def render_dashboard(data):
       const rebate = Number(row.discount_meli_boost_amount);
       const rebatePercent = Number(row.discount_meli_boosted_percentage);
       const rebateText = Number.isFinite(rebate) && rebate > 0 ? `<b>${{brl(rebate)}}</b>${{Number.isFinite(rebatePercent) && rebatePercent > 0 ? `<small>${{rebatePercent.toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</small>` : ''}}` : '<span class="muted">—</span>';
-      return `<tr><td><b>${{safe(row.name || row.promotion_id || row.promotion_type)}}</b><small>${{safe(row.promotion_type || '')}} · ${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(status)}}</span></td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
+      const classes = `${{bestDiscount ? 'promotion-best-discount ' : ''}}${{bestSubsidy ? 'promotion-best-subsidy' : ''}}`;
+      const discountBadge = bestDiscount ? '<span class="promotion-rank">Maior desconto</span>' : '';
+      const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
+      return `<tr class="${{classes}}"><td><b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
     function promotionTableHtml(item, rows, allowAction = false) {{
-      const body = rows.map((row, index) => promotionTableRow(item, row, index, allowAction)).join('');
+      const ranked = promotionRankRows(item, rows);
+      const body = ranked.map(entry => promotionTableRow(item, entry, allowAction)).join('');
       if (!body) return '<div class="detail-modal-empty">Nenhuma campanha elegível retornada.</div>';
-      return `<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Promoção</th><th>Mercado Livre</th><th>Vendedor</th><th>Total</th><th>Preço original</th><th>Preço promocional</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div>`;
+      return `<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Promoção e período</th><th>Mercado Livre</th><th>Vendedor</th><th>Total</th><th>Preço original</th><th>Preço promocional</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div>`;
     }}
     function promotionScopeLabel(item) {{
       return item.detailScope === 'family' ? 'família' : item.detailScope === 'mlbu' ? 'variação/MLBU' : item.detailScope === 'sku' ? 'SKU' : 'grupo';
