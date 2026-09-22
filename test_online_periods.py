@@ -614,6 +614,11 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("Gerar previa", html)
         self.assertIn("Confirmar e aplicar no Mercado Livre", html)
         self.assertIn("Aplicar esta promocao real no anuncio", html)
+        self.assertIn("Desconto total", html)
+        self.assertIn("Parte do vendedor", html)
+        self.assertIn("Parte Mercado Livre", html)
+        self.assertIn("Rebate nas tarifas ML", html)
+        self.assertIn("discount_meli_boost_amount", html)
 
     def test_account_daily_chart_does_not_invent_missing_snapshot_dates(self):
         latest_payload = {

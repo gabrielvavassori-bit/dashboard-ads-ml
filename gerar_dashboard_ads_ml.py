@@ -1695,6 +1695,10 @@ def render_dashboard(data):
     .promotion-panel-grid {{ display:grid; grid-template-columns:repeat(2,minmax(240px,1fr)); gap:10px; margin-top:10px; }}
     .promotion-option {{ padding:10px; border:1px solid var(--line); border-radius:9px; background:#fff; }}
     .promotion-option p {{ margin:5px 0; }}
+    .promotion-discount-breakdown {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin:9px 0; }}
+    .promotion-discount-breakdown > div {{ padding:7px; border-radius:7px; background:#f8fafc; min-width:0; }}
+    .promotion-discount-breakdown span {{ display:block; color:var(--muted); font-size:10px; font-weight:800; }}
+    .promotion-discount-breakdown b {{ display:block; margin-top:3px; color:var(--ink); font-size:12px; overflow-wrap:anywhere; }}
     .promotion-form {{ display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:8px; }}
     .promotion-form label {{ display:flex; flex-direction:column; gap:4px; color:var(--muted); font-size:11px; font-weight:800; }}
     .promotion-form input {{ width:142px; min-width:0; padding:8px; border:1px solid var(--line); border-radius:8px; }}
@@ -1764,7 +1768,7 @@ def render_dashboard(data):
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
     @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .chart-head {{ align-items:stretch; }} .chart-metric-tabs {{ width:100%; }} .chart-metric-button {{ flex:1 1 auto; }} .campaign-config-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .campaign-child-tools {{ align-items:stretch; flex-direction:column; }} .campaign-child-tools input {{ width:100%; }} .campaign-child-count {{ white-space:normal; }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
     @media (max-width:700px) {{ .detail-modal-backdrop {{ padding:0; }} .detail-modal-shell {{ width:100vw; max-width:100vw; height:100dvh; max-height:none; border:0; border-radius:0; }} .detail-modal-head {{ padding:12px; }} .detail-modal-tabs {{ grid-auto-flow:row; grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-columns:auto; min-width:0; min-height:98px; padding:8px 12px; overflow:hidden; }} .detail-modal-tabs button {{ width:100%; min-width:0; }} .detail-modal-body {{ padding:12px; }} .detail-modal-body .detail-grid {{ grid-template-columns:1fr; }} }}
-    @media (max-width:700px) {{ .promotion-panel-grid {{ grid-template-columns:1fr; }} .promotion-form label, .promotion-form input, .promotion-form button {{ width:100%; }} }}
+    @media (max-width:700px) {{ .promotion-panel-grid {{ grid-template-columns:1fr; }} .promotion-discount-breakdown {{ grid-template-columns:1fr; }} .promotion-form label, .promotion-form input, .promotion-form button {{ width:100%; }} }}
   </style>
 </head>
 <body>
@@ -3024,6 +3028,32 @@ def render_dashboard(data):
       if (Number(row.suggested_discounted_price || 0) > 0) parts.push(`sugerido ${{brl(Number(row.suggested_discounted_price))}}`);
       return parts.length ? parts.join(' | ') : 'O Mercado Livre validara o limite na previa.';
     }}
+    function promotionDiscountBreakdown(row) {{
+      const original = Number(row.original_price);
+      const price = Number(row.price);
+      const totalAmount = Number.isFinite(original) && Number.isFinite(price) && original > price
+        ? original - price : null;
+      const totalPercent = totalAmount !== null ? (totalAmount / original) * 100 : Number(row.discount_percentage);
+      const sellerPercent = Number(row.seller_percentage);
+      const meliPercent = Number(row.meli_percentage);
+      const hasSeller = Number.isFinite(sellerPercent) && sellerPercent >= 0;
+      const hasMeli = Number.isFinite(meliPercent) && meliPercent >= 0;
+      const percent = value => `${{value.toLocaleString('pt-BR', {{minimumFractionDigits:0, maximumFractionDigits:2}})}}%`;
+      const amountFromPercent = value => Number.isFinite(original) && original > 0 ? brl(original * value / 100) : 'N/D';
+      const total = Number.isFinite(totalPercent) && totalPercent >= 0
+        ? `${{totalAmount !== null ? brl(totalAmount) + ' | ' : ''}}${{percent(totalPercent)}}`
+        : 'N/D';
+      const seller = hasSeller ? `${{amountFromPercent(sellerPercent)}} | ${{percent(sellerPercent)}}` : 'N/D';
+      const meli = hasMeli ? `${{amountFromPercent(meliPercent)}} | ${{percent(meliPercent)}}` : 'N/D';
+      const boostAmount = Number(row.discount_meli_boost_amount);
+      const boostPercent = Number(row.discount_meli_boosted_percentage);
+      const hasBoost = row.boosted_offer === true || (Number.isFinite(boostAmount) && boostAmount > 0) || (Number.isFinite(boostPercent) && boostPercent > 0);
+      const boostParts = [];
+      if (Number.isFinite(boostAmount) && boostAmount > 0) boostParts.push(brl(boostAmount));
+      if (Number.isFinite(boostPercent) && boostPercent > 0) boostParts.push(percent(boostPercent));
+      const boost = hasBoost ? (boostParts.length ? boostParts.join(' | ') : 'Informado pelo Mercado Livre') : 'N/D';
+      return `<div class="promotion-discount-breakdown"><div><span>Desconto total</span><b>${{total}}</b></div><div><span>Parte do vendedor</span><b>${{seller}}</b></div><div><span>Parte Mercado Livre</span><b>${{meli}}</b></div><div><span>Rebate nas tarifas ML</span><b>${{boost}}</b></div></div>`;
+    }}
     function promotionPreviewHtml(item, state) {{
       if (!state.preview) return '';
       const summary = state.preview.summary || {{}};
@@ -3044,7 +3074,7 @@ def render_dashboard(data):
       const campaigns = (data.promotions || []).map((row, index) => {{
         const supported = row.action_supported === true;
         const price = Number(row.suggested_discounted_price || row.price || item.suggestedTestPrice || 0);
-        return `<div class="promotion-option"><b>${{safe(row.name || row.promotion_id || row.promotion_type)}}</b><p class="muted">${{safe(row.promotion_type)}} | ${{safe(row.status || 'status nao informado')}}</p><p>${{safe(promotionLimits(row))}}</p>${{supported
+        return `<div class="promotion-option"><b>${{safe(row.name || row.promotion_id || row.promotion_type)}}</b><p class="muted">${{safe(row.promotion_type)}} | ${{safe(row.status || 'status nao informado')}}</p><p>${{safe(promotionLimits(row))}}</p>${{promotionDiscountBreakdown(row)}}${{supported
           ? `<div class="promotion-form"><label>Preco promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label><button type="button" data-promo-campaign="${{index}}" data-promo-item="${{safe(code)}}">Gerar previa</button></div>`
           : `<div class="muted">Somente leitura: ${{safe(row.read_only_reason || 'tipo ainda nao suportado para adesao pelo painel')}}.</div>`}}</div>`;
       }}).join('');
