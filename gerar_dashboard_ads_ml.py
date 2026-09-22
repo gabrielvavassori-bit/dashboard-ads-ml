@@ -3244,6 +3244,7 @@ def render_dashboard(data):
         renderDetailModal();
       }}));
       activateDailyCharts();
+      activatePromotionPanels();
     }}
     function openDetailModal(key) {{
       activeDetailKey = key;
