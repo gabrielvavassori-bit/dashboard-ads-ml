@@ -5,6 +5,34 @@ from pathlib import Path
 
 
 class PromotionsGuideLookupTests(unittest.TestCase):
+    def test_campaign_row_shows_product_identity_and_keeps_actions_in_settings(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        function = source[
+            source.index('    function promotionTableRow'):
+            source.index('    function promotionTableHtml')
+        ].replace('{{', '{').replace('}}', '}')
+        stubs = """
+        const safe = value => String(value ?? '');
+        const productImage = item => `<img src="${item.thumbnailUrl}">`;
+        const promotionDisplayName = row => row.name;
+        const promotionPeriod = () => 'Período';
+        const promotionStatusClass = () => '';
+        const promotionStatusLabel = () => 'Elegível';
+        const promotionValueCell = () => '0%';
+        const promotionTotalCell = () => '10%';
+        const promotionLimits = () => '';
+        const promotionReceiptCell = () => 'Não calculado';
+        const brl = value => `R$ ${value}`;
+        """
+        script = stubs + function + "\nconsole.log(promotionTableRow({code:'MLB111'}, {row:{name:'10.10',can_join:true,suggested_discounted_price:71.9},index:2}, true, {code:'MLB111',title:'Lona Azul',sku:'LAZ-3X3',thumbnailUrl:'https://example.test/foto.jpg'}));"
+        html = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout
+        self.assertIn('Lona Azul', html)
+        self.assertIn('SKU LAZ-3X3', html)
+        self.assertIn('foto.jpg', html)
+        self.assertIn('<details class="promotion-row-settings">', html)
+        self.assertLess(html.index('<summary'), html.index('data-promo-campaign-price="2"'))
+        self.assertIn('data-promo-item="MLB111"', html)
+
     def test_campaign_view_groups_variations_without_losing_individual_prices(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         function = source[

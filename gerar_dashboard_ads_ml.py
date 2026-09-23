@@ -1715,6 +1715,14 @@ def render_dashboard(data):
     .promotion-scope-view button {{ width:auto; padding:6px 10px; background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:6px; font-size:12px; }}
     .promotion-scope-view button[aria-pressed="true"] {{ background:var(--ink); color:#fff; }}
     .promotion-scope-list h5 {{ margin:0 0 3px; font-size:14px; }}
+    .promotion-listing-identity {{ display:flex; align-items:center; gap:8px; min-width:220px; }}
+    .promotion-listing-identity .product-thumbnail {{ flex:0 0 42px; width:42px; height:42px; }}
+    .promotion-listing-name, .promotion-listing-sku {{ font-weight:800; color:var(--ink) !important; white-space:normal; }}
+    .promotion-row-settings {{ position:relative; display:inline-block; }}
+    .promotion-row-settings > summary {{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:28px; border:1px solid #98a2b3; border-radius:5px; color:#344054; background:#fff; font-size:18px; line-height:1; cursor:pointer; list-style:none; }}
+    .promotion-row-settings > summary::-webkit-details-marker {{ display:none; }}
+    .promotion-row-settings[open] > summary {{ background:#eff4ff; border-color:#6172f3; }}
+    .promotion-row-settings-panel {{ display:grid; gap:7px; min-width:178px; margin-top:5px; padding:8px; border:1px solid var(--line); border-radius:6px; background:#fff; box-shadow:0 6px 16px rgba(16,24,40,.12); }}
     .promotion-table-wrap {{ margin-top:10px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#fff; }}
     .promotion-table {{ width:100%; min-width:980px; border-collapse:collapse; font-size:12px; }}
     .promotion-table th {{ padding:9px 8px; background:#f8fafc; color:#667085; font-size:10px; letter-spacing:.03em; text-align:left; text-transform:uppercase; white-space:nowrap; }}
@@ -3316,11 +3324,14 @@ def render_dashboard(data):
       const canJoin = allowAction && row.can_join === true && !active;
       const canUpdate = allowAction && row.can_update === true && active;
       const canRemove = allowAction && row.can_leave === true && active;
-      const action = canJoin || canUpdate
+      const actionControls = canJoin || canUpdate
         ? `<div class="promotion-form"><label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label><button type="button" title="Revisar preço e condições antes de confirmar a alteração" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Alterar' : 'Participar'}}</button>${{canRemove ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>` : ''}}</div>`
         : (canRemove
           ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>`
           : `<span class="muted">${{safe(row.read_only_reason || 'Somente leitura')}}</span>`);
+      const action = listing && (canJoin || canUpdate || canRemove)
+        ? `<details class="promotion-row-settings"><summary aria-label="Configurar promoção de ${{safe(item.code)}}" title="Configurar participação, alteração ou saída">⚙</summary><div class="promotion-row-settings-panel">${{actionControls}}</div></details>`
+        : actionControls;
       const rebate = Number(row.discount_meli_boost_amount);
       const rebatePercent = Number(row.discount_meli_boosted_percentage);
       const rebateText = Number.isFinite(rebate) && rebate > 0 ? `<b>${{brl(rebate)}}</b>${{Number.isFinite(rebatePercent) && rebatePercent > 0 ? `<small>${{rebatePercent.toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</small>` : ''}}` : '<span class="muted">—</span>';
@@ -3328,7 +3339,7 @@ def render_dashboard(data):
       const payoutBadge = bestPayout ? '<span class="promotion-rank">Maior recebimento estimado</span>' : '';
       const discountBadge = bestDiscount ? '<span class="promotion-rank">Maior desconto</span>' : '';
       const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
-      const identity = listing ? `<b>${{safe(listing.code)}}</b><small>${{safe(listing.title)}}</small>${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
+      const identity = listing ? `<div class="promotion-listing-identity">${{productImage({{thumbnailUrl:listing.thumbnailUrl, title:listing.title}})}}<div><b>${{safe(listing.code)}}</b><small class="promotion-listing-name">${{safe(listing.title)}}</small>${{listing.sku ? `<small class="promotion-listing-sku">SKU ${{safe(listing.sku)}}</small>` : ''}}${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}</div></div>` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
       return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
     function promotionTableHtml(item, rows, allowAction = false) {{
@@ -3388,6 +3399,8 @@ def render_dashboard(data):
       const byCampaign = promotionCampaignGroups(state.results).map(group => {{
         const listings = group.listings.sort((a, b) => (a.mlbu || '').localeCompare(b.mlbu || '', 'pt-BR') || a.code.localeCompare(b.code, 'pt-BR'));
         const body = listings.map(listing => {{
+          const sourceItem = sources.find(source => String(source.code).toUpperCase() === listing.code) || {{}};
+          listing = {{...listing, sku:sourceItem.sku || '', thumbnailUrl:sourceItem.thumbnailUrl || '', mlbu:sourceItem.userProductId || listing.mlbu}};
           const source = {{...item, code:listing.code, currentPrice:state.results.find(result => result.code === listing.code)?.data?.item?.price || item.currentPrice}};
           const individualState = promotionState.get(listing.code) || {{}};
           const entry = {{row:listing.row, index:listing.index, payout:promotionReceiptValue(listing.row), bestPayout:false, bestDiscount:false, bestSubsidy:false}};
