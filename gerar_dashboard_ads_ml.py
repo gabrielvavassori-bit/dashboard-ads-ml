@@ -1711,6 +1711,10 @@ def render_dashboard(data):
     .promotion-panel h4 {{ margin:0 0 8px; font-size:14px; }}
     .promotion-panel-grid {{ display:grid; grid-template-columns:repeat(2,minmax(240px,1fr)); gap:10px; margin-top:10px; }}
     .promotion-scope-list {{ grid-template-columns:1fr; }}
+    .promotion-scope-view {{ display:flex; gap:6px; margin:12px 0; }}
+    .promotion-scope-view button {{ width:auto; padding:6px 10px; background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:6px; font-size:12px; }}
+    .promotion-scope-view button[aria-pressed="true"] {{ background:var(--ink); color:#fff; }}
+    .promotion-scope-list h5 {{ margin:0 0 3px; font-size:14px; }}
     .promotion-table-wrap {{ margin-top:10px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#fff; }}
     .promotion-table {{ width:100%; min-width:980px; border-collapse:collapse; font-size:12px; }}
     .promotion-table th {{ padding:9px 8px; background:#f8fafc; color:#667085; font-size:10px; letter-spacing:.03em; text-align:left; text-transform:uppercase; white-space:nowrap; }}
@@ -3303,7 +3307,7 @@ def render_dashboard(data):
       const receipt = Number(quote.receipt_before_cost_tax || 0);
       return `<b>${{brl(receipt)}}</b><small>${{brl(price)}} − tarifa ${{brl(fee)}} − frete ${{brl(shipping)}}${{rebate > 0 ? ` + rebate ${{brl(rebate)}}` : ''}}</small><small>${{safe(quote.label || 'Antes de custo e imposto')}}</small>`;
     }}
-    function promotionTableRow(item, entry, allowAction) {{
+    function promotionTableRow(item, entry, allowAction, listing = null) {{
       const {{row, index, payout, bestPayout, bestDiscount, bestSubsidy}} = entry;
       const original = Number(row.original_price || item.currentPrice || item.lastPrice || 0);
       const price = Number(row.suggested_discounted_price || row.price || item.suggestedTestPrice || 0);
@@ -3324,7 +3328,8 @@ def render_dashboard(data):
       const payoutBadge = bestPayout ? '<span class="promotion-rank">Maior recebimento estimado</span>' : '';
       const discountBadge = bestDiscount ? '<span class="promotion-rank">Maior desconto</span>' : '';
       const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
-      return `<tr class="${{classes}}"><td><b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
+      const identity = listing ? `<b>${{safe(listing.code)}}</b><small>${{safe(listing.title)}}</small>${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
+      return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
     function promotionTableHtml(item, rows, allowAction = false) {{
       const ranked = promotionRankRows(item, rows);
@@ -3349,6 +3354,21 @@ def render_dashboard(data):
       if (item.promotionGuide) return `scope:guide:${{item.detailScope}}:${{item.detailId}}`;
       return `scope:${{detailKey(item)}}`;
     }}
+    function promotionCampaignGroups(results) {{
+      const groups = new Map();
+      results.forEach(result => {{
+        if (!result.data) return;
+        (result.data.promotions || []).forEach((row, index) => {{
+          const type = String(row.promotion_type || '').toUpperCase();
+          const id = String(row.promotion_id || row.campaign_id || '').trim();
+          const name = promotionDisplayName(row);
+          const key = id ? `${{type}}:id:${{id}}` : `${{type}}:name:${{name.toLocaleLowerCase('pt-BR')}}:${{row.start_date || ''}}:${{row.finish_date || ''}}`;
+          if (!groups.has(key)) groups.set(key, {{key, name, row, listings:[]}});
+          groups.get(key).listings.push({{code:result.code, title:result.data.item?.title || result.code, mlbu:result.data.item?.user_product_id || '', row, index}});
+        }});
+      }});
+      return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    }}
     function promotionScopePanelHtml(item) {{
       const sources = promotionScopeItems(item);
       const key = promotionScopeKey(item);
@@ -3356,6 +3376,8 @@ def render_dashboard(data):
       const label = promotionScopeLabel(item);
       if (state.loading) return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consultando ${{num(sources.length)}} anúncio(s) individualmente...</div></div>`;
       if (!state.results) return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta em lote de ${{num(sources.length)}} MLB(s). Cada ação posterior exige uma prévia e fica vinculada ao MLB exibido na própria linha.</div><button type="button" data-promo-load-scope="${{safe(key)}}" data-promo-scope-codes="${{safe(sources.map(source => String(source.code || '').toUpperCase()).join(','))}}">Consultar promoções da ${{safe(label)}}</button>${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
+      const view = state.view || 'campaign';
+      const selector = `<div class="promotion-scope-view"><button type="button" data-promo-scope-view="campaign" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'campaign'}}">Por campanha</button><button type="button" data-promo-scope-view="listing" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'listing'}}">Por anúncio/variação</button></div>`;
       const results = state.results.map(result => {{
         const title = result.data?.item?.title || result.code;
         if (result.error) return `<div class="promotion-option"><b>${{safe(result.code)}}</b><p class="muted">${{safe(title)}}</p><div class="promotion-error">${{safe(result.error)}}</div></div>`;
@@ -3363,7 +3385,24 @@ def render_dashboard(data):
         const individualState = promotionState.get(result.code) || {{}};
         return `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b><p class="muted">Ação sempre será aplicada somente neste MLB: ${{safe(title)}}</p>${{promotionTableHtml(source, result.data?.promotions || [], true)}}${{promotionPreviewHtml(source, individualState)}}${{individualState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{individualState.error ? `<div class="promotion-error">${{safe(individualState.error)}}</div>` : ''}}</div>`;
       }}).join('');
-      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Cada prévia e confirmação é vinculada ao MLB exibido na própria linha.</div><div class="promotion-panel-grid promotion-scope-list">${{results}}</div></div>`;
+      const byCampaign = promotionCampaignGroups(state.results).map(group => {{
+        const listings = group.listings.sort((a, b) => (a.mlbu || '').localeCompare(b.mlbu || '', 'pt-BR') || a.code.localeCompare(b.code, 'pt-BR'));
+        const body = listings.map(listing => {{
+          const source = {{...item, code:listing.code, currentPrice:state.results.find(result => result.code === listing.code)?.data?.item?.price || item.currentPrice}};
+          const individualState = promotionState.get(listing.code) || {{}};
+          const entry = {{row:listing.row, index:listing.index, payout:promotionReceiptValue(listing.row), bestPayout:false, bestDiscount:false, bestSubsidy:false}};
+          return promotionTableRow(source, entry, true, listing);
+        }}).join('');
+        return `<div class="promotion-option"><h5>${{safe(group.name)}}</h5><div class="muted">${{safe(promotionPeriod(group.row))}} · ${{num(listings.length)}} anúncio(s)</div><div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Anúncio/variação</th><th>Mercado Livre</th><th>Vendedor</th><th>Total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div></div>`;
+      }}).join('') || '<div class="detail-modal-empty">Nenhuma campanha retornada para os anúncios consultados.</div>';
+      const failures = state.results.filter(result => result.error).map(result => `<div class="promotion-error">${{safe(result.code)}}: ${{safe(result.error)}}</div>`).join('');
+      const previews = state.results.filter(result => result.data).map(result => {{
+        const individualState = promotionState.get(result.code) || {{}};
+        const source = {{...item, code:result.code}};
+        const feedback = `${{promotionPreviewHtml(source, individualState)}}${{individualState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{individualState.error ? `<div class="promotion-error">${{safe(individualState.error)}}</div>` : ''}}`;
+        return feedback ? `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b>${{feedback}}</div>` : '';
+      }}).join('');
+      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{selector}}<div class="promotion-panel-grid promotion-scope-list">${{view === 'campaign' ? byCampaign + failures + previews : results}}</div></div>`;
     }}
     function promotionPanelHtml(item) {{
       const code = String(item.code || '').toUpperCase();
@@ -3420,6 +3459,9 @@ def render_dashboard(data):
       activatePromotionPanels();
     }}
     function activatePromotionPanels() {{
+      document.querySelectorAll('[data-promo-scope-view]').forEach(button => button.addEventListener('click', () => {{
+        promotionStateUpdate(button.dataset.promoScopeKey, {{view:button.dataset.promoScopeView}});
+      }}));
       document.querySelectorAll('[data-promo-load]').forEach(button => button.addEventListener('click', async () => {{
         const code = button.dataset.promoLoad;
         promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
