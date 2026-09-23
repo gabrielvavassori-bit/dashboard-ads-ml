@@ -21,8 +21,25 @@ class OperationalAvailabilityTests(unittest.TestCase):
         self.assertIsNotNone(data)
         self.assertFalse(data["meta"]["onlineMode"]["complete"])
         self.assertIn("DADOS PARCIAIS", render_dashboard(data))
-        self.assertEqual(fetch.call_count, 1)
-        self.assertEqual(fetch.call_args.args[0], "/internal/dash-ads/operational-cache")
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(fetch.call_args_list[0].args[0], "/internal/dash-ads/operational-cache")
+        self.assertEqual(fetch.call_args_list[1].args[0], "/internal/dash-ads/returns-summary")
+
+    def test_partial_cache_still_reads_independent_returns(self):
+        returns = {
+            "ok": True, "complete": True,
+            "date_from": "2026-09-01", "date_to": "2026-09-02",
+            "amount": 12.50, "returns_count": 1,
+            "returned_orders_count": 1, "orders_total": 10,
+            "orders_total_available": True,
+        }
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=[self.payload(), returns]) as fetch:
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertEqual(error, "")
+        self.assertTrue(data["kpis"]["returnsAvailable"])
+        self.assertTrue(data["kpis"]["returnsOrdersAvailable"])
+        self.assertEqual(data["kpis"]["returnsAmount"], 12.50)
+        self.assertEqual(fetch.call_args_list[1].args[0], "/internal/dash-ads/returns-summary")
 
     def test_rejects_other_account_period_and_advertiser(self):
         for field, value in (("client_id", "other"), ("date_from", "2026-08-01"), ("advertiser_id", "8")):

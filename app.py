@@ -1181,15 +1181,17 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     total_tacos_base = total_revenue
     total_clicks = sum(item["clicks"] for item in items)
     total_ads_sales = sum(item["adsSales"] for item in items)
-    returns_payload = (
-        {} if latest_payload.get("operational_partial") else _fetch_dash_ads_json(
-            "/internal/dash-ads/returns-summary",
-            {
-                "client": client,
-                "date_from": latest_date_from,
-                "date_to": latest_date_to,
-            },
-        )
+    # Devoluções vêm de uma fonte oficial independente do cache operacional.
+    # Uma leitura parcial de Ads/vendas não pode ocultar uma devolução já
+    # confirmada; o cálculo percentual continua condicionado ao denominador
+    # comprovado abaixo.
+    returns_payload = _fetch_dash_ads_json(
+        "/internal/dash-ads/returns-summary",
+        {
+            "client": client,
+            "date_from": latest_date_from,
+            "date_to": latest_date_to,
+        },
     )
     returns_available = bool(
         returns_payload.get("ok") is True
