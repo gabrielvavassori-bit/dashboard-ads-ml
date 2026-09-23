@@ -1835,6 +1835,7 @@ def render_dashboard(data):
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
       <button class="page-tab" data-view="abc" type="button">Curva ABC</button>
       <button class="page-tab" data-view="online-beta" type="button">Online Beta</button>
+      <button class="page-tab" data-view="promotions" type="button">Promoções</button>
     </nav>
     <section class="view active" id="view-operational">
       <section class="grid">
@@ -1958,6 +1959,17 @@ def render_dashboard(data):
         <div class="scroll-frame" id="onlineBetaTable" style="margin-top:12px"></div>
       </section>
     </section>
+    <section class="view" id="view-promotions">
+      <section class="card">
+        <h2>Central de promoções</h2>
+        <p class="note">Consulte as oportunidades de um anúncio sem passar pela tabela de desempenho. Esta versão consulta um MLB por vez; a lista de todas as campanhas da conta ainda depende de uma consulta própria na ponte.</p>
+        <form id="promotionGuideForm" class="promotion-form">
+          <label>MLB do anúncio<input id="promotionGuideMlb" type="text" inputmode="numeric" placeholder="MLB6188463888" autocomplete="off" required></label>
+          <button type="submit">Consultar promoções</button>
+        </form>
+        <div id="promotionGuideResult" aria-live="polite"></div>
+      </section>
+    </section>
   </main>
   <div class="detail-modal-backdrop" id="detailModal" aria-hidden="true">
     <section class="detail-modal-shell" role="dialog" aria-modal="true" aria-labelledby="detailModalHeading">
@@ -2024,6 +2036,7 @@ def render_dashboard(data):
     const skuExpanded = new Set();
     const dailyChartMetric = new Map();
     const promotionState = new Map();
+    let promotionGuideCode = '';
     let sortState = {{ key:'revenue', direction:1 }};
     let abcMode = 'hybrid';
     let abcMetric = 'totalRevenue';
@@ -3381,6 +3394,15 @@ def render_dashboard(data):
       promotionState.set(code, {{...(promotionState.get(code) || {{}}), ...patch}});
       renderTable();
       if (activeDetailKey) renderDetailModal();
+      if (code === promotionGuideCode) renderPromotionGuide();
+    }}
+    function renderPromotionGuide() {{
+      const target = document.getElementById('promotionGuideResult');
+      if (!target || !promotionGuideCode) return;
+      const state = promotionState.get(promotionGuideCode) || {{}};
+      const item = {{code:promotionGuideCode, currentPrice:state.data?.item?.price || 0}};
+      target.innerHTML = promotionPanelHtml(item);
+      activatePromotionPanels();
     }}
     function activatePromotionPanels() {{
       document.querySelectorAll('[data-promo-load]').forEach(button => button.addEventListener('click', async () => {{
@@ -4025,6 +4047,20 @@ def render_dashboard(data):
         button.classList.add('active');
         document.getElementById(`view-${{button.dataset.view}}`).classList.add('active');
       }});
+    }});
+    document.getElementById('promotionGuideForm').addEventListener('submit', event => {{
+      event.preventDefault();
+      const raw = document.getElementById('promotionGuideMlb').value.trim().toUpperCase();
+      const code = /^[0-9]+$/.test(raw) ? `MLB${{raw}}` : raw;
+      const target = document.getElementById('promotionGuideResult');
+      if (!/^MLB[0-9]+$/.test(code)) {{
+        target.innerHTML = '<p class="promotion-error">Informe um MLB válido.</p>';
+        return;
+      }}
+      promotionGuideCode = code;
+      promotionState.set(code, {{}});
+      renderPromotionGuide();
+      target.querySelector('[data-promo-load]')?.click();
     }});
     document.getElementById('contextSelect').addEventListener('change', event => {{
       currentContext = event.target.value;
