@@ -1703,6 +1703,7 @@ def render_dashboard(data):
     .promotion-table td {{ padding:9px 8px; border-top:1px solid #eaecf0; vertical-align:top; }}
     .promotion-table tr.promotion-best-discount {{ background:#f0fdf4; }}
     .promotion-table tr.promotion-best-subsidy {{ box-shadow:inset 3px 0 0 #12b76a; }}
+    .promotion-table tr.promotion-best-payout {{ box-shadow:inset 3px 0 0 #f79009; }}
     .promotion-table td.num {{ text-align:right; white-space:nowrap; }}
     .promotion-table b {{ display:block; color:var(--ink); }}
     .promotion-table small {{ display:block; margin-top:2px; color:var(--muted); }}
@@ -3173,13 +3174,19 @@ def render_dashboard(data):
       const status = String(row.status || '').toLowerCase();
       return status === 'started' || status === 'active' ? '' : 'candidate';
     }}
+    function promotionPayoutScore(row, item) {{
+      const price = Number(row.suggested_discounted_price || row.price || item.suggestedTestPrice || 0);
+      const rebate = Number(row.discount_meli_boost_amount || 0);
+      return (Number.isFinite(price) ? price : 0) + (Number.isFinite(rebate) ? rebate : 0);
+    }}
     function promotionRankRows(item, rows) {{
-      const normalized = rows.map((row, index) => ({{row, index, total:Number(promotionTotalCellValue(row)), subsidy:Number(row.meli_percentage), rebate:Number(row.discount_meli_boost_amount)}}));
+      const normalized = rows.map((row, index) => ({{row, index, total:Number(promotionTotalCellValue(row)), subsidy:Number(row.meli_percentage), rebate:Number(row.discount_meli_boost_amount), payout:promotionPayoutScore(row, item)}}));
       const highestDiscount = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.total) ? entry.total : 0));
       const highestSubsidy = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.subsidy) ? entry.subsidy : 0));
+      const highestPayout = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.payout) ? entry.payout : 0));
       return normalized.sort((a, b) =>
-        (b.total - a.total) || (b.subsidy - a.subsidy) || (b.rebate - a.rebate) || a.index - b.index
-      ).map(entry => ({{...entry, bestDiscount:entry.total > 0 && entry.total === highestDiscount, bestSubsidy:entry.subsidy > 0 && entry.subsidy === highestSubsidy}}));
+        (b.payout - a.payout) || (b.total - a.total) || (b.subsidy - a.subsidy) || (b.rebate - a.rebate) || a.index - b.index
+      ).map(entry => ({{...entry, bestPayout:entry.payout > 0 && entry.payout === highestPayout, bestDiscount:entry.total > 0 && entry.total === highestDiscount, bestSubsidy:entry.subsidy > 0 && entry.subsidy === highestSubsidy}}));
     }}
     function promotionTotalCellValue(row) {{
       const original = Number(row.original_price);
@@ -3189,7 +3196,7 @@ def render_dashboard(data):
       return Number.isFinite(percentage) ? percentage : 0;
     }}
     function promotionTableRow(item, entry, allowAction) {{
-      const {{row, index, bestDiscount, bestSubsidy}} = entry;
+      const {{row, index, payout, bestPayout, bestDiscount, bestSubsidy}} = entry;
       const original = Number(row.original_price || item.currentPrice || item.lastPrice || 0);
       const price = Number(row.suggested_discounted_price || row.price || item.suggestedTestPrice || 0);
       const status = String(row.status || 'status não informado');
@@ -3201,16 +3208,17 @@ def render_dashboard(data):
       const rebate = Number(row.discount_meli_boost_amount);
       const rebatePercent = Number(row.discount_meli_boosted_percentage);
       const rebateText = Number.isFinite(rebate) && rebate > 0 ? `<b>${{brl(rebate)}}</b>${{Number.isFinite(rebatePercent) && rebatePercent > 0 ? `<small>${{rebatePercent.toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</small>` : ''}}` : '<span class="muted">—</span>';
-      const classes = `${{bestDiscount ? 'promotion-best-discount ' : ''}}${{bestSubsidy ? 'promotion-best-subsidy' : ''}}`;
+      const classes = `${{bestPayout ? 'promotion-best-payout ' : ''}}${{bestDiscount ? 'promotion-best-discount ' : ''}}${{bestSubsidy ? 'promotion-best-subsidy' : ''}}`;
+      const payoutBadge = bestPayout ? '<span class="promotion-rank">Maior recebimento estimado</span>' : '';
       const discountBadge = bestDiscount ? '<span class="promotion-rank">Maior desconto</span>' : '';
       const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
-      return `<tr class="${{classes}}"><td><b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
+      return `<tr class="${{classes}}"><td><b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num"><b>${{payout > 0 ? brl(payout) : '—'}}</b><small>preço promocional + rebate</small></td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
     function promotionTableHtml(item, rows, allowAction = false) {{
       const ranked = promotionRankRows(item, rows);
       const body = ranked.map(entry => promotionTableRow(item, entry, allowAction)).join('');
       if (!body) return '<div class="detail-modal-empty">Nenhuma campanha elegível retornada.</div>';
-      return `<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Promoção e período</th><th>Mercado Livre</th><th>Vendedor</th><th>Total</th><th>Preço original</th><th>Preço promocional</th><th>Benefício em tarifas ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div>`;
+      return `<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Promoção e período</th><th>Mercado Livre</th><th>Vendedor</th><th>Total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div>`;
     }}
     function promotionScopeLabel(item) {{
       return item.detailScope === 'family' ? 'família' : item.detailScope === 'mlbu' ? 'variação/MLBU' : item.detailScope === 'sku' ? 'SKU' : 'grupo';
