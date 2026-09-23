@@ -1726,6 +1726,10 @@ def render_dashboard(data):
     .promotion-rank {{ display:inline-block; margin-top:4px; padding:2px 6px; border-radius:999px; background:#d1fadf; color:#027a48; font-size:10px; font-weight:800; white-space:nowrap; }}
     .promotion-table .promotion-form {{ margin:0; min-width:170px; }}
     .promotion-table .promotion-form input {{ width:104px; }}
+    .promotion-table .promotion-form {{ min-width:0; gap:5px; align-items:center; }}
+    .promotion-table .promotion-form label {{ font-size:10px; }}
+    .promotion-table .promotion-form button, .promotion-table td > button {{ width:auto; min-width:0; padding:5px 8px; border-radius:5px; font-size:11px; font-weight:700; line-height:1.15; white-space:nowrap; }}
+    .promotion-table .promotion-form button.secondary-action, .promotion-table td > button.secondary-action {{ background:#fff; color:#b42318; border:1px solid #fda29b; }}
     .promotion-option {{ padding:10px; border:1px solid var(--line); border-radius:9px; background:#fff; }}
     .promotion-option p {{ margin:5px 0; }}
     .promotion-discount-breakdown {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin:9px 0; }}
@@ -3296,9 +3300,9 @@ def render_dashboard(data):
       const canUpdate = allowAction && row.can_update === true && active;
       const canRemove = allowAction && row.can_leave === true && active;
       const action = canJoin || canUpdate
-        ? `<div class="promotion-form"><label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label><button type="button" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Gerar prévia de alteração' : 'Participar'}}</button>${{canRemove ? `<button type="button" class="secondary-action" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Gerar prévia para sair</button>` : ''}}</div>`
+        ? `<div class="promotion-form"><label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label><button type="button" title="Revisar preço e condições antes de confirmar a alteração" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Alterar' : 'Participar'}}</button>${{canRemove ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>` : ''}}</div>`
         : (canRemove
-          ? `<button type="button" class="secondary-action" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Gerar prévia para sair</button>`
+          ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>`
           : `<span class="muted">${{safe(row.read_only_reason || 'Somente leitura')}}</span>`);
       const rebate = Number(row.discount_meli_boost_amount);
       const rebatePercent = Number(row.discount_meli_boosted_percentage);
