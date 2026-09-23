@@ -19,7 +19,7 @@ class PerformanceTests(unittest.TestCase):
 
     def test_actual_js_partial_cache_groups_and_missing_visits(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
-        function = source[source.index('    function salesTrendInline'):source.index('    function chartLongDate')].replace('{{', '{').replace('}}', '}')
+        function = source[source.index('    function salesTrendInline'):source.index('    // Portal outside')].replace('{{', '{').replace('}}', '}')
         evidence = dict(date_from='2026-09-09', date_to='2026-09-22', current_from='2026-09-16', previous_to='2026-09-15', sales=dict(complete=True, previous=100, current=50), visits=dict(complete=True, previous=1000, current=500))
         item = dict(code='MLB1', salesCoverageComplete=False, performance7d=evidence)
         script = function + '\nconst item=' + json.dumps(item) + '; console.log(salesTrendInline({children:[item,item]})); item.performance7d.visits.complete=false; console.log(salesTrendInline(item));'
@@ -27,6 +27,6 @@ class PerformanceTests(unittest.TestCase):
         self.assertIn('Vendas 7d: <b>50</b>', result[0])
         self.assertIn('Visitas: <b>500</b>', result[0])
         self.assertIn('Conversão: <b>10%</b>', result[0])
-        self.assertIn('↓ 50%', result[0])
+        self.assertIn('▼ 50%', result[0])
         self.assertIn('Visitas: <b>N/D</b>', result[1])
         self.assertIn('Vendas 7d: <b>50</b>', result[1])
