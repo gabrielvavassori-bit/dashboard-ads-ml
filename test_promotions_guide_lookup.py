@@ -2,6 +2,7 @@ import json
 import subprocess
 import unittest
 from pathlib import Path
+from urllib.parse import unquote
 
 
 class PromotionsGuideLookupTests(unittest.TestCase):
@@ -22,6 +23,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionTotalCell = () => '10%';
         const promotionLimits = () => '';
         const promotionReceiptCell = () => 'Não calculado';
+        const promotionMarginCell = () => 'MC parcial';
         const brl = value => `R$ ${value}`;
         """
         script = stubs + function + "\nconsole.log(promotionTableRow({code:'MLB111'}, {row:{name:'10.10',can_join:true,suggested_discounted_price:71.9},index:2}, true, {code:'MLB111',title:'Lona Azul',sku:'LAZ-3X3',thumbnailUrl:'https://example.test/foto.jpg'}));"
@@ -34,6 +36,25 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertLess(html.index('<dialog'), html.index('data-promo-campaign-price="2"'))
         self.assertIn('Gerar prévia para participar', html)
         self.assertIn('data-promo-item="MLB111"', html)
+
+    def test_partial_margin_shows_breakdown_without_inventing_cost_or_tax(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        function = source[
+            source.index('    function promotionMarginCell'):
+            source.index('    function promotionTableRow')
+        ].replace('{{', '{').replace('}}', '}')
+        stubs = "const safe = value => String(value ?? ''); const brl = value => `R$ ${Number(value).toFixed(2)}`;\n"
+        script = stubs + function + "\nconsole.log(promotionMarginCell({receipt_quote:{available:true,price:74.9,sale_fee:8.61,shipping_cost:8.75,rebate:0,receipt_before_cost_tax:57.54}})); console.log(promotionMarginCell({receipt_quote:{available:false,reason:'Frete ausente'}}));"
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout.splitlines()
+        self.assertIn('R$ 57.54', result[0])
+        self.assertIn('76,82%', result[0])
+        tooltip = unquote(result[0].split('data-metrics-tip="')[1].split('"')[0])
+        self.assertIn('Tarifa de venda', tooltip)
+        self.assertIn('Frete do vendedor', tooltip)
+        self.assertIn('Não informado', tooltip)
+        self.assertNotIn('Custo do produto</span><b>R$ 0.00', tooltip)
+        self.assertNotIn('Imposto</span><b>R$ 0.00', tooltip)
+        self.assertIn('N/D', result[1])
 
     def test_campaign_view_groups_variations_without_losing_individual_prices(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
