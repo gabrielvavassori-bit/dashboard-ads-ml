@@ -629,8 +629,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("function promotionTableRow(item, entry, allowAction)", html)
         self.assertIn(">Mercado Livre</th>", html)
         self.assertIn(">Vendedor</th>", html)
-        self.assertIn(">Rebate ML</th>", html)
-        self.assertIn(">Você recebe (estim.)</th>", html)
+        self.assertIn(">Benefício em tarifas ML</th>", html)
         self.assertIn("Ativa: alteração e saída ainda não disponíveis", html)
         self.assertIn("function promotionFriendlyType(row)", html)
         self.assertIn("Oferta relâmpago", html)
@@ -638,7 +637,6 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("function promotionRankRows(item, rows)", html)
         self.assertIn("Maior desconto", html)
         self.assertIn("Maior subsídio", html)
-        self.assertIn("Maior recebimento estimado", html)
         self.assertIn("promotion-scope-list", html)
 
     def test_account_daily_chart_does_not_invent_missing_snapshot_dates(self):
