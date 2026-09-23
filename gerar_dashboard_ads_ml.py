@@ -1962,9 +1962,9 @@ def render_dashboard(data):
     <section class="view" id="view-promotions">
       <section class="card">
         <h2>Central de promoções</h2>
-        <p class="note">Consulte as oportunidades de um anúncio sem passar pela tabela de desempenho. Esta versão consulta um MLB por vez; a lista de todas as campanhas da conta ainda depende de uma consulta própria na ponte.</p>
+        <p class="note">Busque um MLB, MLBU ou família presente nesta análise. Para grupos, as oportunidades são consultadas por MLB e cada ação fica vinculada ao anúncio individual. A lista de todas as campanhas da conta ainda depende de uma consulta própria na ponte.</p>
         <form id="promotionGuideForm" class="promotion-form">
-          <label>MLB do anúncio<input id="promotionGuideMlb" type="text" inputmode="numeric" placeholder="MLB6188463888" autocomplete="off" required></label>
+          <label>MLB, MLBU ou família<input id="promotionGuideMlb" type="text" placeholder="MLB6188463888 ou 5064438396869903" autocomplete="off" required></label>
           <button type="submit">Consultar promoções</button>
         </form>
         <div id="promotionGuideResult" aria-live="polite"></div>
@@ -2036,7 +2036,7 @@ def render_dashboard(data):
     const skuExpanded = new Set();
     const dailyChartMetric = new Map();
     const promotionState = new Map();
-    let promotionGuideCode = '';
+    let promotionGuideItem = null;
     let sortState = {{ key:'revenue', direction:1 }};
     let abcMode = 'hybrid';
     let abcMetric = 'totalRevenue';
@@ -3346,6 +3346,7 @@ def render_dashboard(data):
       }});
     }}
     function promotionScopeKey(item) {{
+      if (item.promotionGuide) return `scope:guide:${{item.detailScope}}:${{item.detailId}}`;
       return `scope:${{detailKey(item)}}`;
     }}
     function promotionScopePanelHtml(item) {{
@@ -3394,14 +3395,28 @@ def render_dashboard(data):
       promotionState.set(code, {{...(promotionState.get(code) || {{}}), ...patch}});
       renderTable();
       if (activeDetailKey) renderDetailModal();
-      if (code === promotionGuideCode) renderPromotionGuide();
+      if (promotionGuideItem && (code === promotionGuideItem.code || code === promotionScopeKey(promotionGuideItem) || promotionScopeItems(promotionGuideItem).some(item => item.code === code))) renderPromotionGuide();
+    }}
+    function resolvePromotionGuideItem(raw, items) {{
+      const query = String(raw || '').trim().toUpperCase();
+      const digits = query.replace(/^(?:MLBU|MLB|FAM[IÍ]LIA|FAMILY)\\s*[-:#]?\\s*/i, '');
+      if (!/^[0-9]+$/.test(digits)) return {{error:'Informe um MLB, MLBU ou código de família válido.'}};
+      const family = query.startsWith('MLB') ? [] : items.filter(item => String(item.familyId || '') === digits);
+      const mlbu = query.startsWith('MLB') && !query.startsWith('MLBU') ? [] : items.filter(item => String(item.userProductId || '') === digits);
+      if (query.startsWith('MLBU') && !mlbu.length || /^(?:FAM[IÍ]LIA|FAMILY)/.test(query) && !family.length)
+        return {{error:'Esse grupo não foi encontrado nos anúncios da análise atual.'}};
+      if (family.length) return {{item:{{promotionGuide:true, detailScope:'family', detailId:digits, code:digits, children:family}}}};
+      if (mlbu.length) return {{item:{{promotionGuide:true, detailScope:'mlbu', detailId:digits, code:digits, children:mlbu}}}};
+      return {{item:{{code:`MLB${{digits}}`}}}};
     }}
     function renderPromotionGuide() {{
       const target = document.getElementById('promotionGuideResult');
-      if (!target || !promotionGuideCode) return;
-      const state = promotionState.get(promotionGuideCode) || {{}};
-      const item = {{code:promotionGuideCode, currentPrice:state.data?.item?.price || 0}};
-      target.innerHTML = promotionPanelHtml(item);
+      if (!target || !promotionGuideItem) return;
+      const item = promotionGuideItem;
+      const state = promotionState.get(item.code) || {{}};
+      target.innerHTML = item.detailScope
+        ? promotionScopePanelHtml(item)
+        : promotionPanelHtml({{...item, currentPrice:state.data?.item?.price || item.currentPrice || 0}});
       activatePromotionPanels();
     }}
     function activatePromotionPanels() {{
@@ -4050,17 +4065,18 @@ def render_dashboard(data):
     }});
     document.getElementById('promotionGuideForm').addEventListener('submit', event => {{
       event.preventDefault();
-      const raw = document.getElementById('promotionGuideMlb').value.trim().toUpperCase();
-      const code = /^[0-9]+$/.test(raw) ? `MLB${{raw}}` : raw;
+      const raw = document.getElementById('promotionGuideMlb').value;
       const target = document.getElementById('promotionGuideResult');
-      if (!/^MLB[0-9]+$/.test(code)) {{
-        target.innerHTML = '<p class="promotion-error">Informe um MLB válido.</p>';
+      const resolved = resolvePromotionGuideItem(raw, allItems);
+      if (resolved.error) {{
+        target.innerHTML = `<p class="promotion-error">${{safe(resolved.error)}}</p>`;
         return;
       }}
-      promotionGuideCode = code;
-      promotionState.set(code, {{}});
+      promotionGuideItem = resolved.item;
+      const key = promotionGuideItem.detailScope ? promotionScopeKey(promotionGuideItem) : promotionGuideItem.code;
+      promotionState.set(key, {{}});
       renderPromotionGuide();
-      target.querySelector('[data-promo-load]')?.click();
+      target.querySelector('[data-promo-load-scope], [data-promo-load]')?.click();
     }});
     document.getElementById('contextSelect').addEventListener('change', event => {{
       currentContext = event.target.value;
