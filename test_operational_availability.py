@@ -51,3 +51,8 @@ class OperationalAvailabilityTests(unittest.TestCase):
             data, error = app._sales_intelligence_fetch_latest("demo", "7", "2026-09-01", "2026-09-02")
         self.assertIsNone(data)
         self.assertTrue(error)
+
+def load_tests(loader, tests, pattern):
+    from test_performance_7d import PerformanceTests
+    tests.addTests(loader.loadTestsFromTestCase(PerformanceTests))
+    return tests

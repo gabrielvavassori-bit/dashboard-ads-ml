@@ -1073,6 +1073,11 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "suggestedTestPrice": suggested_test_price,
             "pricingSignal": pricing_signal,
             "dailySeries": daily_series_by_item.get(code, []),
+            "performance7d": {
+                **{k: latest_payload.get("performance_7d", {}).get(k) for k in
+                   ("date_from", "date_to", "previous_to", "current_from")},
+                **latest_payload.get("performance_7d", {}).get("items", {}).get(code, {}),
+            } if latest_payload.get("performance_7d", {}).get("client_id") == client else {},
             # Visitas são uma métrica operacional independente: somente
             # habilitamos a comparação quando cada dia do período foi salvo.
             "visitsCoverageComplete": (

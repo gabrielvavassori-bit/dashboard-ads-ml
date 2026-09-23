@@ -2780,43 +2780,37 @@ def render_dashboard(data):
       return [...byDate.entries()].map(([date, values]) => ({{date, ...values}})).sort((a, b) => a.date.localeCompare(b.date));
     }}
     function salesTrendInline(item) {{
-      if (item.salesCoverageComplete === false) return '<div class="trend trend-nd"><b>Vendas 7d: N/D</b><br>Visitas: N/D · Conversão: N/D · cobertura parcial</div>';
-      const rows = observedDailyRevenueFor(item);
-      const last14 = rows.slice(-14);
-      if (last14.length < 14) return '<div class="trend trend-nd"><b>Vendas 7d: N/D</b><br>Visitas: N/D · Conversão: N/D · histórico insuficiente</div>';
-      for (let index = 1; index < last14.length; index += 1) {{
-        const previous = new Date(`${{last14[index - 1].date}}T12:00:00`);
-        const current = new Date(`${{last14[index].date}}T12:00:00`);
-        if (Number.isNaN(previous.getTime()) || Number.isNaN(current.getTime()) || current - previous !== 86400000) return '<div class="trend trend-nd"><b>Vendas 7d: N/D</b><br>Visitas: N/D · Conversão: N/D · histórico incompleto</div>';
+      const byCode = new Map();
+      function visit(source) {{
+        if (source.children && source.children.length) source.children.forEach(visit);
+        else if (source.code && !byCode.has(source.code)) byCode.set(source.code, source.performance7d || {{}});
       }}
-      const previous = last14.slice(0, 7).reduce((total, row) => total + row.revenue, 0);
-      const current = last14.slice(7).reduce((total, row) => total + row.revenue, 0);
-      const previousUnits = last14.slice(0, 7).reduce((total, row) => total + row.units, 0);
-      const currentUnits = last14.slice(7).reduce((total, row) => total + row.units, 0);
-      const sources = (item.children && item.children.length) ? item.children : [item];
-      const visitsCovered = sources.every(source => source.visitsCoverageComplete === true);
-      const visitsSuffix = (() => {{
-        if (!visitsCovered) return ' · visitas N/D';
-        const previousVisits = last14.slice(0, 7).reduce((total, row) => total + row.visits, 0);
-        const currentVisits = last14.slice(7).reduce((total, row) => total + row.visits, 0);
-        const visitsChange = previousVisits > 0 ? (currentVisits - previousVisits) / previousVisits : null;
-        const visitsLabel = visitsChange === null
-          ? `vis. ${{num(currentVisits)}}`
-          : `vis. ${{visitsChange >= 0 ? '↑' : '↓'}} ${{Math.abs(visitsChange * 100).toLocaleString('pt-BR', {{maximumFractionDigits:1}})}}%`;
-        const previousCvr = previousVisits > 0 ? previousUnits / previousVisits : null;
-        const currentCvr = currentVisits > 0 ? currentUnits / currentVisits : null;
-        const cvrLabel = previousCvr === null || currentCvr === null
-          ? 'conv. N/D'
-          : `conv. ${{currentCvr >= previousCvr ? '↑' : '↓'}} ${{Math.abs((currentCvr - previousCvr) * 100).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}} pp`;
-        return ` · ${{visitsLabel}} · ${{cvrLabel}}`;
-      }})();
-      if (previous <= 0 && current <= 0) return `<div class="muted">→ 7d sem vendas${{visitsSuffix}}</div>`;
-      if (previous <= 0) return `<div class="trend trend-up">↑ 7d nova venda${{currentUnits > 0 ? ` · ${{num(currentUnits)}} un.` : ''}}${{visitsSuffix}}</div>`;
-      const change = (current - previous) / previous;
-      if (Math.abs(change) < .02) return `<div class="muted">→ 7d estável${{visitsSuffix}}</div>`;
-      const label = `${{Math.abs(change * 100).toLocaleString('pt-BR', {{maximumFractionDigits:1}})}}%`;
-      const unitsLabel = previousUnits > 0 ? ` · un. ${{currentUnits >= previousUnits ? '↑' : '↓'}} ${{Math.abs((currentUnits - previousUnits) / previousUnits * 100).toLocaleString('pt-BR', {{maximumFractionDigits:1}})}}%` : '';
-      return `<div class="trend ${{change > 0 ? 'trend-up' : 'trend-down'}}">${{change > 0 ? '↑' : '↓'}} 7d ${{label}}${{unitsLabel}}${{visitsSuffix}}</div>`;
+      visit(item);
+      const sources = [...byCode.values()];
+      const window = sources[0] || {{}};
+      const sameWindow = sources.length > 0 && sources.every(p => p.date_from === window.date_from && p.date_to === window.date_to);
+      function metric(name) {{
+        if (!sameWindow || !sources.every(p => p[name]?.complete === true && Number.isFinite(p[name].previous) && Number.isFinite(p[name].current))) return null;
+        return sources.reduce((sum, p) => ({{previous:sum.previous+p[name].previous, current:sum.current+p[name].current}}), {{previous:0,current:0}});
+      }}
+      const sales = metric('sales'), visits = metric('visits');
+      const fmt = n => n.toLocaleString('pt-BR', {{maximumFractionDigits:1}});
+      function line(label, values) {{
+        if (!values) return `<div>${{label}}: <b>N/D</b> <span class="muted">(histórico incompleto)</span></div>`;
+        const delta = values.previous > 0 ? (values.current / values.previous - 1) * 100 : null;
+        const change = delta === null ? (values.current > 0 ? 'sem base anterior' : 'estável') : `${{delta > 0 ? '↑' : delta < 0 ? '↓' : '→'}} ${{fmt(Math.abs(delta))}}%`;
+        return `<div>${{label}}: <b>${{fmt(values.current)}}</b> <span class="${{values.current > values.previous ? 'trend-up' : values.current < values.previous ? 'trend-down' : 'muted'}}">${{change}}</span></div>`;
+      }}
+      let cvr = 'Conversão: <b>N/D</b>';
+      if (sales && visits && visits.current > 0) {{
+        const current = sales.current / visits.current * 100;
+        const previous = visits.previous > 0 ? sales.previous / visits.previous * 100 : null;
+        const delta = previous === null ? null : current - previous;
+        cvr = `Conversão: <b>${{fmt(current)}}%</b> ${{delta === null ? '(sem base anterior)' : `${{delta > 0 ? '↑' : delta < 0 ? '↓' : '→'}} ${{fmt(Math.abs(delta))}} pp`}}`;
+      }}
+      const period = window.date_from && window.date_to ? `${{window.current_from}} a ${{window.date_to}} vs ${{window.date_from}} a ${{window.previous_to}}` : '14 dias encerrados necessários';
+      const detail = `${{period}}. Vendas = pedidos; conversão = pedidos / visitas do anúncio. ${{sales ? `Vendas anteriores: ${{fmt(sales.previous)}}. ` : ''}}${{visits ? `Visitas anteriores: ${{fmt(visits.previous)}}.` : ''}}`;
+      return `<div class="metrics-7d" title="${{detail}}">${{line('Vendas 7d', sales)}}${{line('Visitas', visits)}}<div>${{cvr}}</div></div>`;
     }}
     function chartLongDate(value) {{
       const parsed = new Date(`${{value}}T12:00:00`);

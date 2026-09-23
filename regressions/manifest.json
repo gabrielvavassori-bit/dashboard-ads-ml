@@ -68,6 +68,44 @@
           "blocking": true
         }
       ]
+    },
+    {
+      "id": "REGRESSION-004",
+      "title": "Comparacao 7d independente do cache financeiro parcial",
+      "severity": "ALTA",
+      "components": [
+        "listing_performance_7d"
+      ],
+      "domains": [
+        "listing_visits",
+        "sales_performance"
+      ],
+      "tags": [
+        "closed_days",
+        "independent_coverage",
+        "no_ads_clicks",
+        "no_false_nd"
+      ],
+      "invariant": "Comparar 14 dias encerrados da mesma conta, por MLB unico e cobertura independente de vendas e visitas. Cache financeiro parcial nao bloqueia fatos operacionais completos; ausencia nunca vira zero.",
+      "file_globs": [
+        "app.py",
+        "gerar_dashboard_ads_ml.py",
+        "dash_ads_operational.py",
+        "coletar.py",
+        "test_performance_7d.py"
+      ],
+      "protections": [
+        {
+          "command": [
+            "{python}",
+            "-m",
+            "unittest",
+            "-v",
+            "test_performance_7d.py"
+          ],
+          "blocking": true
+        }
+      ]
     }
   ]
 }
