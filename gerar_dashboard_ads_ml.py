@@ -1617,6 +1617,18 @@ def render_dashboard(data):
     .trend-down {{ color:#b42318; }}
     .trend-nd {{ color:#475467; }}
     .metrics-7d {{ min-width:190px; }}
+    .metrics-7d[data-metrics-tip] {{ cursor:help; border-radius:5px; }}
+    .metrics-7d[data-metrics-tip]:focus-visible {{ outline:2px solid #2563eb; outline-offset:3px; }}
+    .metric-change {{ font-weight:700; white-space:nowrap; }}
+    .metric-change.trend-up {{ color:#00a650; }}
+    .metric-change.trend-down {{ color:#e53945; }}
+    .metrics-float {{ position:fixed; z-index:10000; width:320px; max-width:calc(100vw - 24px); box-sizing:border-box; padding:16px; border:1px solid #e5e7eb; border-radius:9px; background:#fff; color:#253044; box-shadow:0 5px 22px #10182830; font:13px/1.5 Arial,sans-serif; pointer-events:none; }}
+    .metrics-float[hidden] {{ display:none; }}
+    .metrics-float strong {{ display:block; margin-bottom:8px; font-size:13px; }}
+    .metrics-float-period {{ color:#667085; font-size:11px; margin-bottom:8px; }}
+    .metrics-float-grid {{ display:grid; grid-template-columns:1fr auto auto; gap:5px 16px; align-items:center; }}
+    .metrics-float-grid .muted {{ color:#667085; font-size:11px; }}
+    .metrics-float-note {{ margin-top:10px; color:#667085; font-size:11px; }}
     .copyline {{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }}
     .copybtn {{ border:1px solid var(--line); background:#f8fafc; color:#344054; width:24px; height:24px; padding:0; border-radius:6px; font-size:13px; line-height:1; cursor:pointer; }}
     .copybtn:hover {{ background:#eef4ff; border-color:#b2ccff; }}
@@ -2798,20 +2810,61 @@ def render_dashboard(data):
       function line(label, values) {{
         if (!values) return `<div>${{label}}: <b>N/D</b> <span class="muted">(histórico incompleto)</span></div>`;
         const delta = values.previous > 0 ? (values.current / values.previous - 1) * 100 : null;
-        const change = delta === null ? (values.current > 0 ? 'sem base anterior' : 'estável') : `${{delta > 0 ? '↑' : delta < 0 ? '↓' : '→'}} ${{fmt(Math.abs(delta))}}%`;
-        return `<div>${{label}}: <b>${{fmt(values.current)}}</b> <span class="${{values.current > values.previous ? 'trend-up' : values.current < values.previous ? 'trend-down' : 'muted'}}">${{change}}</span></div>`;
+        const change = delta === null ? (values.current > 0 ? 'sem base anterior' : 'estável') : `${{delta > 0 ? '▲' : delta < 0 ? '▼' : '—'}} ${{fmt(Math.abs(delta))}}%`;
+        return `<div>${{label}}: <b>${{fmt(values.current)}}</b> <span class="metric-change ${{values.current > values.previous ? 'trend-up' : values.current < values.previous ? 'trend-down' : 'muted'}}">${{change}}</span></div>`;
       }}
       let cvr = 'Conversão: <b>N/D</b>';
       if (sales && visits && visits.current > 0) {{
         const current = sales.current / visits.current * 100;
         const previous = visits.previous > 0 ? sales.previous / visits.previous * 100 : null;
         const delta = previous === null ? null : current - previous;
-        cvr = `Conversão: <b>${{fmt(current)}}%</b> ${{delta === null ? '(sem base anterior)' : `${{delta > 0 ? '↑' : delta < 0 ? '↓' : '→'}} ${{fmt(Math.abs(delta))}} pp`}}`;
+        cvr = `Conversão: <b>${{fmt(current)}}%</b> <span class="metric-change ${{delta > 0 ? 'trend-up' : delta < 0 ? 'trend-down' : 'muted'}}">${{delta === null ? '(sem base anterior)' : `${{delta > 0 ? '▲' : delta < 0 ? '▼' : '—'}} ${{fmt(Math.abs(delta))}} pp`}}</span>`;
       }}
       const period = window.date_from && window.date_to ? `${{window.current_from}} a ${{window.date_to}} vs ${{window.date_from}} a ${{window.previous_to}}` : '14 dias encerrados necessários';
       const detail = `${{period}}. Vendas = pedidos; conversão = pedidos / visitas do anúncio. ${{sales ? `Vendas anteriores: ${{fmt(sales.previous)}}. ` : ''}}${{visits ? `Visitas anteriores: ${{fmt(visits.previous)}}.` : ''}}`;
-      return `<div class="metrics-7d" title="${{detail}}">${{line('Vendas 7d', sales)}}${{line('Visitas', visits)}}<div>${{cvr}}</div></div>`;
+      const dateLabel = value => /^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$/.test(value || '') ? value.split('-').reverse().join('/') : 'N/D';
+      function tipRow(label, values, percent=false) {{
+        const previous = values && values.previous !== null ? fmt(values.previous) + (percent ? '%' : '') : 'N/D';
+        const delta = !values || values.previous === null ? null : percent ? values.current-values.previous : values.previous > 0 ? (values.current/values.previous-1)*100 : values.current === 0 ? 0 : null;
+        const change = delta === null ? 'N/D' : `${{delta > 0 ? '▲' : delta < 0 ? '▼' : '—'}} ${{fmt(Math.abs(delta))}}${{percent ? ' pp' : '%'}}`;
+        return `<span>${{label}}</span><b>${{previous}}</b><span class="metric-change ${{delta > 0 ? 'trend-up' : delta < 0 ? 'trend-down' : 'muted'}}">${{change}}</span>`;
+      }}
+      const conversion = sales && visits && visits.current > 0 ? {{current:sales.current/visits.current*100, previous:visits.previous > 0 ? sales.previous/visits.previous*100 : null}} : null;
+      const tip = `<strong>Em comparação ao período anterior:</strong><div class="metrics-float-period">Atual: ${{dateLabel(window.current_from)}} a ${{dateLabel(window.date_to)}}<br>Anterior: ${{dateLabel(window.date_from)}} a ${{dateLabel(window.previous_to)}}</div><div class="metrics-float-grid"><span></span><span class="muted">Anterior</span><span class="muted">Variação</span>${{tipRow('Visitas',visits)}}${{tipRow('Vendas',sales)}}${{tipRow('Conversão',conversion,true)}}</div><div class="metrics-float-note">Vendas = pedidos. Conversão = pedidos ÷ visitas do anúncio. N/D indica histórico incompleto ou ausência de base para comparação.</div>`;
+      return `<div class="metrics-7d" tabindex="0" aria-label="Comparação de desempenho dos últimos 7 dias" data-metrics-tip="${{encodeURIComponent(tip)}}">${{line('Vendas 7d', sales)}}${{line('Visitas', visits)}}<div>${{cvr}}</div></div>`;
     }}
+    // Portal outside the scrolling/zoomed table keeps the comparison visible.
+    let metricsFloat = null, metricsAnchor = null;
+    function hideMetricsFloat() {{
+      if (metricsFloat) metricsFloat.hidden = true;
+      if (metricsAnchor) metricsAnchor.removeAttribute('aria-describedby');
+      metricsAnchor = null;
+    }}
+    function showMetricsFloat(anchor) {{
+      if (!metricsFloat) {{
+        metricsFloat = document.createElement('div');
+        metricsFloat.className = 'metrics-float';
+        metricsFloat.id = 'metrics-comparison-tooltip';
+        metricsFloat.setAttribute('role','tooltip');
+        document.body.appendChild(metricsFloat);
+      }}
+      if (metricsAnchor && metricsAnchor !== anchor) metricsAnchor.removeAttribute('aria-describedby');
+      metricsAnchor = anchor;
+      metricsFloat.innerHTML = decodeURIComponent(anchor.dataset.metricsTip);
+      metricsFloat.hidden = false;
+      anchor.setAttribute('aria-describedby',metricsFloat.id);
+      const rect = anchor.getBoundingClientRect(), box = metricsFloat.getBoundingClientRect();
+      metricsFloat.style.left = Math.max(12,Math.min(innerWidth-box.width-12,rect.left)) + 'px';
+      metricsFloat.style.top = Math.max(12,rect.top-box.height-10 >= 12 ? rect.top-box.height-10 : Math.min(innerHeight-box.height-12,rect.bottom+10)) + 'px';
+    }}
+    document.addEventListener('pointerover', event => {{ const anchor=event.target.closest('[data-metrics-tip]'); if(anchor) showMetricsFloat(anchor); }});
+    document.addEventListener('pointerout', event => {{ if(metricsAnchor && !metricsAnchor.contains(event.relatedTarget)) hideMetricsFloat(); }});
+    document.addEventListener('focusin', event => {{ const anchor=event.target.closest('[data-metrics-tip]'); if(anchor) showMetricsFloat(anchor); }});
+    document.addEventListener('focusout', hideMetricsFloat);
+    document.addEventListener('keydown', event => {{ if(event.key === 'Escape') hideMetricsFloat(); }});
+    document.addEventListener('click', event => {{ const anchor=event.target.closest('[data-metrics-tip]'); if(anchor) showMetricsFloat(anchor); else hideMetricsFloat(); }});
+    window.addEventListener('scroll',hideMetricsFloat,true);
+    window.addEventListener('resize',hideMetricsFloat);
     function chartLongDate(value) {{
       const parsed = new Date(`${{value}}T12:00:00`);
       if (Number.isNaN(parsed.getTime())) return value;
