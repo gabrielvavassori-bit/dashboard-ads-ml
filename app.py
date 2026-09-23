@@ -1194,11 +1194,30 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     )
     returns_amount = _number(returns_payload.get("amount")) if returns_available else 0.0
     returns_rate = (returns_amount / total_revenue) if returns_available and total_revenue else 0.0
+    returns_orders_available = bool(
+        returns_available and returns_payload.get("orders_total_available") is True
+    )
+    returns_orders_count = (
+        int(_number(returns_payload.get("returned_orders_count")))
+        if returns_orders_available else 0
+    )
+    returns_orders_total = (
+        int(_number(returns_payload.get("orders_total")))
+        if returns_orders_available else 0
+    )
+    returns_orders_rate = (
+        returns_orders_count / returns_orders_total
+        if returns_orders_available and returns_orders_total > 0 else 0.0
+    )
     returns_meta = {
         "available": returns_available,
         "amount": returns_amount,
         "rate": returns_rate,
         "count": int(_number(returns_payload.get("returns_count"))) if returns_available else 0,
+        "returnedOrdersCount": returns_orders_count,
+        "ordersTotal": returns_orders_total,
+        "ordersRate": returns_orders_rate,
+        "ordersAvailable": returns_orders_available,
         "returnedUnits": _number(returns_payload.get("returned_units")) if returns_available else 0.0,
         "returnShippingCost": (
             _number(returns_payload.get("return_shipping_cost"))
@@ -1266,6 +1285,11 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "returnsAvailable": returns_available,
             "returnsAmount": returns_amount,
             "returnsRate": returns_rate,
+            "returnsOrdersAvailable": returns_orders_available,
+            "returnsOrdersCount": returns_orders_count,
+            "returnsOrdersTotal": returns_orders_total,
+            "returnsOrdersRate": returns_orders_rate,
+            "returnsUnits": _number(returns_payload.get("returned_units")) if returns_available else 0.0,
             "tacosBaseRevenue": total_tacos_base,
             "investment": total_investment,
             "investmentNoAdsSales": sum(item["investment"] for item in items if item["investment"] > 0 and item["adsRevenue"] <= 0),
