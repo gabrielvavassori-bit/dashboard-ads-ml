@@ -2711,7 +2711,7 @@ def render_dashboard(data):
       sources.forEach(source => (source.dailySeries || []).forEach(row => {{
         const date = String(row.date || '');
         if (!date) return;
-        const current = byDate.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, priceFallback:0}};
+        const current = byDate.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, visits:0, priceFallback:0}};
         current.orders += Number(row.orders || 0);
         current.units += Number(row.units || 0);
         current.revenue += Number(row.revenue || 0);
@@ -2723,6 +2723,7 @@ def render_dashboard(data):
         current.impressions += Number(row.impressions || 0);
         current.clicks += Number(row.clicks || 0);
         current.adsUnits += Number(row.adsUnits || 0);
+        current.visits += Number(row.visits || 0);
         if (Number(row.lastSalePrice || 0) > 0) current.priceFallback = Number(row.lastSalePrice);
         byDate.set(date, current);
       }}));
@@ -2745,7 +2746,7 @@ def render_dashboard(data):
       const end = new Date(`${{dateTo}}T12:00:00`);
       while (cursor <= end) {{
         const date = cursor.toISOString().slice(0, 10);
-        complete.push(indexed.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, roas:0, tacos:0, price:0, priceFallback:0}});
+        complete.push(indexed.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, visits:0, roas:0, tacos:0, price:0, priceFallback:0}});
         cursor.setDate(cursor.getDate() + 1);
       }}
       return complete;
@@ -2767,10 +2768,11 @@ def render_dashboard(data):
       [...sourcesByCode.values()].forEach(source => (source.dailySeries || []).forEach(row => {{
         const date = String(row.date || '');
         if (!/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(date)) return;
-        const current = byDate.get(date) || {{revenue:0, units:0, orders:0}};
+        const current = byDate.get(date) || {{revenue:0, units:0, orders:0, visits:0}};
         current.revenue += Number(row.revenue || 0);
         current.units += Number(row.units || 0);
         current.orders += Number(row.orders || 0);
+        current.visits += Number(row.visits || 0);
         byDate.set(date, current);
       }}));
       return [...byDate.entries()].map(([date, values]) => ({{date, ...values}})).sort((a, b) => a.date.localeCompare(b.date));
@@ -2789,13 +2791,30 @@ def render_dashboard(data):
       const current = last14.slice(7).reduce((total, row) => total + row.revenue, 0);
       const previousUnits = last14.slice(0, 7).reduce((total, row) => total + row.units, 0);
       const currentUnits = last14.slice(7).reduce((total, row) => total + row.units, 0);
-      if (previous <= 0 && current <= 0) return '<div class="muted">→ 7d sem vendas</div>';
-      if (previous <= 0) return `<div class="trend trend-up">↑ 7d nova venda${{currentUnits > 0 ? ` · ${{num(currentUnits)}} un.` : ''}}</div>`;
+      const sources = (item.children && item.children.length) ? item.children : [item];
+      const visitsCovered = sources.every(source => source.visitsCoverageComplete === true);
+      const visitsSuffix = (() => {{
+        if (!visitsCovered) return ' · visitas N/D';
+        const previousVisits = last14.slice(0, 7).reduce((total, row) => total + row.visits, 0);
+        const currentVisits = last14.slice(7).reduce((total, row) => total + row.visits, 0);
+        const visitsChange = previousVisits > 0 ? (currentVisits - previousVisits) / previousVisits : null;
+        const visitsLabel = visitsChange === null
+          ? `vis. ${{num(currentVisits)}}`
+          : `vis. ${{visitsChange >= 0 ? '↑' : '↓'}} ${{Math.abs(visitsChange * 100).toLocaleString('pt-BR', {{maximumFractionDigits:1}})}}%`;
+        const previousCvr = previousVisits > 0 ? previousUnits / previousVisits : null;
+        const currentCvr = currentVisits > 0 ? currentUnits / currentVisits : null;
+        const cvrLabel = previousCvr === null || currentCvr === null
+          ? 'conv. N/D'
+          : `conv. ${{currentCvr >= previousCvr ? '↑' : '↓'}} ${{Math.abs((currentCvr - previousCvr) * 100).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}} pp`;
+        return ` · ${{visitsLabel}} · ${{cvrLabel}}`;
+      }})();
+      if (previous <= 0 && current <= 0) return `<div class="muted">→ 7d sem vendas${{visitsSuffix}}</div>`;
+      if (previous <= 0) return `<div class="trend trend-up">↑ 7d nova venda${{currentUnits > 0 ? ` · ${{num(currentUnits)}} un.` : ''}}${{visitsSuffix}}</div>`;
       const change = (current - previous) / previous;
-      if (Math.abs(change) < .02) return '<div class="muted">→ 7d estável</div>';
+      if (Math.abs(change) < .02) return `<div class="muted">→ 7d estável${{visitsSuffix}}</div>`;
       const label = `${{Math.abs(change * 100).toLocaleString('pt-BR', {{maximumFractionDigits:1}})}}%`;
       const unitsLabel = previousUnits > 0 ? ` · un. ${{currentUnits >= previousUnits ? '↑' : '↓'}} ${{Math.abs((currentUnits - previousUnits) / previousUnits * 100).toLocaleString('pt-BR', {{maximumFractionDigits:1}})}}%` : '';
-      return `<div class="trend ${{change > 0 ? 'trend-up' : 'trend-down'}}">${{change > 0 ? '↑' : '↓'}} 7d ${{label}}${{unitsLabel}}</div>`;
+      return `<div class="trend ${{change > 0 ? 'trend-up' : 'trend-down'}}">${{change > 0 ? '↑' : '↓'}} 7d ${{label}}${{unitsLabel}}${{visitsSuffix}}</div>`;
     }}
     function chartLongDate(value) {{
       const parsed = new Date(`${{value}}T12:00:00`);

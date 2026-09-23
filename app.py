@@ -821,6 +821,11 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         daily_sales_coverage_days = {}
     else:
         daily_sales_rows, daily_sales_coverage_days, daily_sales_error = daily_sales_result
+    daily_visits_rows, daily_visits_coverage_by_item, daily_visits_error = (
+        ([], {}, "partial_operational_cache")
+        if latest_payload.get("operational_partial")
+        else _sales_intelligence_fetch_daily_visits(client, latest_date_from, latest_date_to)
+    )
     daily_ads_rows, daily_ads_coverage_days, daily_ads_error = (latest_payload.get("daily_ads", []), {}, "partial_operational_cache") if latest_payload.get("operational_partial") else _sales_intelligence_fetch_daily_ads(
         client,
         latest_date_from,
@@ -872,6 +877,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "impressions": 0.0,
             "clicks": 0.0,
             "adsUnits": 0.0,
+            "visits": 0.0,
         }
     for daily_raw in daily_ads_rows:
         daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
@@ -891,6 +897,16 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "clicks": _number(daily_raw.get("clicks")),
             "adsUnits": _number(daily_raw.get("units_quantity")),
         })
+    for daily_raw in daily_visits_rows:
+        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
+        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
+        if not daily_code or not snapshot_date:
+            continue
+        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
+            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
+            "lastSaleDate": "", "lastSalePrice": 0.0,
+        })
+        daily["visits"] = _number(daily_raw.get("visits_total"))
     daily_series_by_item: dict[str, list[dict]] = {}
     for daily_code, daily_by_date in daily_by_item_date.items():
         daily_series = []
@@ -919,12 +935,13 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 "impressions": 0.0,
                 "clicks": 0.0,
                 "adsUnits": 0.0,
+                "visits": 0.0,
                 "priceFallback": 0.0,
             })
             for field in (
                 "orders", "units", "revenue", "adsRevenue", "adsDirectRevenue",
                 "adsIndirectRevenue", "investment", "tacosBaseRevenue", "impressions",
-                "clicks", "adsUnits",
+                "clicks", "adsUnits", "visits",
             ):
                 account_daily[field] += _number(daily.get(field))
             if _number(daily.get("lastSalePrice")) > 0:
@@ -1056,6 +1073,12 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "suggestedTestPrice": suggested_test_price,
             "pricingSignal": pricing_signal,
             "dailySeries": daily_series_by_item.get(code, []),
+            # Visitas são uma métrica operacional independente: somente
+            # habilitamos a comparação quando cada dia do período foi salvo.
+            "visitsCoverageComplete": (
+                bool(daily_visits_coverage_by_item.get(code, {}).get("complete"))
+                if not daily_visits_error else None
+            ),
             "listingTypeId": str(raw.get("listing_type_id") or raw.get("listingTypeId") or "").strip(),
             "logisticType": str(raw.get("logistic_type") or shipping.get("logistic_type") or "").strip(),
             "freeShipping": bool(free_shipping) if free_shipping is not None else None,
@@ -2026,6 +2049,29 @@ def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: 
     if payload.get("ok") is True and not source_error:
         return [row for row in rows if isinstance(row, dict)], coverage_days, ""
     return [], coverage_days, source_error or "snapshots_diarios_indisponiveis"
+
+
+def _sales_intelligence_fetch_daily_visits(client: str, date_from: str, date_to: str) -> tuple[list[dict], dict, str]:
+    """Lê somente visitas diárias já persistidas pelo agente.
+
+    Não aciona OAuth, coleta nem repara o cache durante a consulta do beta.
+    A ausência de cobertura é tratada pela interface como N/D, sem afetar a
+    integridade financeira de vendas e Ads.
+    """
+    payload = _fetch_dash_ads_json(
+        "/internal/dash-ads/visits-daily",
+        {
+            "client": client,
+            "date_from": date_from,
+            "date_to": date_to,
+        },
+    )
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    coverage_by_item = payload.get("coverage_by_item") if isinstance(payload.get("coverage_by_item"), dict) else {}
+    source_error = str(payload.get("erro") or payload.get("error") or "").strip()
+    if payload.get("ok") is True and not source_error:
+        return [row for row in rows if isinstance(row, dict)], coverage_by_item, ""
+    return [], coverage_by_item, source_error or "visitas_diarias_indisponiveis"
 
 
 def _daily_partial_snapshot_dates(coverage_days: dict) -> set[str]:
