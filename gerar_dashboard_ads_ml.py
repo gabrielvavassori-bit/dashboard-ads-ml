@@ -2513,8 +2513,8 @@ def render_dashboard(data):
       document.getElementById('kpis').innerHTML = [
         ['Produtos analisados', num(k.products), ''],
         ['Receita total', brl(k.revenue), 'good'],
-        ['Devolucoes confirmadas', k.returnsAvailable ? brl(k.returnsAmount || 0) : 'N/D', k.returnsAvailable && k.returnsAmount > 0 ? 'danger' : ''],
-        ['Taxa de devolucao', k.returnsAvailable ? pct(k.returnsRate || 0) : 'N/D', k.returnsAvailable && k.returnsRate > 0 ? 'danger' : ''],
+        ['Devolucoes confirmadas', k.returnsAvailable ? `${{brl(k.returnsAmount || 0)}} · ${{pct(k.returnsRate || 0)}} da receita` : 'N/D', k.returnsAvailable && k.returnsAmount > 0 ? 'danger' : ''],
+        ['Pedidos devolvidos', k.returnsOrdersAvailable ? `${{num(k.returnsOrdersCount || 0)}} de ${{num(k.returnsOrdersTotal || 0)}} · ${{pct(k.returnsOrdersRate || 0)}}` : 'N/D', k.returnsOrdersAvailable && k.returnsOrdersCount > 0 ? 'danger' : ''],
         ['Receita atribuida ADS', brl(k.adsRevenue), ''],
         ['Receita organica estimada', brl(k.organicRevenue || 0), ''],
         ['Investimento ADS', brl(k.investment), ''],
