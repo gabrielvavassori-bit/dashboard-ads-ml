@@ -1747,13 +1747,21 @@ def render_dashboard(data):
     .promotion-config-footer .secondary-action {{ background:#fff; color:#b42318; border:1px solid #fda29b; }}
     @media(max-width:600px) {{ .promotion-config-metrics {{ grid-template-columns:1fr; }} .promotion-config-editor {{ align-items:flex-start; flex-direction:column; }} }}
     .promotion-table-wrap {{ margin-top:10px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#fff; }}
-    .promotion-table {{ width:100%; min-width:980px; border-collapse:collapse; font-size:12px; }}
-    .promotion-table th {{ padding:9px 8px; background:#f8fafc; color:#667085; font-size:10px; letter-spacing:.03em; text-align:left; text-transform:uppercase; white-space:nowrap; }}
+    .promotion-table {{ width:100%; min-width:1180px; table-layout:fixed; border-collapse:collapse; font-size:12px; }}
+    .promotion-table th {{ padding:9px 8px; background:#f8fafc; color:#667085; font-size:10px; letter-spacing:.03em; text-align:left; text-transform:uppercase; white-space:normal; }}
+    .promotion-table th:nth-child(1) {{ width:25%; }}
+    .promotion-table th:nth-child(2), .promotion-table th:nth-child(3) {{ width:6%; }}
+    .promotion-table th:nth-child(4), .promotion-table th:nth-child(9) {{ width:5%; }}
+    .promotion-table th:nth-child(5), .promotion-table th:nth-child(10) {{ width:8%; }}
+    .promotion-table th:nth-child(6) {{ width:15%; }}
+    .promotion-table th:nth-child(7) {{ width:13%; }}
+    .promotion-table th:nth-child(8) {{ width:9%; }}
     .promotion-table td {{ padding:9px 8px; border-top:1px solid #eaecf0; vertical-align:top; }}
     .promotion-table tr.promotion-best-discount {{ background:#f0fdf4; }}
     .promotion-table tr.promotion-best-subsidy {{ box-shadow:inset 3px 0 0 #12b76a; }}
     .promotion-table tr.promotion-best-payout {{ box-shadow:inset 3px 0 0 #f79009; }}
-    .promotion-table td.num {{ text-align:right; white-space:nowrap; }}
+    .promotion-table td.num {{ text-align:right; white-space:normal; }}
+    .promotion-table td, .promotion-table small {{ overflow-wrap:anywhere; }}
     .promotion-table b {{ display:block; color:var(--ink); }}
     .promotion-table small {{ display:block; margin-top:2px; color:var(--muted); }}
     .promotion-margin-value {{ display:inline-block; padding:3px 6px; border-radius:7px; font-weight:800; cursor:help; }}
@@ -3348,7 +3356,7 @@ def render_dashboard(data):
       const price = Number(quote.price);
       const receipt = Number(quote.receipt_before_cost_tax);
       if (quote.available !== true || !Number.isFinite(price) || price <= 0 || !Number.isFinite(receipt))
-        return `<span class="muted">N/D</span><small>${{safe(quote.reason || 'Cotação indisponível.')}}</small>`;
+        return '<span class="muted">N/D</span>';
       const fee = Number(quote.sale_fee);
       const freight = Number(quote.shipping_cost);
       const rebate = Number(quote.rebate || 0);
@@ -3356,7 +3364,7 @@ def render_dashboard(data):
       const percentage = (receipt / price * 100).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
       const line = (label, value) => `<div class="promotion-margin-line"><span>${{label}}</span><b>${{value}}</b></div>`;
       const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{line('Custo do produto', 'Não informado')}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line('Saldo antes de custo e imposto', brl(receipt))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. A margem de contribuição real depende do custo e do imposto cadastrados; estes não foram assumidos como zero.</div>`;
-      return `<span class="promotion-margin-value ${{receipt < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small></span><small>Antes de custo e imposto</small>`;
+      return `<span class="promotion-margin-value ${{receipt < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small></span>`;
     }}
     function promotionTableRow(item, entry, allowAction, listing = null) {{
       const {{row, index, payout, bestPayout, bestDiscount, bestSubsidy}} = entry;
