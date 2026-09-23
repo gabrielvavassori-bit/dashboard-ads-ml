@@ -29,8 +29,10 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('Lona Azul', html)
         self.assertIn('SKU LAZ-3X3', html)
         self.assertIn('foto.jpg', html)
-        self.assertIn('<details class="promotion-row-settings">', html)
-        self.assertLess(html.index('<summary'), html.index('data-promo-campaign-price="2"'))
+        self.assertIn('<dialog class="promotion-config-dialog"', html)
+        self.assertIn('data-promo-config-open', html)
+        self.assertLess(html.index('<dialog'), html.index('data-promo-campaign-price="2"'))
+        self.assertIn('Gerar prévia para participar', html)
         self.assertIn('data-promo-item="MLB111"', html)
 
     def test_campaign_view_groups_variations_without_losing_individual_prices(self):

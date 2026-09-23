@@ -1718,11 +1718,29 @@ def render_dashboard(data):
     .promotion-listing-identity {{ display:flex; align-items:center; gap:8px; min-width:220px; }}
     .promotion-listing-identity .product-thumbnail {{ flex:0 0 42px; width:42px; height:42px; }}
     .promotion-listing-name, .promotion-listing-sku {{ font-weight:800; color:var(--ink) !important; white-space:normal; }}
-    .promotion-row-settings {{ position:relative; display:inline-block; }}
-    .promotion-row-settings > summary {{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:28px; border:1px solid #98a2b3; border-radius:5px; color:#344054; background:#fff; font-size:18px; line-height:1; cursor:pointer; list-style:none; }}
-    .promotion-row-settings > summary::-webkit-details-marker {{ display:none; }}
-    .promotion-row-settings[open] > summary {{ background:#eff4ff; border-color:#6172f3; }}
-    .promotion-row-settings-panel {{ display:grid; gap:7px; min-width:178px; margin-top:5px; padding:8px; border:1px solid var(--line); border-radius:6px; background:#fff; box-shadow:0 6px 16px rgba(16,24,40,.12); }}
+    .promotion-settings-button {{ width:30px; height:28px; padding:0 !important; border:1px solid #98a2b3; border-radius:5px; color:#344054; background:#fff; font-size:18px !important; line-height:1; cursor:pointer; }}
+    .promotion-config-dialog {{ width:min(760px,calc(100vw - 24px)); max-height:calc(100vh - 32px); padding:0; border:0; border-radius:14px; color:var(--ink); box-shadow:0 18px 55px rgba(16,24,40,.25); overflow:auto; }}
+    .promotion-config-dialog::backdrop {{ background:rgba(16,24,40,.58); }}
+    .promotion-config-head {{ display:flex; justify-content:space-between; align-items:center; padding:17px 22px; border-bottom:1px solid var(--line); }}
+    .promotion-config-head h3 {{ margin:0; font-size:18px; }}
+    .promotion-config-close {{ width:30px; padding:4px; background:#fff; color:#667085; border:0; font-size:22px; cursor:pointer; }}
+    .promotion-config-body {{ padding:20px 24px; }}
+    .promotion-config-product {{ display:flex; align-items:center; gap:12px; padding-bottom:16px; border-bottom:1px dashed var(--line); }}
+    .promotion-config-product b {{ display:block; }}
+    .promotion-config-product .product-thumbnail {{ flex:0 0 48px; width:48px; height:48px; }}
+    .promotion-config-campaign {{ padding:16px 0; text-align:center; font-weight:800; color:#667085; }}
+    .promotion-config-metrics {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:18px; text-align:center; }}
+    .promotion-config-metrics span, .promotion-config-receipt span {{ display:block; font-size:12px; color:#667085; }}
+    .promotion-config-metrics b, .promotion-config-receipt b {{ display:block; margin-top:3px; font-size:18px; }}
+    .promotion-config-editor {{ display:flex; align-items:center; justify-content:space-between; gap:20px; border-top:1px solid var(--line); padding:20px 0; }}
+    .promotion-config-editor label {{ display:block; font-weight:700; }}
+    .promotion-config-editor input {{ display:block; width:160px; margin-top:5px; }}
+    .promotion-config-receipt {{ text-align:center; }}
+    .promotion-config-note {{ font-size:12px; color:#667085; }}
+    .promotion-config-footer {{ display:flex; justify-content:flex-end; gap:8px; padding:15px 22px; border-top:1px solid var(--line); }}
+    .promotion-config-footer button {{ width:auto; padding:7px 12px; }}
+    .promotion-config-footer .secondary-action {{ background:#fff; color:#b42318; border:1px solid #fda29b; }}
+    @media(max-width:600px) {{ .promotion-config-metrics {{ grid-template-columns:1fr; }} .promotion-config-editor {{ align-items:flex-start; flex-direction:column; }} }}
     .promotion-table-wrap {{ margin-top:10px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#fff; }}
     .promotion-table {{ width:100%; min-width:980px; border-collapse:collapse; font-size:12px; }}
     .promotion-table th {{ padding:9px 8px; background:#f8fafc; color:#667085; font-size:10px; letter-spacing:.03em; text-align:left; text-transform:uppercase; white-space:nowrap; }}
@@ -3329,8 +3347,12 @@ def render_dashboard(data):
         : (canRemove
           ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>`
           : `<span class="muted">${{safe(row.read_only_reason || 'Somente leitura')}}</span>`);
+      const quote = row.receipt_quote || {{}};
+      const receipt = quote.available === true ? brl(Number(quote.receipt_before_cost_tax || 0)) : 'Não calculado';
+      const primaryAction = canJoin || canUpdate ? `<button type="button" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Gerar prévia da alteração' : 'Gerar prévia para participar'}}</button>` : '';
+      const leaveAction = canRemove ? `<button type="button" class="secondary-action" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Gerar prévia para sair</button>` : '';
       const action = listing && (canJoin || canUpdate || canRemove)
-        ? `<details class="promotion-row-settings"><summary aria-label="Configurar promoção de ${{safe(item.code)}}" title="Configurar participação, alteração ou saída">⚙</summary><div class="promotion-row-settings-panel">${{actionControls}}</div></details>`
+        ? `<button type="button" class="promotion-settings-button" data-promo-config-open aria-label="Configurar promoção de ${{safe(item.code)}}" title="Configurar promoção">⚙</button><dialog class="promotion-config-dialog" aria-label="Configurar promoção de ${{safe(item.code)}}"><div class="promotion-config-head"><h3>${{canUpdate ? 'Alterar promoção' : canJoin ? 'Participar da promoção' : 'Sair da promoção'}}</h3><button type="button" class="promotion-config-close" data-promo-config-close aria-label="Fechar">×</button></div><div class="promotion-config-body"><div class="promotion-config-product">${{productImage({{thumbnailUrl:listing.thumbnailUrl,title:listing.title}})}}<div><b>${{safe(listing.title)}}</b><span>${{safe(listing.code)}}${{listing.sku ? ` · SKU ${{safe(listing.sku)}}` : ''}}</span></div></div><div class="promotion-config-campaign">${{safe(promotionDisplayName(row))}} · ${{safe(promotionPeriod(row))}}</div><div class="promotion-config-metrics"><div><span>Preço original</span><b>${{original > 0 ? brl(original) : '—'}}</b></div><div><span>Preço promocional sugerido</span><b>${{price > 0 ? brl(price) : '—'}}</b></div><div><span>Subsídio Mercado Livre</span><b>${{Number(row.meli_percentage || 0).toLocaleString('pt-BR',{{maximumFractionDigits:2}})}}%</b></div></div><div class="promotion-config-editor">${{primaryAction && row.action_mode !== 'join_fixed_offer' ? `<label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label>` : `<div class="promotion-config-note">${{primaryAction ? 'Preço definido pela campanha.' : 'A saída não altera o preço nesta prévia.'}}</div>`}}<div class="promotion-config-receipt"><span>Você recebe (estim.)</span><b>${{receipt}}</b><span>${{quote.available === true ? 'Antes de custo e imposto' : safe(quote.reason || 'Tarifa ou frete não informado pelo Mercado Livre.')}}</span></div></div><div class="promotion-config-note">${{safe(promotionLimits(row))}}. A prévia não aplica a mudança; a confirmação é uma etapa separada.</div></div><div class="promotion-config-footer"><button type="button" data-promo-config-close>Fechar</button>${{leaveAction}}${{primaryAction}}</div></dialog>`
         : actionControls;
       const rebate = Number(row.discount_meli_boost_amount);
       const rebatePercent = Number(row.discount_meli_boosted_percentage);
@@ -3472,6 +3494,8 @@ def render_dashboard(data):
       activatePromotionPanels();
     }}
     function activatePromotionPanels() {{
+      document.querySelectorAll('[data-promo-config-open]').forEach(button => button.addEventListener('click', () => button.parentElement.querySelector('dialog')?.showModal()));
+      document.querySelectorAll('[data-promo-config-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog')?.close()));
       document.querySelectorAll('[data-promo-scope-view]').forEach(button => button.addEventListener('click', () => {{
         promotionStateUpdate(button.dataset.promoScopeKey, {{view:button.dataset.promoScopeView}});
       }}));
