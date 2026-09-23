@@ -2767,9 +2767,13 @@ def render_dashboard(data):
       [...sourcesByCode.values()].forEach(source => (source.dailySeries || []).forEach(row => {{
         const date = String(row.date || '');
         if (!/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(date)) return;
-        byDate.set(date, (byDate.get(date) || 0) + Number(row.revenue || 0));
+        const current = byDate.get(date) || {{revenue:0, units:0, orders:0}};
+        current.revenue += Number(row.revenue || 0);
+        current.units += Number(row.units || 0);
+        current.orders += Number(row.orders || 0);
+        byDate.set(date, current);
       }}));
-      return [...byDate.entries()].map(([date, revenue]) => ({{date, revenue}})).sort((a, b) => a.date.localeCompare(b.date));
+      return [...byDate.entries()].map(([date, values]) => ({{date, ...values}})).sort((a, b) => a.date.localeCompare(b.date));
     }}
     function salesTrendInline(item) {{
       if (item.salesCoverageComplete === false) return '<div class="muted">7d: cobertura parcial</div>';
@@ -2783,12 +2787,15 @@ def render_dashboard(data):
       }}
       const previous = last14.slice(0, 7).reduce((total, row) => total + row.revenue, 0);
       const current = last14.slice(7).reduce((total, row) => total + row.revenue, 0);
+      const previousUnits = last14.slice(0, 7).reduce((total, row) => total + row.units, 0);
+      const currentUnits = last14.slice(7).reduce((total, row) => total + row.units, 0);
       if (previous <= 0 && current <= 0) return '<div class="muted">→ 7d sem vendas</div>';
-      if (previous <= 0) return '<div class="trend trend-up">↑ 7d nova venda</div>';
+      if (previous <= 0) return `<div class="trend trend-up">↑ 7d nova venda${{currentUnits > 0 ? ` · ${{num(currentUnits)}} un.` : ''}}</div>`;
       const change = (current - previous) / previous;
       if (Math.abs(change) < .02) return '<div class="muted">→ 7d estável</div>';
       const label = `${{Math.abs(change * 100).toLocaleString('pt-BR', {{maximumFractionDigits:1}})}}%`;
-      return `<div class="trend ${{change > 0 ? 'trend-up' : 'trend-down'}}">${{change > 0 ? '↑' : '↓'}} 7d ${{label}}</div>`;
+      const unitsLabel = previousUnits > 0 ? ` · un. ${{currentUnits >= previousUnits ? '↑' : '↓'}} ${{Math.abs((currentUnits - previousUnits) / previousUnits * 100).toLocaleString('pt-BR', {{maximumFractionDigits:1}})}}%` : '';
+      return `<div class="trend ${{change > 0 ? 'trend-up' : 'trend-down'}}">${{change > 0 ? '↑' : '↓'}} 7d ${{label}}${{unitsLabel}}</div>`;
     }}
     function chartLongDate(value) {{
       const parsed = new Date(`${{value}}T12:00:00`);
@@ -3180,7 +3187,7 @@ def render_dashboard(data):
       return (Number.isFinite(price) ? price : 0) + (Number.isFinite(rebate) ? rebate : 0);
     }}
     function promotionRankRows(item, rows) {{
-      const normalized = rows.map((row, index) => ({{row, index, total:Number(promotionTotalCellValue(row)), subsidy:Number(row.meli_percentage), rebate:Number(row.discount_meli_boost_amount), payout:promotionPayoutScore(row, item)}}));
+      const normalized = rows.map((row, index) => ({{row, index, total:Number(promotionTotalCellValue(row)), subsidy:Number(row.meli_percentage), rebate:Number(row.discount_meli_boost_amount), payout:promotionReceiptValue(row)}}));
       const highestDiscount = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.total) ? entry.total : 0));
       const highestSubsidy = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.subsidy) ? entry.subsidy : 0));
       const highestPayout = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.payout) ? entry.payout : 0));
@@ -3194,6 +3201,20 @@ def render_dashboard(data):
       if (Number.isFinite(original) && Number.isFinite(price) && original > price && price > 0) return (original - price) / original * 100;
       const percentage = Number(row.discount_percentage);
       return Number.isFinite(percentage) ? percentage : 0;
+    }}
+    function promotionReceiptValue(row) {{
+      const value = Number(row.receipt_quote?.receipt_before_cost_tax);
+      return row.receipt_quote?.available === true && Number.isFinite(value) ? value : -Infinity;
+    }}
+    function promotionReceiptCell(row) {{
+      const quote = row.receipt_quote || {{}};
+      if (quote.available !== true) return `<span class="muted">Não calculado</span><small>${{safe(quote.reason || 'Cotação indisponível.')}}</small>`;
+      const price = Number(quote.price || 0);
+      const fee = Number(quote.sale_fee || 0);
+      const shipping = Number(quote.shipping_cost || 0);
+      const rebate = Number(quote.rebate || 0);
+      const receipt = Number(quote.receipt_before_cost_tax || 0);
+      return `<b>${{brl(receipt)}}</b><small>${{brl(price)}} − tarifa ${{brl(fee)}} − frete ${{brl(shipping)}}${{rebate > 0 ? ` + rebate ${{brl(rebate)}}` : ''}}</small><small>${{safe(quote.label || 'Antes de custo e imposto')}}</small>`;
     }}
     function promotionTableRow(item, entry, allowAction) {{
       const {{row, index, payout, bestPayout, bestDiscount, bestSubsidy}} = entry;
@@ -3212,7 +3233,7 @@ def render_dashboard(data):
       const payoutBadge = bestPayout ? '<span class="promotion-rank">Maior recebimento estimado</span>' : '';
       const discountBadge = bestDiscount ? '<span class="promotion-rank">Maior desconto</span>' : '';
       const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
-      return `<tr class="${{classes}}"><td><b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num"><b>${{payout > 0 ? brl(payout) : '—'}}</b><small>preço promocional + rebate</small></td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
+      return `<tr class="${{classes}}"><td><b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
     function promotionTableHtml(item, rows, allowAction = false) {{
       const ranked = promotionRankRows(item, rows);
