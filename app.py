@@ -1709,10 +1709,22 @@ def _online_cache_integrity_state(
 
 def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_from: str, date_to: str) -> tuple[dict | None, str]:
     """Main Ads may display explicitly partial data, never another account/window."""
-    payload = _fetch_dash_ads_json("/internal/dash-ads/operational-cache", {
+    params = {
         "client": client, "advertiser_id": advertiser_id, "date_from": date_from, "date_to": date_to,
-    })
+    }
+    payload = _fetch_dash_ads_json("/internal/dash-ads/operational-cache", params)
     if not payload.get("ok"):
+        # O OAuth já agenda a primeira coleta no Agente. Nesta lacuna, a tela
+        # só consulta o estado; ela não inicia nem disputa uma nova coleta.
+        status_payload = _fetch_dash_ads_json("/internal/dash-ads/online-cache-status", params)
+        status = status_payload.get("status") if isinstance(status_payload.get("status"), dict) else {}
+        if str(status.get("status") or "").strip().lower() in {
+            "running", "repair_pending", "prebuild", "prebuild_interrupted",
+        }:
+            return None, (
+                ONLINE_CACHE_PENDING_PREFIX
+                + "A coleta inicial desta conta está em preparação. Atualize a página após a conclusão."
+            )
         return None, "Ainda não há dados operacionais disponíveis no cache desta conta e período."
     if payload.get("client_id") != client or payload.get("operational_partial") is not True:
         return None, "A identificação do cache operacional não corresponde à conta solicitada."
