@@ -40,6 +40,7 @@ Variaveis de ambiente:
 """
 import html as _html
 import calendar
+import gzip
 import hashlib
 import hmac
 import json
@@ -51,6 +52,7 @@ import secrets
 import tempfile
 import traceback
 import threading
+import zlib
 import time
 from datetime import date, datetime, timedelta
 from email import policy
@@ -449,6 +451,30 @@ def _load_snapshot_completeness_governance_rule() -> dict:
             "result": result,
         })
         return result
+def _decode_dash_ads_response(raw: bytes, *, content_encoding: str = "", content_type: str = "") -> tuple[dict | None, str | None]:
+    """Decodifica o contrato interno sem deixar erro HTML virar resposta genérica."""
+    encoding = str(content_encoding or "").lower().strip()
+    try:
+        if encoding == "gzip":
+            raw = gzip.decompress(raw)
+        elif encoding == "deflate":
+            raw = zlib.decompress(raw)
+    except (OSError, zlib.error) as exc:
+        return None, f"codificacao_invalida:{exc.__class__.__name__}"
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        detail = f"json_invalido:{exc.__class__.__name__}"
+        if content_type:
+            detail += f";content_type={content_type}"
+        if encoding:
+            detail += f";content_encoding={encoding}"
+        return None, detail
+    if not isinstance(parsed, dict):
+        return None, "json_nao_objeto"
+    return parsed, None
+
+
 def _post_dash_ads_json(path: str, payload: dict) -> dict:
     secret = os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")
     if not secret:
@@ -459,26 +485,38 @@ def _post_dash_ads_json(path: str, payload: dict) -> dict:
         data=body,
         headers={
             "Accept": "application/json",
+            "Accept-Encoding": "identity",
             "Content-Type": "application/json",
             "X-COMPETITIVE-WORKER-SECRET": secret,
         },
         method="POST",
     )
+    response_headers = None
     try:
         with urlopen(req, timeout=45) as response:
             raw = response.read(8_000_000)
             status = response.status
+            response_headers = response.headers
     except HTTPError as exc:
         raw = exc.read(8_000_000)
         status = exc.code
+        response_headers = exc.headers
     except (URLError, TimeoutError) as exc:
         return {"ok": False, "http_status": 502, "message": "Falha ao consultar agente-ml.", "error": exc.__class__.__name__}
-    try:
-        response_payload = json.loads(raw.decode("utf-8", errors="replace"))
-    except json.JSONDecodeError:
-        response_payload = {"ok": False, "message": "agente-ml retornou resposta nao JSON."}
-    if not isinstance(response_payload, dict):
-        response_payload = {"ok": False, "payload": response_payload}
+    content_type = str(response_headers.get("Content-Type") or "") if response_headers else ""
+    content_encoding = str(response_headers.get("Content-Encoding") or "") if response_headers else ""
+    response_payload, decode_error = _decode_dash_ads_response(
+        raw, content_encoding=content_encoding, content_type=content_type,
+    )
+    if response_payload is None:
+        response_payload = {
+            "ok": False,
+            "message": "A resposta do agente-ml não pôde ser interpretada. Tente novamente; se persistir, informe o código exibido.",
+            "error": "agent_response_not_json",
+            "upstream_status": status,
+            "upstream_content_type": content_type or "indisponivel",
+            "response_contract": decode_error,
+        }
     for sensitive_key in ("access_token", "refresh_token", "client_secret"):
         response_payload.pop(sensitive_key, None)
     response_payload.setdefault("http_status", status)

@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import hmac
 import importlib
@@ -45,6 +46,24 @@ from gerar_dashboard_ads_ml import detect_ads_period
 # import, preservando a verificação de assinatura e o segredo interno reais.
 webhook = importlib.reload(webhook)
 app = importlib.reload(app)
+
+
+class DashAdsBridgeResponseTests(unittest.TestCase):
+    def test_decodes_plain_and_gzip_json_without_exposing_raw_response(self):
+        raw = b'{"ok": true, "message": "safe"}'
+        plain, plain_error = app._decode_dash_ads_response(raw, content_type="application/json")
+        compressed, compressed_error = app._decode_dash_ads_response(gzip.compress(raw), content_encoding="gzip", content_type="application/json")
+        self.assertEqual(plain, {"ok": True, "message": "safe"})
+        self.assertIsNone(plain_error)
+        self.assertEqual(compressed, plain)
+        self.assertIsNone(compressed_error)
+
+    def test_reports_non_json_contract_without_returning_upstream_body(self):
+        decoded, error = app._decode_dash_ads_response(b"<html>upstream failure</html>", content_type="text/html")
+        self.assertIsNone(decoded)
+        self.assertIn("json_invalido", error)
+        self.assertIn("content_type=text/html", error)
+
 
 
 def signed(payload):
