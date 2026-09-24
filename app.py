@@ -1206,7 +1206,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     )
     returns_orders_count = (
         int(_number(returns_payload.get("returned_orders_count")))
-        if returns_orders_available else 0
+        if returns_available else 0
     )
     returns_orders_total = (
         int(_number(returns_payload.get("orders_total")))

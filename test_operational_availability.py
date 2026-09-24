@@ -41,6 +41,22 @@ class OperationalAvailabilityTests(unittest.TestCase):
         self.assertEqual(data["kpis"]["returnsAmount"], 12.50)
         self.assertEqual(fetch.call_args_list[1].args[0], "/internal/dash-ads/returns-summary")
 
+    def test_confirmed_returned_orders_count_remains_visible_without_order_universe(self):
+        returns = {
+            "ok": True, "complete": True,
+            "date_from": "2026-09-01", "date_to": "2026-09-02",
+            "amount": 12.50, "returns_count": 1,
+            "returned_orders_count": 2, "orders_total_available": False,
+        }
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=[self.payload(), returns]):
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertEqual(error, "")
+        self.assertTrue(data["kpis"]["returnsAvailable"])
+        self.assertFalse(data["kpis"]["returnsOrdersAvailable"])
+        self.assertEqual(data["kpis"]["returnsOrdersCount"], 2)
+        html = render_dashboard(data)
+        self.assertIn("taxa N/D", html)
+
     def test_rejects_other_account_period_and_advertiser(self):
         for field, value in (("client_id", "other"), ("date_from", "2026-08-01"), ("advertiser_id", "8")):
             payload = copy.deepcopy(self.payload())

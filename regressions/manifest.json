@@ -117,6 +117,17 @@
       "invariant": "A tabela por MLB ou campanha deve manter o recebimento cotado e o flutuante descritivo de tarifa, frete, custo e imposto; custo e imposto ausentes aparecem como nao informados, nunca como zero real. Cotacao indisponivel permanece N/D sem alargar a tabela.",
       "file_globs": ["gerar_dashboard_ads_ml.py", "test_promotions_guide_lookup.py"],
       "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_promotions_guide_lookup.py"], "blocking": true}]
+    },
+    {
+      "id": "REGRESSION-006",
+      "title": "Devolucoes confirmadas independem da cobertura financeira parcial",
+      "severity": "ALTA",
+      "components": ["dash_ads_returns_bridge", "returns_kpis"],
+      "domains": ["financial_reporting", "mercado_livre_returns"],
+      "tags": ["returns", "rolling_period", "returned_orders", "no_false_nd"],
+      "invariant": "O beta mostra valor e contagem de pedidos devolvidos quando a ponte comprova a janela exata; a taxa por pedidos continua N/D sem universo de pedidos comprovado, sem ocultar a contagem nem inventar denominador.",
+      "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "test_operational_availability.py"],
+      "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_operational_availability.py"], "blocking": true}]
     }
   ]
 }
