@@ -636,6 +636,8 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("function restorePromotionConfigDialog()", html)
         self.assertIn("activePromotionConfigKey", html)
         self.assertIn("document.querySelectorAll('[data-promo-direct]')", html)
+        self.assertIn("promotion-action-status promotion-action-error", html)
+        self.assertIn("A oportunidade foi atualizada ou expirou", html)
         self.assertIn("const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {item_id:code, preview_token:preview.preview_token});", html)
         self.assertIn("promotionPreviewHtml(item, promotionState.get(item.code) || {})", html)
         self.assertIn("const data = await promotionApiRequest(`/api/promotions?item_id=${encodeURIComponent(code)}`);", html)
