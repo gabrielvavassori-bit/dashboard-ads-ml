@@ -603,6 +603,34 @@ def get_ml_account_for_user(user_id: int, account_id: int):
         conn.close()
 
 
+def get_active_ml_account_by_id(account_id: int):
+    """Read-only lookup used exclusively by the transient Admin Demo mode."""
+    conn = get_conn()
+    try:
+        return conn.execute(
+            "SELECT * FROM user_ml_accounts WHERE id=? AND status='active'",
+            (int(account_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+def list_active_ml_accounts_for_admin():
+    """Lists existing active links for the Admin selector without changing them."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """SELECT a.*, u.email AS user_email, u.name AS user_name
+               FROM user_ml_accounts a
+               JOIN users u ON u.id=a.user_id
+               WHERE a.status='active'
+               ORDER BY COALESCE(a.official_store, a.nickname, a.client_id), a.id"""
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
 def get_ml_account_by_slot(user_id: int, slot_number: int):
     conn = get_conn()
     try:

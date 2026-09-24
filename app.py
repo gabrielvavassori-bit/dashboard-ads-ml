@@ -76,6 +76,7 @@ from gerar_dashboard_ads_ml import (
     decision,
     mark_condition_context,
     mark_possible_catalog,
+    anonymize_dashboard_data,
     render_dashboard,
 )
 
@@ -195,7 +196,7 @@ def _parse_multipart(handler):
     return files, fields
 
 
-def _send_html(handler, html: str, status: int = 200, set_cookie: str = None):
+def _send_html(handler, html: str, status: int = 200, set_cookie: str | list[str] | tuple[str, ...] | None = None):
     html = _inject_admin_impersonation_banner(handler, html)
     data = html.encode("utf-8")
     handler.send_response(status)
@@ -205,18 +206,20 @@ def _send_html(handler, html: str, status: int = 200, set_cookie: str = None):
     handler.send_header("X-Content-Type-Options", "nosniff")
     handler.send_header("X-Frame-Options", "SAMEORIGIN")
     handler.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
-    if set_cookie:
-        handler.send_header("Set-Cookie", set_cookie)
+    for cookie in (set_cookie if isinstance(set_cookie, (list, tuple)) else [set_cookie]):
+        if cookie:
+            handler.send_header("Set-Cookie", cookie)
     handler.send_header("Content-Length", str(len(data)))
     handler.end_headers()
     handler.wfile.write(data)
 
 
-def _redirect(handler, location: str, set_cookie: str = None, status: int = 302):
+def _redirect(handler, location: str, set_cookie: str | list[str] | tuple[str, ...] | None = None, status: int = 302):
     handler.send_response(status)
     handler.send_header("Location", location)
-    if set_cookie:
-        handler.send_header("Set-Cookie", set_cookie)
+    for cookie in (set_cookie if isinstance(set_cookie, (list, tuple)) else [set_cookie]):
+        if cookie:
+            handler.send_header("Set-Cookie", cookie)
     handler.send_header("Content-Length", "0")
     handler.end_headers()
 
@@ -1381,6 +1384,22 @@ def _current_admin(handler):
     return auth.get_admin_session(token), token
 
 
+def _current_demo_account(handler):
+    """Returns the selected account from the signed transient Demo cookie.
+
+    This deliberately does not create a user session or mutate an account row.
+    A malformed or stale cookie is reported separately so the caller can fail
+    closed instead of falling back to a real dashboard.
+    """
+    token = _get_cookies(handler).get(auth.DEMO_COOKIE)
+    if not token:
+        return None, False
+    context = auth.get_demo_context(token)
+    if not context:
+        return None, True
+    return db.get_active_ml_account_by_id(context["account_id"]), True
+
+
 def _beta_access_allowed(user) -> bool:
     if not user:
         return False
@@ -2512,7 +2531,11 @@ class Handler(BaseHTTPRequestHandler):
                 _, token = _current_admin(self)
                 if token:
                     auth.destroy_admin_session(token)
-                _redirect(self, "/admin/login", set_cookie=auth.make_admin_clear_cookie())
+                _redirect(
+                    self,
+                    "/admin/login",
+                    set_cookie=[auth.make_admin_clear_cookie(), auth.make_demo_clear_cookie()],
+                )
                 return
             if path == "/admin/eduzz/connect":
                 admin, _ = _current_admin(self)
@@ -2571,7 +2594,18 @@ class Handler(BaseHTTPRequestHandler):
                     users.append(user)
                 info = (qs.get("info", [""])[0] or "")
                 recovery_view = _admin_integrity_recovery_view(users)
-                _send_html(self, templates.render_admin_users(users, q, info, recovery_view))
+                demo_context = auth.get_demo_context(_get_cookies(self).get(auth.DEMO_COOKIE))
+                _send_html(
+                    self,
+                    templates.render_admin_users(
+                        users,
+                        q,
+                        info,
+                        recovery_view,
+                        demo_accounts=db.list_active_ml_accounts_for_admin(),
+                        demo_account_id=(demo_context or {}).get("account_id"),
+                    ),
+                )
                 return
             if path == "/":
                 user, token = _current_user(self)
@@ -2656,15 +2690,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._get_intelligence_order_financials()
                 return
             if path == "/online":
-                user, token = _current_user(self)
-                if not user:
-                    _redirect(self, "/login")
+                demo_link, demo_cookie_present = _current_demo_account(self)
+                is_demo = demo_link is not None
+                if demo_cookie_present and not is_demo:
+                    _send_html(
+                        self,
+                        templates.render_error_page("O Modo Demo expirou ou a conta selecionada nao esta mais ativa. Volte ao Admin para selecionar uma conta."),
+                        403,
+                    )
                     return
-                if beta_config.BETA_MODE and not _beta_access_allowed(user):
-                    _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
-                    return
+                user = token = None
+                if not is_demo:
+                    user, token = _current_user(self)
+                    if not user:
+                        _redirect(self, "/login")
+                        return
+                    if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                        _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
+                        return
                 qs = parse_qs(url.query or "")
-                confirmed = (qs.get("confirmed", [""])[0] or "").strip() == "1"
+                confirmed = is_demo or (qs.get("confirmed", [""])[0] or "").strip() == "1"
                 period = _resolve_online_period(
                     mode=qs.get("period", ["30d"])[0],
                     month=qs.get("month", [""])[0],
@@ -2675,7 +2720,10 @@ class Handler(BaseHTTPRequestHandler):
                 if period["error"]:
                     _send_html(self, templates.render_error_page(period["error"]), 400)
                     return
-                link, links, selected_account_id = _current_ml_account(user, token)
+                if is_demo:
+                    link, links, selected_account_id = demo_link, [demo_link], demo_link["id"]
+                else:
+                    link, links, selected_account_id = _current_ml_account(user, token)
                 if links and not link:
                     _redirect(self, "/contas?" + urlencode({"return_to": self.path}))
                     return
@@ -2696,8 +2744,11 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 client_id = (link["client_id"] or "").strip()
                 if not client_id:
-                    db.mark_user_ml_link_disconnected(user["id"], link["id"])
-                    _redirect(self, "/ml-link/start?return_to=/online?confirmed=1")
+                    if is_demo:
+                        _send_html(self, templates.render_error_page("A conta selecionada nao possui identificador ativo para o Modo Demo."), 400)
+                    else:
+                        db.mark_user_ml_link_disconnected(user["id"], link["id"])
+                        _redirect(self, "/ml-link/start?return_to=/online?confirmed=1")
                     return
                 with _online_dashboard_semaphore:
                     dashboard_data, message = _build_online_dashboard_data(
@@ -2728,6 +2779,16 @@ class Handler(BaseHTTPRequestHandler):
                             return
                         _send_html(self, templates.render_error_page(message), 503)
                         return
+                    if is_demo:
+                        try:
+                            dashboard_data = anonymize_dashboard_data(dashboard_data)
+                        except Exception:
+                            _send_html(
+                                self,
+                                templates.render_error_page("A anonimização do Modo Demo falhou; nenhum dado comercial foi exibido."),
+                                503,
+                            )
+                            return
                     _send_html(self, render_dashboard(dashboard_data))
                 return
             if path in ("/teste", "/teste/"):
@@ -2850,6 +2911,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/admin/beta-sync-all":
                 self._post_admin_beta_sync_all()
+                return
+            if path == "/admin/demo/activate":
+                self._post_admin_demo_activate()
+                return
+            if path == "/admin/demo/deactivate":
+                self._post_admin_demo_deactivate()
                 return
             if path.startswith("/admin/users/") and path.endswith("/reset_password"):
                 self._post_admin_reset_password(path)
@@ -3316,6 +3383,36 @@ class Handler(BaseHTTPRequestHandler):
             _redirect(self, "/teste", set_cookie=auth.make_set_cookie(session_token))
         except (ValueError, KeyError, TypeError) as exc:
             _send_html(self, templates.render_error_page(f"Nao foi possivel abrir o beta: {exc}"), 400)
+
+    def _post_admin_demo_activate(self):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        form = _parse_form(self)
+        try:
+            account_id = int((form.get("account_id", "") or "").strip())
+        except (TypeError, ValueError):
+            _redirect(self, "/admin?info=Selecione%20uma%20conta%20valida%20para%20o%20Modo%20Demo")
+            return
+        if not db.get_active_ml_account_by_id(account_id):
+            _redirect(self, "/admin?info=A%20conta%20selecionada%20nao%20esta%20ativa")
+            return
+        try:
+            cookie = auth.make_demo_set_cookie(account_id)
+        except RuntimeError as exc:
+            _send_html(self, templates.render_error_page(str(exc)), 503)
+            return
+        # No audit/session record is created: this switch is only presentation state.
+        _redirect(self, "/online?confirmed=1", set_cookie=cookie)
+
+    def _post_admin_demo_deactivate(self):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        _read_and_discard_body(self)
+        _redirect(self, "/admin?info=Modo%20Demo%20desativado", set_cookie=auth.make_demo_clear_cookie())
 
     def _post_admin_login(self):
         form = _parse_form(self)

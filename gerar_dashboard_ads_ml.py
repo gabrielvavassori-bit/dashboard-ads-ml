@@ -1325,11 +1325,24 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
 
 
 def anonymize_dashboard_data(data):
-    demo = copy.deepcopy(data)
+    """Returns an in-memory, presentation-only copy safe for the Admin Demo mode.
+
+    Financial values and dates are preserved.  Every presentation identifier is
+    replaced consistently in the copied payload, and image URLs are removed so
+    a browser cannot request a real product image before any CSS can hide it.
+    """
+    # ``onlineBeta.latest`` can contain a large raw cache.  It is unnecessary
+    # in a presentation and must not be copied before being removed.
+    source = dict(data)
+    source["onlineBeta"] = {"enabled": False, "demo": True}
+    demo = copy.deepcopy(source)
     sku_map = {}
     code_map = {}
     title_map = {}
     campaign_map = {}
+    family_map = {}
+    variation_map = {}
+    account_map = {}
 
     def mapped(mapping, value, prefix):
         value = text(value)
@@ -1345,25 +1358,53 @@ def anonymize_dashboard_data(data):
             return text(value)
         return ", ".join(mapped(mapping, part.rstrip("."), prefix) for part in parts)
 
-    demo.get("kpis", {})["clientName"] = "Cliente demonstracao"
-    for list_name in ("items", "decisionItems", "skuAds", "campaignAds", "salesNoAds", "adsNoSales", "highTacos", "adsByProduct", "finishedNoSku"):
-        for item in demo.get(list_name, []):
-            if item.get("sku"):
-                item["sku"] = mapped(sku_map, item.get("sku"), "SKU DEMO")
-            if item.get("code"):
-                item["code"] = mapped_list(item.get("code"), code_map, "ANUNCIO DEMO")
-            if item.get("allCodes"):
-                item["allCodes"] = mapped_list(item.get("allCodes"), code_map, "ANUNCIO DEMO")
-            if item.get("title"):
-                item["title"] = mapped(title_map, item.get("title"), "Produto demonstracao")
-            if item.get("campaign"):
-                item["campaign"] = mapped_list(item.get("campaign"), campaign_map, "Campanha demo")
-            if item.get("adsCampaigns"):
-                item["adsCampaigns"] = mapped_list(item.get("adsCampaigns"), campaign_map, "Campanha demo")
-            if item.get("allCampaigns"):
-                item["allCampaigns"] = mapped_list(item.get("allCampaigns"), campaign_map, "Campanha demo")
-            if item.get("relatedActiveCampaigns"):
-                item["relatedActiveCampaigns"] = mapped_list(item.get("relatedActiveCampaigns"), campaign_map, "Campanha demo")
+    identifier_keys = {
+        "code", "allCodes", "all_codes", "itemId", "item_id", "detailId", "detail_id",
+        "catalogProductId", "catalog_product_id",
+    }
+    sku_keys = {"sku"}
+    title_keys = {"title", "topInvestmentLabel"}
+    campaign_keys = {"campaign", "adsCampaigns", "allCampaigns", "relatedActiveCampaigns"}
+    family_keys = {"familyId", "familyName", "family_id", "family_name"}
+    variation_keys = {
+        "parentId", "parent_id", "userProductId", "user_product_id", "userProductName",
+        "user_product_name", "conditionLabel", "condition_label", "catalogLabel", "catalog_label",
+    }
+    account_keys = {
+        "client", "clientId", "client_id", "advertiserId", "advertiser_id", "sellerId",
+        "seller_id", "nickname", "official_store", "officialStore", "ml_user_id", "mlUserId",
+    }
+
+    def scrub(value, key=""):
+        if isinstance(value, dict):
+            return {child_key: scrub(child_value, child_key) for child_key, child_value in value.items()}
+        if isinstance(value, list):
+            return [scrub(child, key) for child in value]
+        key_lower = str(key).lower()
+        if "thumbnail" in key_lower or "picture" in key_lower or "image" in key_lower or key_lower.endswith("url") or key_lower == "permalink":
+            return ""
+        if key in account_keys:
+            return mapped(account_map, value, "Conta demonstracao")
+        if key in sku_keys:
+            return mapped(sku_map, value, "SKU DEMO")
+        if key in identifier_keys:
+            return mapped_list(value, code_map, "ANUNCIO DEMO")
+        if key in title_keys:
+            return mapped(title_map, value, "Produto demonstracao")
+        if key in campaign_keys:
+            return mapped_list(value, campaign_map, "Campanha demo")
+        if key in family_keys:
+            return mapped(family_map, value, "Familia demo")
+        if key in variation_keys:
+            return mapped(variation_map, value, "Variacao demo")
+        return value
+
+    demo = scrub(demo)
+    demo.setdefault("kpis", {})["clientName"] = "Cliente demonstracao"
+    # The compact browser payload previously retained reconciliation metadata.
+    # It is not required for a presentation and may contain raw seller context.
+    demo["onlineBeta"] = {"enabled": False, "demo": True}
+    demo.setdefault("meta", {})["demoMode"] = {"enabled": True}
     return demo
 
 
@@ -1404,6 +1445,10 @@ def render_dashboard(data):
     client_name = data.get("kpis", {}).get("clientName") or ""
     title_suffix = f" - {html.escape(client_name)}" if client_name else ""
     online_mode = ((data.get("meta") or {}).get("onlineMode") or {})
+    demo_mode = ((data.get("meta") or {}).get("demoMode") or {})
+    demo_notice = """
+    <section class="demo-mode-notice" role="status"><strong>MODO DEMO ATIVO</strong><span>Dados comerciais anonimizados somente nesta visualização.</span><a href="/admin">Voltar ao Admin para desativar</a></section>
+    """ if demo_mode.get("enabled") else ""
     online_notice = html.escape(str(online_mode.get("notice") or ""))
     online_period = online_mode.get("onlinePeriod") or {}
     period_mode = str(online_period.get("mode") or "30d")
@@ -1690,6 +1735,9 @@ def render_dashboard(data):
     .listing-fact b {{ display:block; margin-top:3px; color:var(--ink); }}
     .readonly-badge {{ display:inline-block; margin-bottom:8px; padding:4px 8px; border-radius:999px; background:#eef4ff; color:#1849a9; font-size:12px; font-weight:800; }}
     .price-signal {{ border-left:4px solid var(--orange); }}
+    .demo-mode-notice {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 12px; padding:11px 14px; border:1px solid #f79009; border-radius:10px; background:#fffaeb; color:#7a2e0e; font-size:13px; }}
+    .demo-mode-notice strong {{ letter-spacing:.04em; }}
+    .demo-mode-notice a {{ color:#7a2e0e; font-weight:800; }}
     .daily-chart-card {{ position:relative; overflow:hidden; padding:16px; background:linear-gradient(180deg,#fff 0%,#fbfdff 100%); }}
     .account-daily-chart-card {{ margin:0 0 12px; }}
     .chart-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:14px; flex-wrap:wrap; }}
@@ -1771,6 +1819,7 @@ def render_dashboard(data):
     </div>
   </header>
   <main>
+    {demo_notice}
     {f'<section class="online-notice">{online_notice}</section>' if online_notice else ''}
     {online_period_filter}
     <section class="kpis" id="kpis"></section>
