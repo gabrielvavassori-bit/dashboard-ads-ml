@@ -55,6 +55,38 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertNotIn('Custo do produto</span><b>R$ 0.00', tooltip)
         self.assertNotIn('Imposto</span><b>R$ 0.00', tooltip)
         self.assertIn('N/D', result[1])
+        self.assertNotIn('Frete ausente', result[1])
+
+    def test_promotion_row_retains_descriptive_margin_hover(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        functions = source[
+            source.index('    function promotionMarginCell'):
+            source.index('    function promotionTableHtml')
+        ].replace('{{', '{').replace('}}', '}')
+        stubs = """
+        const safe = value => String(value ?? '');
+        const brl = value => `R$ ${Number(value).toFixed(2)}`;
+        const productImage = () => '<img src="foto.jpg">';
+        const promotionDisplayName = row => row.name;
+        const promotionPeriod = () => 'Período';
+        const promotionStatusClass = () => '';
+        const promotionStatusLabel = () => 'Elegível';
+        const promotionValueCell = () => '0%';
+        const promotionTotalCell = () => '10%';
+        const promotionLimits = () => '';
+        const promotionReceiptCell = () => 'R$ 57.54';
+        """
+        row = {'name': '10.10', 'original_price': 124.9, 'price': 74.9,
+               'receipt_quote': {'available': True, 'price': 74.9, 'sale_fee': 8.61,
+                                 'shipping_cost': 8.75, 'rebate': 0, 'receipt_before_cost_tax': 57.54}}
+        script = stubs + functions + '\nconsole.log(promotionTableRow({code:"MLB6188463888"}, {row:' + json.dumps(row) + ',index:0}, false));'
+        html = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout
+        self.assertIn('data-promotion-margin-tip', html)
+        self.assertIn('76,82%', html)
+        tooltip = unquote(html.split('data-metrics-tip="')[1].split('"')[0])
+        self.assertIn('Tarifa de venda', tooltip)
+        self.assertIn('Frete do vendedor', tooltip)
+        self.assertIn('Custo do produto', tooltip)
 
     def test_campaign_view_groups_variations_without_losing_individual_prices(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')

@@ -106,6 +106,17 @@
           "blocking": true
         }
       ]
+    },
+    {
+      "id": "REGRESSION-005",
+      "title": "Cotacao promocional preserva tarifa, frete e flutuante",
+      "severity": "ALTA",
+      "components": ["promotion_margin_tooltip", "seller_promotions"],
+      "domains": ["financial_reporting", "mercado_livre_promotions"],
+      "tags": ["receipt_quote", "descriptive_hover", "no_invented_cost", "promotion_table"],
+      "invariant": "A tabela por MLB ou campanha deve manter o recebimento cotado e o flutuante descritivo de tarifa, frete, custo e imposto; custo e imposto ausentes aparecem como nao informados, nunca como zero real. Cotacao indisponivel permanece N/D sem alargar a tabela.",
+      "file_globs": ["gerar_dashboard_ads_ml.py", "test_promotions_guide_lookup.py"],
+      "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_promotions_guide_lookup.py"], "blocking": true}]
     }
   ]
 }

@@ -5,6 +5,7 @@ import unittest
 from test_integrations import HTTPRouteTests
 from test_online_periods import OnlinePeriodTests
 from test_operational_availability import OperationalAvailabilityTests
+from test_promotions_guide_lookup import PromotionsGuideLookupTests
 
 
 CASES = (
@@ -16,6 +17,9 @@ CASES = (
     (OperationalAvailabilityTests, "test_intelligence_remains_strict"),
     (OnlinePeriodTests, "test_sales_intelligence_blocks_daily_partial_coverage_before_recommendations"),
     (HTTPRouteTests, "test_sales_intelligence_integrity_block_hides_online_recommendations"),
+    # The existing CI command also protects REGRESSION-005 until workflow editing is available.
+    (PromotionsGuideLookupTests, "test_partial_margin_shows_breakdown_without_inventing_cost_or_tax"),
+    (PromotionsGuideLookupTests, "test_promotion_row_retains_descriptive_margin_hover"),
 )
 
 
