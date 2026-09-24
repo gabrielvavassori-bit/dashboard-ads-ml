@@ -35,6 +35,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('foto.jpg', html)
         self.assertIn('<dialog class="promotion-config-dialog"', html)
         self.assertIn('data-promo-config-open', html)
+        self.assertIn('data-promo-direct="2"', html)
+        self.assertIn('>Participar</button>', html)
         self.assertLess(html.index('<dialog'), html.index('data-promo-campaign-price="2"'))
         self.assertIn('Gerar prévia para participar', html)
         self.assertIn('data-promo-item="MLB111"', html)
