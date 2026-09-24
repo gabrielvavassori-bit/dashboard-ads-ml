@@ -24,6 +24,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionLimits = () => '';
         const promotionReceiptCell = () => 'Não calculado';
         const promotionMarginCell = () => 'MC parcial';
+        const promotionPreviewHtml = () => '';
+        const promotionState = new Map();
         const brl = value => `R$ ${value}`;
         """
         script = stubs + function + "\nconsole.log(promotionTableRow({code:'MLB111'}, {row:{name:'10.10',can_join:true,suggested_discounted_price:71.9},index:2}, true, {code:'MLB111',title:'Lona Azul',sku:'LAZ-3X3',thumbnailUrl:'https://example.test/foto.jpg'}));"
@@ -33,6 +35,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('foto.jpg', html)
         self.assertIn('<dialog class="promotion-config-dialog"', html)
         self.assertIn('data-promo-config-open', html)
+        self.assertIn('data-promo-direct="2"', html)
+        self.assertIn('>Participar</button>', html)
         self.assertLess(html.index('<dialog'), html.index('data-promo-campaign-price="2"'))
         self.assertIn('Gerar prévia para participar', html)
         self.assertIn('data-promo-item="MLB111"', html)
