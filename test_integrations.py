@@ -1474,6 +1474,55 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertGreater(user["expires_at"], int(app.time.time()) + (6 * 86400))
         raised.exception.close()
 
+    def test_admin_demo_is_cookie_only_and_never_returns_real_identifiers(self):
+        user_id, _ = self._login_cookie("demo-privacy@example.com")
+        account_id = db.upsert_user_ml_link(
+            user_id, client_id="lonas-online-real", nickname="LONAS_ONLINE", slot_number=1,
+            advertiser_id="adv-real",
+        )
+        admin_cookie = self._admin_cookie()
+        opener = self._no_redirect_opener()
+        activate = Request(
+            f"{self.base_url}/admin/demo/activate",
+            data=urlencode({"account_id": account_id}).encode("utf-8"),
+            headers={"Content-Type": "application/x-www-form-urlencoded", "Cookie": admin_cookie},
+            method="POST",
+        )
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(activate, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        self.assertEqual(raised.exception.headers.get("Location"), "/online?confirmed=1")
+        demo_cookie = raised.exception.headers.get("Set-Cookie", "").split(";", 1)[0]
+        raised.exception.close()
+        self.assertTrue(demo_cookie.startswith(f"{auth.DEMO_COOKIE}="))
+
+        dashboard = {
+            "kpis": {"clientName": "lonas-online-real", "revenue": 30000, "investment": 800},
+            "meta": {"onlineMode": {"enabled": True, "onlinePeriod": {"dateFrom": "2026-09-01", "dateTo": "2026-09-07"}}},
+            "items": [{"sku": "LAZ-5X4", "code": "MLB5913675930", "title": "Lona Real", "thumbnailUrl": "https://real.example/image.jpg", "totalRevenue": 30000, "investment": 800}],
+            "onlineBeta": {"enabled": True, "client": "lonas-online-real", "latest": {"secret": "not-for-browser"}},
+        }
+        with patch.object(app, "_build_online_dashboard_data", return_value=(dashboard, "")):
+            with urlopen(Request(f"{self.base_url}/online?confirmed=1", headers={"Cookie": demo_cookie}), timeout=5) as response:
+                body = response.read().decode("utf-8")
+        self.assertIn("MODO DEMO ATIVO", body)
+        self.assertNotIn("lonas-online-real", body)
+        self.assertNotIn("LAZ-5X4", body)
+        self.assertNotIn("MLB5913675930", body)
+        self.assertNotIn("real.example", body)
+        self.assertIn("SKU DEMO 001", body)
+
+        deactivate = Request(
+            f"{self.base_url}/admin/demo/deactivate", data=b"",
+            headers={"Cookie": f"{admin_cookie}; {demo_cookie}"}, method="POST",
+        )
+        with self.assertRaises(HTTPError) as cleared:
+            opener.open(deactivate, timeout=5)
+        self.assertEqual(cleared.exception.code, 302)
+        self.assertEqual(cleared.exception.headers.get("Location"), "/admin?info=Modo%20Demo%20desativado")
+        self.assertIn(f"{auth.DEMO_COOKIE}=;", "\n".join(cleared.exception.headers.get_all("Set-Cookie") or []))
+        cleared.exception.close()
+
     def test_admin_can_impersonate_client_without_ending_client_session(self):
         user_id, client_cookie = self._login_cookie("impersonated-client@example.com")
         account_id = db.upsert_user_ml_link(

@@ -79,6 +79,70 @@ def make_clear_cookie() -> str:
 
 
 ADMIN_COOKIE = "udash_admin"
+DEMO_COOKIE = "udash_demo"
+DEMO_MAX_AGE_SECONDS = 60 * 60 * 8
+
+
+def _secure_cookie_prefix() -> str:
+    return "Secure; " if os.environ.get("APP_PUBLIC_URL", "").startswith("https://") else ""
+
+
+def _demo_cookie_secret() -> bytes:
+    """Returns the server-only key used to sign the transient demo selector.
+
+    The selector never carries credentials or cached data.  Reusing the internal
+    service secret is deliberate backwards compatibility for existing Render
+    deployments; a dedicated DASH_DEMO_COOKIE_SECRET can be configured later.
+    """
+    value = (
+        os.environ.get("DASH_DEMO_COOKIE_SECRET")
+        or os.environ.get("DASH_ADS_INTERNAL_SECRET")
+        or os.environ.get("COMPETITIVE_WORKER_SECRET")
+        or ""
+    ).strip()
+    if not value:
+        raise RuntimeError("Modo Demo indisponivel: segredo de assinatura nao configurado.")
+    return value.encode("utf-8")
+
+
+def make_demo_set_cookie(account_id: int) -> str:
+    issued_at = int(time.time())
+    nonce = secrets.token_urlsafe(12)
+    payload = f"{int(account_id)}:{issued_at}:{nonce}"
+    signature = hmac.new(_demo_cookie_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    encoded = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+    token = f"{encoded}.{signature}"
+    return (
+        f"{DEMO_COOKIE}={token}; Path=/; Max-Age={DEMO_MAX_AGE_SECONDS}; "
+        f"HttpOnly; {_secure_cookie_prefix()}SameSite=Lax"
+    )
+
+
+def get_demo_context(token: str):
+    """Validates a signed, short-lived demo selector without any database write."""
+    if not token or "." not in token:
+        return None
+    encoded, supplied_signature = token.rsplit(".", 1)
+    try:
+        padded = encoded + "=" * (-len(encoded) % 4)
+        payload = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        expected_signature = hmac.new(
+            _demo_cookie_secret(), payload.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(supplied_signature, expected_signature):
+            return None
+        account_id, issued_at, nonce = payload.split(":", 2)
+        if not nonce or (time.time() - int(issued_at)) > DEMO_MAX_AGE_SECONDS:
+            return None
+        if int(account_id) <= 0:
+            return None
+        return {"account_id": int(account_id)}
+    except (TypeError, ValueError, UnicodeDecodeError):
+        return None
+
+
+def make_demo_clear_cookie() -> str:
+    return f"{DEMO_COOKIE}=; Path=/; Max-Age=0; HttpOnly; {_secure_cookie_prefix()}SameSite=Lax"
 
 
 def make_admin_set_cookie(token: str) -> str:
