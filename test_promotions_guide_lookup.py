@@ -24,6 +24,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionLimits = () => '';
         const promotionReceiptCell = () => 'Não calculado';
         const promotionMarginCell = () => 'MC parcial';
+        const promotionPreviewHtml = () => '';
+        const promotionState = new Map();
         const brl = value => `R$ ${value}`;
         """
         script = stubs + function + "\nconsole.log(promotionTableRow({code:'MLB111'}, {row:{name:'10.10',can_join:true,suggested_discounted_price:71.9},index:2}, true, {code:'MLB111',title:'Lona Azul',sku:'LAZ-3X3',thumbnailUrl:'https://example.test/foto.jpg'}));"

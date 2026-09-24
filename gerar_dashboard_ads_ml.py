@@ -2084,6 +2084,7 @@ def render_dashboard(data):
     const dailyChartMetric = new Map();
     const promotionState = new Map();
     let promotionGuideItem = null;
+    let activePromotionConfigKey = '';
     let sortState = {{ key:'revenue', direction:1 }};
     let abcMode = 'hybrid';
     let abcMetric = 'totalRevenue';
@@ -3395,7 +3396,7 @@ def render_dashboard(data):
       const primaryAction = canJoin || canUpdate ? `<button type="button" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Gerar prévia da alteração' : 'Gerar prévia para participar'}}</button>` : '';
       const leaveAction = canRemove ? `<button type="button" class="secondary-action" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Gerar prévia para sair</button>` : '';
       const action = listing && (canJoin || canUpdate || canRemove)
-        ? `<button type="button" class="promotion-settings-button" data-promo-config-open aria-label="Configurar promoção de ${{safe(item.code)}}" title="Configurar promoção">⚙</button><dialog class="promotion-config-dialog" aria-label="Configurar promoção de ${{safe(item.code)}}"><div class="promotion-config-head"><h3>${{canUpdate ? 'Alterar promoção' : canJoin ? 'Participar da promoção' : 'Sair da promoção'}}</h3><button type="button" class="promotion-config-close" data-promo-config-close aria-label="Fechar">×</button></div><div class="promotion-config-body"><div class="promotion-config-product">${{productImage({{thumbnailUrl:listing.thumbnailUrl,title:listing.title}})}}<div><b>${{safe(listing.title)}}</b><span>${{safe(listing.code)}}${{listing.sku ? ` · SKU ${{safe(listing.sku)}}` : ''}}</span></div></div><div class="promotion-config-campaign">${{safe(promotionDisplayName(row))}} · ${{safe(promotionPeriod(row))}}</div><div class="promotion-config-metrics"><div><span>Preço original</span><b>${{original > 0 ? brl(original) : '—'}}</b></div><div><span>Preço promocional sugerido</span><b>${{price > 0 ? brl(price) : '—'}}</b></div><div><span>Subsídio Mercado Livre</span><b>${{Number(row.meli_percentage || 0).toLocaleString('pt-BR',{{maximumFractionDigits:2}})}}%</b></div></div><div class="promotion-config-editor">${{primaryAction && row.action_mode !== 'join_fixed_offer' ? `<label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label>` : `<div class="promotion-config-note">${{primaryAction ? 'Preço definido pela campanha.' : 'A saída não altera o preço nesta prévia.'}}</div>`}}<div class="promotion-config-receipt"><span>Você recebe (estim.)</span><b>${{receipt}}</b><span>${{quote.available === true ? 'Antes de custo e imposto' : safe(quote.reason || 'Tarifa ou frete não informado pelo Mercado Livre.')}}</span></div></div><div class="promotion-config-note">${{safe(promotionLimits(row))}}. A prévia não aplica a mudança; a confirmação é uma etapa separada.</div></div><div class="promotion-config-footer"><button type="button" data-promo-config-close>Fechar</button>${{leaveAction}}${{primaryAction}}</div></dialog>`
+        ? `<button type="button" class="promotion-settings-button" data-promo-config-open aria-label="Configurar promoção de ${{safe(item.code)}}" title="Configurar promoção">⚙</button><dialog class="promotion-config-dialog" aria-label="Configurar promoção de ${{safe(item.code)}}"><div class="promotion-config-head"><h3>${{canUpdate ? 'Alterar promoção' : canJoin ? 'Participar da promoção' : 'Sair da promoção'}}</h3><button type="button" class="promotion-config-close" data-promo-config-close aria-label="Fechar">×</button></div><div class="promotion-config-body"><div class="promotion-config-product">${{productImage({{thumbnailUrl:listing.thumbnailUrl,title:listing.title}})}}<div><b>${{safe(listing.title)}}</b><span>${{safe(listing.code)}}${{listing.sku ? ` · SKU ${{safe(listing.sku)}}` : ''}}</span></div></div><div class="promotion-config-campaign">${{safe(promotionDisplayName(row))}} · ${{safe(promotionPeriod(row))}}</div><div class="promotion-config-metrics"><div><span>Preço original</span><b>${{original > 0 ? brl(original) : '—'}}</b></div><div><span>Preço promocional sugerido</span><b>${{price > 0 ? brl(price) : '—'}}</b></div><div><span>Subsídio Mercado Livre</span><b>${{Number(row.meli_percentage || 0).toLocaleString('pt-BR',{{maximumFractionDigits:2}})}}%</b></div></div><div class="promotion-config-editor">${{primaryAction && row.action_mode !== 'join_fixed_offer' ? `<label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label>` : `<div class="promotion-config-note">${{primaryAction ? 'Preço definido pela campanha.' : 'A saída não altera o preço nesta prévia.'}}</div>`}}<div class="promotion-config-receipt"><span>Você recebe (estim.)</span><b>${{receipt}}</b><span>${{quote.available === true ? 'Antes de custo e imposto' : safe(quote.reason || 'Tarifa ou frete não informado pelo Mercado Livre.')}}</span></div></div><div class="promotion-config-note">${{safe(promotionLimits(row))}}. A prévia não aplica a mudança; a confirmação é uma etapa separada.</div>${{promotionPreviewHtml(item, promotionState.get(item.code) || {{}})}}</div><div class="promotion-config-footer"><button type="button" data-promo-config-close>Fechar</button>${{leaveAction}}${{primaryAction}}</div></dialog>`
         : actionControls;
       const rebate = Number(row.discount_meli_boost_amount);
       const rebatePercent = Number(row.discount_meli_boosted_percentage);
@@ -3514,11 +3515,20 @@ def render_dashboard(data):
       if (!response.ok || payload.ok === false) throw new Error(payload.message || payload.error || `Falha HTTP ${{response.status}}`);
       return payload;
     }}
+    function restorePromotionConfigDialog() {{
+      if (!activePromotionConfigKey) return;
+      const dialog = [...document.querySelectorAll('dialog.promotion-config-dialog')].find(candidate => {{
+        const action = candidate.querySelector('[data-promo-campaign]');
+        return action && `${{action.dataset.promoItem}}:${{action.dataset.promoCampaign}}` === activePromotionConfigKey;
+      }});
+      if (dialog && !dialog.open) dialog.showModal();
+    }}
     function promotionStateUpdate(code, patch) {{
       promotionState.set(code, {{...(promotionState.get(code) || {{}}), ...patch}});
       renderTable();
       if (activeDetailKey) renderDetailModal();
       if (promotionGuideItem && (code === promotionGuideItem.code || code === promotionScopeKey(promotionGuideItem) || promotionScopeItems(promotionGuideItem).some(item => item.code === code))) renderPromotionGuide();
+      restorePromotionConfigDialog();
     }}
     function resolvePromotionGuideItem(raw, items) {{
       const query = String(raw || '').trim().toUpperCase();
@@ -3543,8 +3553,13 @@ def render_dashboard(data):
       activatePromotionPanels();
     }}
     function activatePromotionPanels() {{
-      document.querySelectorAll('[data-promo-config-open]').forEach(button => button.addEventListener('click', () => button.parentElement.querySelector('dialog')?.showModal()));
-      document.querySelectorAll('[data-promo-config-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog')?.close()));
+      document.querySelectorAll('[data-promo-config-open]').forEach(button => button.addEventListener('click', () => {{
+        const dialog = button.parentElement.querySelector('dialog');
+        const action = dialog?.querySelector('[data-promo-campaign]');
+        activePromotionConfigKey = action ? `${{action.dataset.promoItem}}:${{action.dataset.promoCampaign}}` : '';
+        dialog?.showModal();
+      }}));
+      document.querySelectorAll('[data-promo-config-close]').forEach(button => button.addEventListener('click', () => {{ activePromotionConfigKey = ''; button.closest('dialog')?.close(); }}));
       document.querySelectorAll('[data-promo-scope-view]').forEach(button => button.addEventListener('click', () => {{
         promotionStateUpdate(button.dataset.promoScopeKey, {{view:button.dataset.promoScopeView}});
       }}));
@@ -3576,6 +3591,8 @@ def render_dashboard(data):
       }}));
       document.querySelectorAll('[data-promo-campaign]').forEach(button => button.addEventListener('click', async () => {{
         const code = button.dataset.promoItem;
+        const dialogAction = button.closest('dialog')?.querySelector('[data-promo-campaign]');
+        if (dialogAction) activePromotionConfigKey = `${{dialogAction.dataset.promoItem}}:${{dialogAction.dataset.promoCampaign}}`;
         const state = promotionState.get(code) || {{}};
         const index = Number(button.dataset.promoCampaign);
         const row = (state.data?.promotions || [])[index];
@@ -3618,7 +3635,8 @@ def render_dashboard(data):
         promotionStateUpdate(code, {{loading:true, error:'', result:null}});
         try {{
           const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:code, preview_token:state.preview.preview_token}});
-          promotionStateUpdate(code, {{loading:false, preview:null, result, error:''}});
+          const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
+          promotionStateUpdate(code, {{loading:false, data, preview:null, result, error:''}});
         }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
       }}));
     }}
