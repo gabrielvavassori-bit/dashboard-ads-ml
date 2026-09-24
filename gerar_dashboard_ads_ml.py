@@ -3523,7 +3523,12 @@ def render_dashboard(data):
       }}
       const response = await fetch(path, options);
       const payload = await response.json().catch(() => ({{}}));
-      if (!response.ok || payload.ok === false) throw new Error(payload.message || payload.error || `Falha HTTP ${{response.status}}`);
+      if (!response.ok || payload.ok === false) {{
+        const contractDetail = payload.error === 'agent_response_not_json'
+          ? ` Código: ${{payload.error}}; agente HTTP ${{payload.upstream_status || response.status}}; tipo ${{payload.upstream_content_type || 'indisponível'}}.`
+          : '';
+        throw new Error(`${{payload.message || payload.error || `Falha HTTP ${{response.status}}`}}${{contractDetail}}`);
+      }}
       return payload;
     }}
     function restorePromotionConfigDialog() {{
