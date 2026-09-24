@@ -1505,6 +1505,10 @@ class HTTPRouteTests(unittest.TestCase):
         with patch.object(app, "_build_online_dashboard_data", return_value=(dashboard, "")):
             with urlopen(Request(f"{self.base_url}/online?confirmed=1", headers={"Cookie": demo_cookie}), timeout=5) as response:
                 body = response.read().decode("utf-8")
+            app._build_online_dashboard_data.assert_called_once()
+            args, kwargs = app._build_online_dashboard_data.call_args
+        self.assertEqual(args[0], "lonas-online-real")
+        self.assertEqual(kwargs["advertiser_id"], "adv-real")
         self.assertIn("MODO DEMO ATIVO", body)
         self.assertNotIn("lonas-online-real", body)
         self.assertNotIn("LAZ-5X4", body)
