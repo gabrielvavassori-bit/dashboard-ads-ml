@@ -38,7 +38,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('data-promo-direct="2"', html)
         self.assertIn('>Participar</button>', html)
         self.assertLess(html.index('<dialog'), html.index('data-promo-campaign-price="2"'))
-        self.assertIn('Gerar prévia para participar', html)
+        self.assertIn('data-promo-campaign="2"', html)
+        self.assertNotIn('Gerar prévia para participar', html)
         self.assertIn('data-promo-item="MLB111"', html)
 
     def test_partial_margin_shows_breakdown_without_inventing_cost_or_tax(self):
