@@ -3268,6 +3268,16 @@ def render_dashboard(data):
         <button class="promotion-confirm" type="button" data-promo-confirm="${{safe(item.code)}}">${{safe(labels[action] || 'Confirmar operação no Mercado Livre')}}</button>
       </div>`;
     }}
+    function promotionWriteAccessHtml(data) {{
+      const access = data?.promotion_write_access || {{}};
+      if (access.allowed === false) {{
+        return `<div class="promotion-error"><b>Ações bloqueadas para esta conta.</b><br>${{safe(access.reason || 'A conexão atual não possui autorização de escrita em Ofertas e Promoções. Reconecte a conta no Mercado Livre com a permissão de leitura e escrita.')}}</div>`;
+      }}
+      if (access.allowed === null || access.status === 'unknown') {{
+        return `<div class="muted">A autorização de escrita não pôde ser confirmada preventivamente. Você ainda pode gerar a prévia; antes de aplicar, o Mercado Livre validará a permissão e exibirá o motivo se recusá-la.</div>`;
+      }}
+      return '<div class="promotion-success">Esta conta possui autorização de escrita em Ofertas e Promoções.</div>';
+    }}
     function promotionValueCell(value, originalPrice) {{
       const numeric = Number(value);
       if (!Number.isFinite(numeric) || numeric < 0) return '<span class="muted">—</span>';
@@ -3449,7 +3459,7 @@ def render_dashboard(data):
         if (result.error) return `<div class="promotion-option"><b>${{safe(result.code)}}</b><p class="muted">${{safe(title)}}</p><div class="promotion-error">${{safe(result.error)}}</div></div>`;
         const source = {{...item, code:result.code, currentPrice:result.data?.item?.price || item.currentPrice}};
         const individualState = promotionState.get(result.code) || {{}};
-        return `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b><p class="muted">Ação sempre será aplicada somente neste MLB: ${{safe(title)}}</p>${{promotionTableHtml(source, result.data?.promotions || [], true)}}${{promotionPreviewHtml(source, individualState)}}${{individualState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{individualState.error ? `<div class="promotion-error">${{safe(individualState.error)}}</div>` : ''}}</div>`;
+        return `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b><p class="muted">Ação sempre será aplicada somente neste MLB: ${{safe(title)}}</p>${{promotionWriteAccessHtml(result.data)}}${{promotionTableHtml(source, result.data?.promotions || [], true)}}${{promotionPreviewHtml(source, individualState)}}${{individualState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{individualState.error ? `<div class="promotion-error">${{safe(individualState.error)}}</div>` : ''}}</div>`;
       }}).join('');
       const byCampaign = promotionCampaignGroups(state.results).map(group => {{
         const listings = group.listings.sort((a, b) => (a.mlbu || '').localeCompare(b.mlbu || '', 'pt-BR') || a.code.localeCompare(b.code, 'pt-BR'));
@@ -3464,13 +3474,19 @@ def render_dashboard(data):
         return `<div class="promotion-option"><h5>${{safe(group.name)}}</h5><div class="muted">${{safe(promotionPeriod(group.row))}} · ${{num(listings.length)}} anúncio(s)</div><div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Anúncio/variação</th><th>Mercado Livre</th><th>Vendedor</th><th>Total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div></div>`;
       }}).join('') || '<div class="detail-modal-empty">Nenhuma campanha retornada para os anúncios consultados.</div>';
       const failures = state.results.filter(result => result.error).map(result => `<div class="promotion-error">${{safe(result.code)}}: ${{safe(result.error)}}</div>`).join('');
+      const accessNotices = state.results.filter(result => result.data).map(result => {{
+        const access = result.data?.promotion_write_access || {{}};
+        return access.allowed === false || access.status === 'unknown' || access.allowed === null
+          ? `<div class="promotion-option"><b>${{safe(result.code)}}</b>${{promotionWriteAccessHtml(result.data)}}</div>`
+          : '';
+      }}).join('');
       const previews = state.results.filter(result => result.data).map(result => {{
         const individualState = promotionState.get(result.code) || {{}};
         const source = {{...item, code:result.code}};
         const feedback = `${{promotionPreviewHtml(source, individualState)}}${{individualState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{individualState.error ? `<div class="promotion-error">${{safe(individualState.error)}}</div>` : ''}}`;
         return feedback ? `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b>${{feedback}}</div>` : '';
       }}).join('');
-      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{selector}}<div class="promotion-panel-grid promotion-scope-list">${{view === 'campaign' ? byCampaign + failures + previews : results}}</div></div>`;
+      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{selector}}<div class="promotion-panel-grid promotion-scope-list">${{view === 'campaign' ? accessNotices + byCampaign + failures + previews : results}}</div></div>`;
     }}
     function promotionPanelHtml(item) {{
       const code = String(item.code || '').toUpperCase();
@@ -3484,7 +3500,7 @@ def render_dashboard(data):
         ? `<div class="promotion-form"><label>Preco promocional<input type="number" min="0.01" step="0.01" value="${{Number(item.suggestedTestPrice || 0) || ''}}" data-promo-custom-price></label><label>Inicio<input type="date" value="${{promotionDate(0)}}" data-promo-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-finish></label><button type="button" data-promo-custom="${{safe(code)}}">Gerar previa</button></div>`
         : `<div class="muted">Indisponivel: ${{safe(data.price_discount_read_only_reason || 'o anuncio nao atende aos requisitos atuais')}}.</div>`}}</div>`;
       const sellerCampaign = `<div class="promotion-option"><b>Criar campanha do vendedor</b><p class="muted">Cria uma campanha flexível de até 14 dias. Após confirmá-la, atualize as oportunidades e escolha o preço para incluir este anúncio.</p><div class="promotion-form"><label>Nome<input type="text" maxlength="80" data-promo-campaign-name></label><label>Início<input type="date" value="${{promotionDate(0)}}" data-promo-campaign-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-campaign-finish></label><button type="button" data-promo-create-campaign="${{safe(code)}}">Gerar prévia da campanha</button></div></div>`;
-      return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promoções do Mercado Livre</h4><div class="muted">Conta e anúncio validados: ${{safe(data.item?.title || code)}}; preço atual ${{promotionMoney(data.item?.price)}}. Participar gera uma prévia; a aplicação só ocorre depois da confirmação final.</div>${{campaigns}}<div class="promotion-panel-grid">${{custom}}${{sellerCampaign}}</div>${{promotionPreviewHtml(item, state)}}${{state.result ? '<div class="promotion-success">Promoção aplicada e confirmada pelo Mercado Livre.</div>' : ''}}${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
+      return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promoções do Mercado Livre</h4><div class="muted">Conta e anúncio validados: ${{safe(data.item?.title || code)}}; preço atual ${{promotionMoney(data.item?.price)}}. Participar gera uma prévia; a aplicação só ocorre depois da confirmação final.</div>${{promotionWriteAccessHtml(data)}}${{campaigns}}<div class="promotion-panel-grid">${{custom}}${{sellerCampaign}}</div>${{promotionPreviewHtml(item, state)}}${{state.result ? '<div class="promotion-success">Promoção aplicada e confirmada pelo Mercado Livre.</div>' : ''}}${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
     }}
     async function promotionApiRequest(path, method = 'GET', body = null) {{
       const options = {{ method, headers: {{'Accept':'application/json'}} }};
