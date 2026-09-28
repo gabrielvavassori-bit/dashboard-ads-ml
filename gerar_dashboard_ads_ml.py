@@ -1529,6 +1529,7 @@ def render_dashboard(data):
     .card {{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; box-shadow:0 4px 14px rgba(16,24,40,.04); min-width:0; overflow:hidden; }}
     .kpi small {{ color:var(--muted); display:block; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }}
     .kpi strong {{ display:block; font-size:22px; margin-top:6px; }}
+    .kpi .kpi-secondary {{ display:block; margin-top:8px; color:var(--muted); font-size:12px; line-height:1.4; }}
     .kpi.danger {{ border-color:#fecdca; }}
     .kpi.good {{ border-color:#abefc6; }}
     .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
@@ -2589,10 +2590,10 @@ def render_dashboard(data):
         ['Investimento ADS', brl(k.investment), ''],
         ['Base TACOS comercial', brl(k.tacosBaseRevenue || 0), ''],
         ['TACOS geral', pct(k.tacos), k.tacos > .03 ? 'danger' : 'good'],
-        ['ROAS geral', k.roas.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}}), ''],
+        ['ROAS Ads', k.roas.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + 'x', '', k.investment > 0 ? `Faturamento total / investimento Ads: ${{(k.revenue / k.investment).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}x` : 'Faturamento total / investimento Ads: N/D'],
         ['Investiu sem venda ADS', num(k.adsNoSales), k.adsNoSales ? 'danger' : 'good'],
         ['Valor sem venda ADS', brl(k.investmentNoAdsSales), k.investmentNoAdsSales ? 'danger' : 'good']
-      ].map(([label,value,cls]) => `<div class="card kpi ${{cls}}"><small>${{label}}</small><strong>${{value}}</strong></div>`).join('');
+      ].map(([label,value,cls,secondary]) => `<div class="card kpi ${{cls}}"><small>${{label}}</small><strong>${{value}}</strong>${{secondary ? `<span class="kpi-secondary">${{secondary}}</span>` : ''}}</div>`).join('');
     }}
     function renderAlerts() {{
       const k = DATA.kpis;
