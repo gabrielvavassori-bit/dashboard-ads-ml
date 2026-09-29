@@ -1727,7 +1727,10 @@ def render_dashboard(data):
     .detail-modal-body {{ position:relative; z-index:1; min-width:0; min-height:0; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; padding:18px 20px 28px; }}
     .detail-modal-body .detail-grid {{ grid-template-columns:repeat(3,minmax(260px,1fr)); }}
     .detail-modal-body .detail-block-wide {{ min-width:0; overflow-x:auto; }}
+    .detail-modal-body .campaign-child-block {{ min-width:0; }}
+    .campaign-child-scroll {{ width:100%; max-width:100%; max-height:min(58vh,560px); overflow:auto; scrollbar-gutter:stable; touch-action:pan-x pan-y; -webkit-overflow-scrolling:touch; border:1px solid var(--line); border-radius:8px; }}
     .detail-modal-body .child-table {{ min-width:1200px; }}
+    .campaign-child-scroll .child-table {{ margin:0; }}
     .detail-modal-body .child-table thead th {{ position:static; }}
     .campaign-child-tools {{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin:0 0 10px; }}
     .campaign-child-tools input {{ width:min(330px,100%); min-width:0; }}
@@ -2690,10 +2693,10 @@ def render_dashboard(data):
       const title = item.detailScope === 'family' ? 'Condições da família' : item.detailScope === 'mlbu' ? 'Condições da variação/MLBU' : 'Itens da campanha';
       const children = campaignChildrenForDisplay(sourceChildren);
       const countText = children.length === sourceChildren.length ? `${{num(children.length)}} item(ns)` : `${{num(children.length)}} de ${{num(sourceChildren.length)}} item(ns)`;
-      return `<div class="detail-block" style="grid-column:1/-1"><h3>${{safe(title)}}</h3><div class="campaign-child-tools"><input type="search" data-campaign-child-search value="${{safe(campaignChildQuery)}}" placeholder="Pesquisar SKU, anúncio, título, condição ou alerta"><span class="campaign-child-count">${{countText}}</span></div><table class="child-table">
+      return `<div class="detail-block campaign-child-block" style="grid-column:1/-1"><h3>${{safe(title)}}</h3><div class="campaign-child-tools"><input type="search" data-campaign-child-search value="${{safe(campaignChildQuery)}}" placeholder="Pesquisar SKU, anúncio, título, condição ou alerta"><span class="campaign-child-count">${{countText}}</span></div><div class="campaign-child-scroll" tabindex="0" aria-label="Tabela de itens da campanha; role horizontal e verticalmente"><table class="child-table">
         <thead><tr><th>${{campaignChildSortable('SKU', 'sku')}}</th><th>${{campaignChildSortable('Anúncio', 'code')}}</th><th>${{campaignChildSortable('Condição/opção', 'condition')}}</th><th>${{campaignChildSortable('Título', 'title')}}</th><th class="num">${{campaignChildSortable('Pedidos', 'orders')}}</th><th class="num">${{campaignChildSortable('Unidades', 'units')}}</th><th class="num">${{campaignChildSortable('Receita', 'revenue')}}</th><th class="num">${{campaignChildSortable('Receita ADS', 'adsRevenue')}}</th><th class="num">${{campaignChildSortable('Invest.', 'investment')}}</th><th class="num">${{campaignChildSortable('CTR', 'ctr')}}</th><th class="num">${{campaignChildSortable('CVR', 'cvr')}}</th><th class="num">${{campaignChildSortable('TACOS', 'tacos')}}</th><th>${{campaignChildSortable('Alerta', 'alert')}}</th></tr></thead>
         <tbody>${{children.map(child => `<tr><td data-label="SKU">${{safe(child.sku || '(sem SKU)')}}</td><td data-label="Anúncio">${{safe(child.code || '')}}</td><td data-label="Condição/opção">${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td data-label="Título">${{safe(child.title || '')}}</td><td class="num" data-label="Pedidos">${{num(child.orders || 0)}}</td><td class="num" data-label="Unidades">${{num(child.units || 0)}}</td><td class="num" data-label="Receita">${{brl(child.totalRevenue || 0)}}</td><td class="num" data-label="Receita ADS">${{brl(child.adsRevenue || 0)}}</td><td class="num" data-label="Invest.">${{brl(child.investment || 0)}}</td><td class="num" data-label="CTR">${{pct(child.ctr || 0)}}</td><td class="num" data-label="CVR">${{pct(child.cvr || 0)}}</td><td class="num" data-label="TACOS">${{pct(child.tacos || 0)}}</td><td data-label="Alerta">${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
-      </table></div>`;
+      </table></div></div>`;
     }}
     const campaignChildSortKeys = {{
       sku: child => child.sku || '', code: child => child.code || '',

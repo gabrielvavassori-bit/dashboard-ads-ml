@@ -347,6 +347,19 @@ class OnlinePeriodTests(unittest.TestCase):
                       "Receita", "Receita ADS", "Invest.", "CTR", "CVR", "TACOS", "Alerta"):
             self.assertIn(f'data-label="{label}"', campaign_children)
 
+    def test_campaign_table_scrolls_both_axes_without_clipping_columns(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        campaign_children = source.split("function campaignChildren(item)", 1)[1].split(
+            "const campaignChildSortKeys", 1
+        )[0]
+        self.assertIn(".campaign-child-scroll {{ width:100%; max-width:100%; max-height:min(58vh,560px); overflow:auto", source)
+        self.assertIn("touch-action:pan-x pan-y", source)
+        self.assertIn(".detail-modal-body .campaign-child-block {{ min-width:0; }}", source)
+        self.assertIn('class="campaign-child-scroll"', campaign_children)
+        self.assertIn('aria-label="Tabela de itens da campanha; role horizontal e verticalmente"', campaign_children)
+        self.assertIn('class="child-table"', campaign_children)
+        self.assertIn('</table></div></div>', campaign_children)
+
     def test_online_builder_keeps_campaign_condition_and_catalog_links_separate(self):
         payload = {
             **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-04", "2026-08-10"),
