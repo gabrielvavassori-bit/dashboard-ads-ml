@@ -1780,6 +1780,17 @@ def render_dashboard(data):
     .listing-mini-badge.shipping-off {{ background:#fef3f2; color:#b42318; }}
     .child-table {{ margin-top:10px; border-spacing:0; }}
     .child-table th, .child-table td {{ font-size:12px; }}
+    .performance-7d-panel {{ margin:0 0 14px; padding:14px; border:1px solid var(--line); border-radius:10px; background:#f8fbff; }}
+    .performance-7d-panel h3 {{ margin:0 0 4px; font-size:15px; }}
+    .performance-7d-panel > p {{ margin:0 0 12px; color:var(--muted); font-size:12px; }}
+    .performance-7d-grid {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; max-height:420px; overflow:auto; }}
+    .performance-7d-card {{ min-width:0; padding:11px; border:1px solid var(--line); border-radius:9px; background:#fff; overflow-wrap:anywhere; }}
+    .performance-7d-card strong {{ display:block; margin-bottom:3px; }}
+    .performance-7d-card .metric-row {{ display:flex; justify-content:space-between; gap:8px; padding-top:5px; }}
+    .performance-7d-card .metric-row b {{ white-space:nowrap; }}
+    .performance-7d-card .metric-period {{ margin:5px 0; color:var(--muted); font-size:11px; }}
+    @media (max-width:1100px) {{ .performance-7d-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
+    @media (max-width:700px) {{ .performance-7d-grid {{ grid-template-columns:1fr; max-height:none; }} }}
       .period-picker {{ position:relative; z-index:30; margin:0 0 12px; overflow:visible; }}
       .period-picker summary {{ list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; }}
       .period-picker summary::-webkit-details-marker {{ display:none; }}
@@ -1910,6 +1921,11 @@ def render_dashboard(data):
             <button id="tableZoomReset" type="button">Restaurar</button>
           </div>
         </div>
+        <section class="performance-7d-panel" aria-label="Métricas dos últimos 7 dias por anúncio">
+          <h3>Métricas dos últimos 7 dias por anúncio</h3>
+          <p>Vendas = pedidos; conversão = pedidos ÷ visitas. N/D indica histórico incompleto. Dados independentes do total do período selecionado.</p>
+          <div class="performance-7d-grid" id="performance7dItems"></div>
+        </section>
         <div class="scroll-frame" id="table"></div>
         <div class="table-help">
           <div>
@@ -3457,6 +3473,32 @@ def render_dashboard(data):
         <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura</button></div>
       </div></td></tr>`;
     }}
+    function renderPerformance7d(rows) {{
+      const byCode = new Map();
+      function add(item) {{
+        if (item.children && item.children.length) item.children.forEach(add);
+        else if (item.code && !byCode.has(item.code)) byCode.set(item.code, item);
+      }}
+      rows.forEach(add);
+      const dateLabel = value => /^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(value || '') ? value.split('-').reverse().join('/') : 'N/D';
+      const formatted = value => value.toLocaleString('pt-BR', {{maximumFractionDigits:1}});
+      function metric(evidence, name) {{
+        const value = evidence[name];
+        return value && value.complete === true && Number.isFinite(value.current) && Number.isFinite(value.previous)
+          ? value : null;
+      }}
+      const cards = [...byCode.values()].map(item => {{
+        const evidence = item.performance7d || {{}};
+        const sales = metric(evidence, 'sales');
+        const visits = metric(evidence, 'visits');
+        const conversion = sales && visits && visits.current > 0 ? formatted(sales.current / visits.current * 100) + '%' : 'N/D';
+        const period = evidence.current_from && evidence.date_to
+          ? `${{dateLabel(evidence.current_from)}} a ${{dateLabel(evidence.date_to)}}`
+          : 'Período sem cobertura confirmada';
+        return `<article class="performance-7d-card"><strong>${{safe(item.title || item.sku || item.code)}}</strong><span class="muted">${{safe(item.code)}}</span><div class="metric-period">${{safe(period)}}</div><div class="metric-row"><span>Vendas 7d</span><b>${{sales ? formatted(sales.current) : 'N/D'}}</b></div><div class="metric-row"><span>Visitas 7d</span><b>${{visits ? formatted(visits.current) : 'N/D'}}</b></div><div class="metric-row"><span>Conversão 7d</span><b>${{conversion}}</b></div></article>`;
+      }});
+      document.getElementById('performance7dItems').innerHTML = cards.join('') || '<div class="muted">Nenhum anúncio neste filtro.</div>';
+    }}
     function renderTable() {{
       renderAlerts();
       detailItems.clear();
@@ -3473,6 +3515,7 @@ def render_dashboard(data):
             ? splitByMlbu(rows).length
             : rows.length;
       document.getElementById('tableTitle').textContent = `${{contextLabels[currentContext]}} - ${{viewLabels[currentViewMode]}} (${{displayedCount}})`;
+      renderPerformance7d(rows);
       const renderedBodies = currentViewMode === 'hybrid'
         ? groupedHybridBodies(rows)
         : currentViewMode === 'family'
