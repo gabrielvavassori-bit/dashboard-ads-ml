@@ -9,14 +9,14 @@ from test_operational_availability import OperationalAvailabilityTests
 
 
 class MainPerformance7dTests(unittest.TestCase):
-    def test_main_and_demo_render_responsive_metric_section(self):
+    def test_main_and_demo_keep_original_table_with_inline_metric_column(self):
         html = render_dashboard({"items": [], "meta": {}})
-        self.assertIn('id="performance7dItems"', html)
-        self.assertIn("renderPerformance7d(rows)", html)
-        self.assertIn("grid-template-columns:repeat(3,minmax(0,1fr))", html)
-        self.assertIn("grid-template-columns:repeat(2,minmax(0,1fr))", html)
-        self.assertIn(".performance-7d-grid { grid-template-columns:1fr", html)
-        self.assertIn("value.complete === true", html)
+        self.assertNotIn('id="performance7dItems"', html)
+        self.assertNotIn("renderPerformance7d(rows)", html)
+        self.assertIn('<th>Métricas 7d</th><th class="num">', html)
+        self.assertEqual(html.count('class="metrics-7d-cell"'), 4)
+        self.assertIn("#table .ops-table { width:1610px; }", html)
+        self.assertIn("value.complete !== true", html)
         self.assertIn("'N/D'", html)
 
     def test_only_matching_account_performance_is_attached(self):
@@ -41,19 +41,18 @@ class MainPerformance7dTests(unittest.TestCase):
 
     def test_browser_metric_renderer_keeps_missing_history_as_nd(self):
         html = render_dashboard({"items": [], "meta": {}})
-        function = html.split("function renderPerformance7d(rows)", 1)[1].split("function renderTable()", 1)[0]
+        function = html.split("function performance7dInline(source)", 1)[1].split("function renderTable()", 1)[0]
         script = (
-            "let output=''; const document={getElementById:()=>({set innerHTML(value){output=value}})};"
-            "const safe=value=>String(value); function renderPerformance7d(rows)" + function +
-            "renderPerformance7d([{code:'MLB1',title:'Produto',performance7d:{"
+            "function performance7dInline(source)" + function +
+            "console.log(performance7dInline([{code:'MLB1',title:'Produto',performance7d:{"
             "current_from:'2026-09-16',date_to:'2026-09-22',"
             "sales:{complete:true,previous:20,current:10},"
-            "visits:{complete:false,previous:100,current:50}}}]); console.log(output);"
+            "visits:{complete:false,previous:100,current:50}}}]));"
         )
         result = subprocess.run(["node", "-e", script], capture_output=True, text=True, encoding="utf-8", check=True)
-        self.assertIn("Vendas 7d</span><b>10</b>", result.stdout)
-        self.assertIn("Visitas 7d</span><b>N/D</b>", result.stdout)
-        self.assertIn("Conversão 7d</span><b>N/D</b>", result.stdout)
+        self.assertIn("Vendas 7d: <b>10</b>", result.stdout)
+        self.assertIn("Visitas: <b>N/D</b>", result.stdout)
+        self.assertIn("Conversão: <b>N/D</b>", result.stdout)
 
 
 if __name__ == "__main__":

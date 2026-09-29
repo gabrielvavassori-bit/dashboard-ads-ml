@@ -1654,6 +1654,7 @@ def render_dashboard(data):
     .scroll-frame {{ height:56vh; min-height:330px; max-height:560px; width:100%; max-width:100%; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#fff; overscroll-behavior:contain; }}
     .scroll-frame table {{ border:0; border-radius:0; margin:0; }}
     .ops-table {{ width:1420px; table-layout:fixed; }}
+    #table .ops-table {{ width:1610px; }}
     .abc-table {{ width:1280px; table-layout:fixed; }}
     .scroll-frame thead th {{ top:0; }}
     .muted {{ color:var(--muted); font-size:12px; }}
@@ -1780,17 +1781,11 @@ def render_dashboard(data):
     .listing-mini-badge.shipping-off {{ background:#fef3f2; color:#b42318; }}
     .child-table {{ margin-top:10px; border-spacing:0; }}
     .child-table th, .child-table td {{ font-size:12px; }}
-    .performance-7d-panel {{ margin:0 0 14px; padding:14px; border:1px solid var(--line); border-radius:10px; background:#f8fbff; }}
-    .performance-7d-panel h3 {{ margin:0 0 4px; font-size:15px; }}
-    .performance-7d-panel > p {{ margin:0 0 12px; color:var(--muted); font-size:12px; }}
-    .performance-7d-grid {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; max-height:420px; overflow:auto; }}
-    .performance-7d-card {{ min-width:0; padding:11px; border:1px solid var(--line); border-radius:9px; background:#fff; overflow-wrap:anywhere; }}
-    .performance-7d-card strong {{ display:block; margin-bottom:3px; }}
-    .performance-7d-card .metric-row {{ display:flex; justify-content:space-between; gap:8px; padding-top:5px; }}
-    .performance-7d-card .metric-row b {{ white-space:nowrap; }}
-    .performance-7d-card .metric-period {{ margin:5px 0; color:var(--muted); font-size:11px; }}
-    @media (max-width:1100px) {{ .performance-7d-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
-    @media (max-width:700px) {{ .performance-7d-grid {{ grid-template-columns:1fr; max-height:none; }} }}
+    .ops-table .metrics-7d-cell {{ min-width:170px; white-space:normal; text-align:left; line-height:1.5; }}
+    .metrics-7d-cell span {{ display:block; }}
+    .metrics-7d-cell b {{ color:var(--ink); }}
+    .metrics-7d-cell .up {{ color:var(--green); }}
+    .metrics-7d-cell .down {{ color:var(--red); }}
       .period-picker {{ position:relative; z-index:30; margin:0 0 12px; overflow:visible; }}
       .period-picker summary {{ list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; }}
       .period-picker summary::-webkit-details-marker {{ display:none; }}
@@ -1921,11 +1916,6 @@ def render_dashboard(data):
             <button id="tableZoomReset" type="button">Restaurar</button>
           </div>
         </div>
-        <section class="performance-7d-panel" aria-label="Métricas dos últimos 7 dias por anúncio">
-          <h3>Métricas dos últimos 7 dias por anúncio</h3>
-          <p>Vendas = pedidos; conversão = pedidos ÷ visitas. N/D indica histórico incompleto. Dados independentes do total do período selecionado.</p>
-          <div class="performance-7d-grid" id="performance7dItems"></div>
-        </section>
         <div class="scroll-frame" id="table"></div>
         <div class="table-help">
           <div>
@@ -3246,7 +3236,7 @@ def render_dashboard(data):
       const key = detailKey(item);
       detailItems.set(key, item);
       const article = String(label).toUpperCase() === 'SKU' ? 'do' : 'da';
-      return `<tr class="aggregate-reading-row"><td colspan="17"><div class="decision-wrap"><div class="decision-summary-main"><span class="summary-chip">Leitura consolidada</span><div class="decision-teaser">${{safe(item.diagnosticSummary)}}</div></div><div class="decision-summary-side"><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura ${{article}} ${{safe(label)}}</button></div></div></td></tr>`;
+      return `<tr class="aggregate-reading-row"><td colspan="18"><div class="decision-wrap"><div class="decision-summary-main"><span class="summary-chip">Leitura consolidada</span><div class="decision-teaser">${{safe(item.diagnosticSummary)}}</div></div><div class="decision-summary-side"><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura ${{article}} ${{safe(label)}}</button></div></div></td></tr>`;
     }}
     function productParentRow(item, key, expanded) {{
       return `<tr class="product-parent-row variation-parent-row">
@@ -3257,7 +3247,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div>${{campaignConfigInline(item)}}</td>
         <td class="text-cell">${{safe(item.parentId)}} · ${{num(item.optionCount)}} opcao(oes)<div class="muted">${{safe(item.catalogLabel)}}</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(item.children || [item])}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
@@ -3272,7 +3262,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
         <td class="text-cell">${{num(variationCount)}} MLBU(s)<div class="muted">${{num(group.children.length)}} MLB(s)</div></td>
         <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(group.children)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
@@ -3291,12 +3281,12 @@ def render_dashboard(data):
         <td class="text-cell">${{num(summary.campaignCount || 0)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
         <td class="text-cell">${{num(familyCount)}} família(s) · ${{num(variationCount)}} MLBU(s)<div class="muted">${{num(mlbCount)}} MLB(s)</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item,'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(children)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
     function productGroupNote(optionCount) {{
-      return `<tr class="product-group-note"><td colspan="17"><b>Mesmo produto:</b> pai e ${{num(optionCount)}} condicao(oes) de venda no mesmo quadro. Valores do pai sao consolidados e as taxas sao recalculadas sobre os totais.</td></tr>`;
+      return `<tr class="product-group-note"><td colspan="18"><b>Mesmo produto:</b> pai e ${{num(optionCount)}} condicao(oes) de venda no mesmo quadro. Valores do pai sao consolidados e as taxas sao recalculadas sobre os totais.</td></tr>`;
     }}
     function splitByMlbu(rows) {{
       const groups = new Map();
@@ -3372,6 +3362,7 @@ def render_dashboard(data):
       return {{
         ...representative,
         ...summary,
+        children,
         detailScope:meta.scope,
         detailId:meta.id,
         code:meta.id,
@@ -3443,7 +3434,7 @@ def render_dashboard(data):
         const key = hierarchyKey('sku', sku.sku || 'sem-sku');
         const expanded = skuExpanded.has(key);
         const item = aggregateDetailItem(children, {{scope:'sku', id:sku.sku, title:`SKU ${{sku.sku}}`, sku:sku.sku}});
-        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku, key, expanded)}}${{aggregateDetailRows(item, 'SKU')}}<tr class="product-group-note"><td colspan="17"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; use + para abrir o detalhamento estrutural.</td></tr></tbody>`;
+        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku, key, expanded)}}${{aggregateDetailRows(item, 'SKU')}}<tr class="product-group-note"><td colspan="18"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; use + para abrir o detalhamento estrutural.</td></tr></tbody>`;
         const details = expanded ? sortedGroups(splitByFamily(children)).map(familyGroupBody).join('') : '';
         return summary + details;
       }}).join('');
@@ -3463,41 +3454,50 @@ def render_dashboard(data):
         <td class="text-cell">${{safe(item.campaign || item.adsCampaigns || 'Sem campanha')}}<div class="muted">${{safe(item.campaignStatus || '')}}</div>${{campaignMode ? '' : campaignConfigInline(item)}}</td>
         <td class="text-cell">${{safe(item.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(item.catalogLabel || '')}}</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(item)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td>
         <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{safe(item.ctrClass || '')}}</div></td><td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{safe(item.cvrClass || '')}}</div></td>
         <td class="num">${{pct(item.tacos || 0)}}<div class="muted">${{safe(tacosNote)}}</div></td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>
-      <tr class="decision-row"><td colspan="17"><div class="decision-wrap">
+      <tr class="decision-row"><td colspan="18"><div class="decision-wrap">
         <div class="decision-summary-main"><span class="pill ${{actionClass(item.action)}}">${{safe(item.action)}}</span><div class="decision-teaser"><b>Diagnostico:</b> ${{safe(item.diagnosticSummary || item.recommendation || item.reason || 'Sem leitura adicional.')}}</div></div>
         <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura</button></div>
       </div></td></tr>`;
     }}
-    function renderPerformance7d(rows) {{
+    function performance7dInline(source) {{
       const byCode = new Map();
       function add(item) {{
         if (item.children && item.children.length) item.children.forEach(add);
         else if (item.code && !byCode.has(item.code)) byCode.set(item.code, item);
       }}
-      rows.forEach(add);
-      const dateLabel = value => /^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(value || '') ? value.split('-').reverse().join('/') : 'N/D';
-      const formatted = value => value.toLocaleString('pt-BR', {{maximumFractionDigits:1}});
-      function metric(evidence, name) {{
-        const value = evidence[name];
-        return value && value.complete === true && Number.isFinite(value.current) && Number.isFinite(value.previous)
-          ? value : null;
+      (Array.isArray(source) ? source : [source]).forEach(add);
+      const items = [...byCode.values()];
+      const first = items[0] && items[0].performance7d;
+      const sameWindow = first && items.every(item => item.performance7d &&
+        item.performance7d.current_from === first.current_from && item.performance7d.date_to === first.date_to);
+      function sumMetric(name, period) {{
+        if (!sameWindow) return null;
+        const values = items.map(item => item.performance7d[name]);
+        if (values.some(value => !value || value.complete !== true || !Number.isFinite(value[period]))) return null;
+        return values.reduce((sum, value) => sum + value[period], 0);
       }}
-      const cards = [...byCode.values()].map(item => {{
-        const evidence = item.performance7d || {{}};
-        const sales = metric(evidence, 'sales');
-        const visits = metric(evidence, 'visits');
-        const conversion = sales && visits && visits.current > 0 ? formatted(sales.current / visits.current * 100) + '%' : 'N/D';
-        const period = evidence.current_from && evidence.date_to
-          ? `${{dateLabel(evidence.current_from)}} a ${{dateLabel(evidence.date_to)}}`
-          : 'Período sem cobertura confirmada';
-        return `<article class="performance-7d-card"><strong>${{safe(item.title || item.sku || item.code)}}</strong><span class="muted">${{safe(item.code)}}</span><div class="metric-period">${{safe(period)}}</div><div class="metric-row"><span>Vendas 7d</span><b>${{sales ? formatted(sales.current) : 'N/D'}}</b></div><div class="metric-row"><span>Visitas 7d</span><b>${{visits ? formatted(visits.current) : 'N/D'}}</b></div><div class="metric-row"><span>Conversão 7d</span><b>${{conversion}}</b></div></article>`;
-      }});
-      document.getElementById('performance7dItems').innerHTML = cards.join('') || '<div class="muted">Nenhum anúncio neste filtro.</div>';
+      const sales = sumMetric('sales', 'current');
+      const priorSales = sumMetric('sales', 'previous');
+      const visits = sumMetric('visits', 'current');
+      const priorVisits = sumMetric('visits', 'previous');
+      const formatted = value => value.toLocaleString('pt-BR', {{maximumFractionDigits:1}});
+      const conversion = sales !== null && visits > 0 ? sales / visits * 100 : null;
+      const priorConversion = priorSales !== null && priorVisits > 0 ? priorSales / priorVisits * 100 : null;
+      function trend(value, previous, points = false) {{
+        if (value === null || previous === null || (!points && previous === 0)) return '';
+        const delta = points ? value - previous : (value / previous - 1) * 100;
+        if (!Number.isFinite(delta)) return '';
+        const arrow = delta > 0 ? '▲' : delta < 0 ? '▼' : '•';
+        return ` <small class="${{delta < 0 ? 'down' : delta > 0 ? 'up' : 'muted'}}">${{arrow}} ${{formatted(Math.abs(delta))}}${{points ? ' pp' : '%'}}</small>`;
+      }}
+      return `<span>Vendas 7d: <b>${{sales === null ? 'N/D' : formatted(sales)}}</b>${{trend(sales, priorSales)}}</span>
+        <span>Visitas: <b>${{visits === null ? 'N/D' : formatted(visits)}}</b>${{trend(visits, priorVisits)}}</span>
+        <span>Conversão: <b>${{conversion === null ? 'N/D' : formatted(conversion) + '%'}}</b>${{trend(conversion, priorConversion, true)}}</span>`;
     }}
     function renderTable() {{
       renderAlerts();
@@ -3515,7 +3515,6 @@ def render_dashboard(data):
             ? splitByMlbu(rows).length
             : rows.length;
       document.getElementById('tableTitle').textContent = `${{contextLabels[currentContext]}} - ${{viewLabels[currentViewMode]}} (${{displayedCount}})`;
-      renderPerformance7d(rows);
       const renderedBodies = currentViewMode === 'hybrid'
         ? groupedHybridBodies(rows)
         : currentViewMode === 'family'
@@ -3528,8 +3527,8 @@ def render_dashboard(data):
                 ? groupedSkuBodies(rows)
                 : `<tbody>${{rows.map(item => row(item)).join('')}}</tbody>`;
       document.getElementById('table').innerHTML = `<table class="ops-table">
-        <colgroup><col style="width:72px"><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
-        <thead><tr><th>Imagem</th><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
+        <colgroup><col style="width:72px"><col style="width:110px"><col style="width:300px"><col style="width:86px"><col style="width:190px"><col style="width:190px"><col style="width:120px"><col style="width:72px"><col style="width:72px"><col style="width:108px"><col style="width:190px"><col style="width:108px"><col style="width:96px"><col style="width:84px"><col style="width:78px"><col style="width:78px"><col style="width:90px"><col style="width:70px"></colgroup>
+        <thead><tr><th>Imagem</th><th>${{sortable('SKU','sku')}}</th><th>${{sortable(currentViewMode === 'campaign' ? 'Resumo' : 'Anuncio','code')}}</th><th>ABC</th><th>Campanha Ads</th><th>Condicao/opcao de venda</th><th class="num">${{sortable('Preco','price')}}</th><th class="num">${{sortable('Pedidos','orders')}}</th><th class="num">${{sortable('Unidades','units')}}</th><th class="num">${{sortable('Receita','revenue')}}</th><th>Métricas 7d</th><th class="num">${{sortable('Receita ADS','adsRevenue')}}</th><th class="num">${{sortable('Invest.','investment')}}</th><th class="num">${{sortable('CPC','cpc')}}</th><th class="num">${{sortable('CTR','ctr')}}</th><th class="num">${{sortable('CVR','cvr')}}</th><th class="num">${{sortable('TACOS','tacos')}}</th><th class="num">${{sortable('ROAS','roas')}}</th></tr></thead>
         ${{renderedBodies}}</table>`;
       const helpText = document.getElementById('tableHelpText');
       const helpMeta = document.getElementById('tableHelpMeta');
