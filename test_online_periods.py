@@ -334,6 +334,19 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("campaignChildSort.direction === 'desc' ? -comparison : comparison", campaign_children)
         self.assertIn("updatedSearch.setSelectionRange", source)
 
+    def test_main_and_demo_campaign_detail_is_readable_on_mobile(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        mobile_css = source.split("@media (max-width:700px) {{\n      .detail-modal-backdrop", 1)[1].split("</style>", 1)[0]
+        campaign_children = source.split("function campaignChildren(item)", 1)[1].split(
+            "const campaignChildSortKeys", 1
+        )[0]
+        self.assertIn(".detail-modal-body .child-table {{ display:block; width:100%; min-width:0", mobile_css)
+        self.assertIn(".detail-modal-body .child-table tr {{ display:grid", mobile_css)
+        self.assertIn("content:attr(data-label)", mobile_css)
+        for label in ("SKU", "Anúncio", "Condição/opção", "Título", "Pedidos", "Unidades",
+                      "Receita", "Receita ADS", "Invest.", "CTR", "CVR", "TACOS", "Alerta"):
+            self.assertIn(f'data-label="{label}"', campaign_children)
+
     def test_online_builder_keeps_campaign_condition_and_catalog_links_separate(self):
         payload = {
             **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-04", "2026-08-10"),
