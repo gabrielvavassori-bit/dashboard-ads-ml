@@ -1780,6 +1780,17 @@ def render_dashboard(data):
     .listing-mini-badge.shipping-off {{ background:#fef3f2; color:#b42318; }}
     .child-table {{ margin-top:10px; border-spacing:0; }}
     .child-table th, .child-table td {{ font-size:12px; }}
+    .performance-7d-panel {{ margin:0 0 14px; padding:14px; border:1px solid var(--line); border-radius:10px; background:#f8fbff; }}
+    .performance-7d-panel h3 {{ margin:0 0 4px; font-size:15px; }}
+    .performance-7d-panel > p {{ margin:0 0 12px; color:var(--muted); font-size:12px; }}
+    .performance-7d-grid {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; max-height:420px; overflow:auto; }}
+    .performance-7d-card {{ min-width:0; padding:11px; border:1px solid var(--line); border-radius:9px; background:#fff; overflow-wrap:anywhere; }}
+    .performance-7d-card strong {{ display:block; margin-bottom:3px; }}
+    .performance-7d-card .metric-row {{ display:flex; justify-content:space-between; gap:8px; padding-top:5px; }}
+    .performance-7d-card .metric-row b {{ white-space:nowrap; }}
+    .performance-7d-card .metric-period {{ margin:5px 0; color:var(--muted); font-size:11px; }}
+    @media (max-width:1100px) {{ .performance-7d-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
+    @media (max-width:700px) {{ .performance-7d-grid {{ grid-template-columns:1fr; max-height:none; }} }}
       .period-picker {{ position:relative; z-index:30; margin:0 0 12px; overflow:visible; }}
       .period-picker summary {{ list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; }}
       .period-picker summary::-webkit-details-marker {{ display:none; }}
@@ -1797,7 +1808,23 @@ def render_dashboard(data):
       .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
     @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .chart-head {{ align-items:stretch; }} .chart-metric-tabs {{ width:100%; }} .chart-metric-button {{ flex:1 1 auto; }} .campaign-config-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .campaign-child-tools {{ align-items:stretch; flex-direction:column; }} .campaign-child-tools input {{ width:100%; }} .campaign-child-count {{ white-space:normal; }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
-    @media (max-width:700px) {{ .detail-modal-backdrop {{ padding:0; }} .detail-modal-shell {{ width:100vw; max-width:100vw; height:100dvh; max-height:none; border:0; border-radius:0; }} .detail-modal-head {{ padding:12px; }} .detail-modal-tabs {{ grid-auto-flow:row; grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-columns:auto; min-width:0; min-height:98px; padding:8px 12px; overflow:hidden; }} .detail-modal-tabs button {{ width:100%; min-width:0; }} .detail-modal-body {{ padding:12px; }} .detail-modal-body .detail-grid {{ grid-template-columns:1fr; }} }}
+    @media (max-width:700px) {{
+      .detail-modal-backdrop {{ padding:0; }}
+      .detail-modal-shell {{ width:100vw; max-width:100vw; height:100dvh; max-height:none; border:0; border-radius:0; }}
+      .detail-modal-head {{ padding:12px; }}
+      .detail-modal-tabs {{ grid-auto-flow:row; grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-columns:auto; min-width:0; min-height:98px; padding:8px 12px; overflow:hidden; }}
+      .detail-modal-tabs button {{ width:100%; min-width:0; }}
+      .detail-modal-body {{ padding:12px; }}
+      .detail-modal-body .detail-grid {{ grid-template-columns:1fr; }}
+      .detail-modal-body .detail-block {{ min-width:0; }}
+      .detail-modal-body .child-table {{ display:block; width:100%; min-width:0; border:0; background:transparent; }}
+      .detail-modal-body .child-table thead {{ display:none; }}
+      .detail-modal-body .child-table tbody {{ display:grid; gap:10px; }}
+      .detail-modal-body .child-table tr {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:12px; border:1px solid var(--line); border-radius:10px; background:#fff; }}
+      .detail-modal-body .child-table td {{ display:block; min-width:0; padding:0; border:0; overflow-wrap:anywhere; white-space:normal; text-align:left; }}
+      .detail-modal-body .child-table td::before {{ content:attr(data-label); display:block; margin-bottom:2px; color:var(--muted); font-size:10px; font-weight:800; text-transform:uppercase; }}
+      .detail-modal-body .child-table td:nth-child(-n+4), .detail-modal-body .child-table td:last-child {{ grid-column:1/-1; }}
+    }}
   </style>
 </head>
 <body>
@@ -1894,6 +1921,11 @@ def render_dashboard(data):
             <button id="tableZoomReset" type="button">Restaurar</button>
           </div>
         </div>
+        <section class="performance-7d-panel" aria-label="Métricas dos últimos 7 dias por anúncio">
+          <h3>Métricas dos últimos 7 dias por anúncio</h3>
+          <p>Vendas = pedidos; conversão = pedidos ÷ visitas. N/D indica histórico incompleto. Dados independentes do total do período selecionado.</p>
+          <div class="performance-7d-grid" id="performance7dItems"></div>
+        </section>
         <div class="scroll-frame" id="table"></div>
         <div class="table-help">
           <div>
@@ -2670,7 +2702,7 @@ def render_dashboard(data):
       const countText = children.length === sourceChildren.length ? `${{num(children.length)}} item(ns)` : `${{num(children.length)}} de ${{num(sourceChildren.length)}} item(ns)`;
       return `<div class="detail-block" style="grid-column:1/-1"><h3>${{safe(title)}}</h3><div class="campaign-child-tools"><input type="search" data-campaign-child-search value="${{safe(campaignChildQuery)}}" placeholder="Pesquisar SKU, anúncio, título, condição ou alerta"><span class="campaign-child-count">${{countText}}</span></div><table class="child-table">
         <thead><tr><th>${{campaignChildSortable('SKU', 'sku')}}</th><th>${{campaignChildSortable('Anúncio', 'code')}}</th><th>${{campaignChildSortable('Condição/opção', 'condition')}}</th><th>${{campaignChildSortable('Título', 'title')}}</th><th class="num">${{campaignChildSortable('Pedidos', 'orders')}}</th><th class="num">${{campaignChildSortable('Unidades', 'units')}}</th><th class="num">${{campaignChildSortable('Receita', 'revenue')}}</th><th class="num">${{campaignChildSortable('Receita ADS', 'adsRevenue')}}</th><th class="num">${{campaignChildSortable('Invest.', 'investment')}}</th><th class="num">${{campaignChildSortable('CTR', 'ctr')}}</th><th class="num">${{campaignChildSortable('CVR', 'cvr')}}</th><th class="num">${{campaignChildSortable('TACOS', 'tacos')}}</th><th>${{campaignChildSortable('Alerta', 'alert')}}</th></tr></thead>
-        <tbody>${{children.map(child => `<tr><td>${{safe(child.sku || '(sem SKU)')}}</td><td>${{safe(child.code || '')}}</td><td>${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td>${{safe(child.title || '')}}</td><td class="num">${{num(child.orders || 0)}}</td><td class="num">${{num(child.units || 0)}}</td><td class="num">${{brl(child.totalRevenue || 0)}}</td><td class="num">${{brl(child.adsRevenue || 0)}}</td><td class="num">${{brl(child.investment || 0)}}</td><td class="num">${{pct(child.ctr || 0)}}</td><td class="num">${{pct(child.cvr || 0)}}</td><td class="num">${{pct(child.tacos || 0)}}</td><td>${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
+        <tbody>${{children.map(child => `<tr><td data-label="SKU">${{safe(child.sku || '(sem SKU)')}}</td><td data-label="Anúncio">${{safe(child.code || '')}}</td><td data-label="Condição/opção">${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td data-label="Título">${{safe(child.title || '')}}</td><td class="num" data-label="Pedidos">${{num(child.orders || 0)}}</td><td class="num" data-label="Unidades">${{num(child.units || 0)}}</td><td class="num" data-label="Receita">${{brl(child.totalRevenue || 0)}}</td><td class="num" data-label="Receita ADS">${{brl(child.adsRevenue || 0)}}</td><td class="num" data-label="Invest.">${{brl(child.investment || 0)}}</td><td class="num" data-label="CTR">${{pct(child.ctr || 0)}}</td><td class="num" data-label="CVR">${{pct(child.cvr || 0)}}</td><td class="num" data-label="TACOS">${{pct(child.tacos || 0)}}</td><td data-label="Alerta">${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
       </table></div>`;
     }}
     const campaignChildSortKeys = {{
@@ -3441,6 +3473,32 @@ def render_dashboard(data):
         <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura</button></div>
       </div></td></tr>`;
     }}
+    function renderPerformance7d(rows) {{
+      const byCode = new Map();
+      function add(item) {{
+        if (item.children && item.children.length) item.children.forEach(add);
+        else if (item.code && !byCode.has(item.code)) byCode.set(item.code, item);
+      }}
+      rows.forEach(add);
+      const dateLabel = value => /^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(value || '') ? value.split('-').reverse().join('/') : 'N/D';
+      const formatted = value => value.toLocaleString('pt-BR', {{maximumFractionDigits:1}});
+      function metric(evidence, name) {{
+        const value = evidence[name];
+        return value && value.complete === true && Number.isFinite(value.current) && Number.isFinite(value.previous)
+          ? value : null;
+      }}
+      const cards = [...byCode.values()].map(item => {{
+        const evidence = item.performance7d || {{}};
+        const sales = metric(evidence, 'sales');
+        const visits = metric(evidence, 'visits');
+        const conversion = sales && visits && visits.current > 0 ? formatted(sales.current / visits.current * 100) + '%' : 'N/D';
+        const period = evidence.current_from && evidence.date_to
+          ? `${{dateLabel(evidence.current_from)}} a ${{dateLabel(evidence.date_to)}}`
+          : 'Período sem cobertura confirmada';
+        return `<article class="performance-7d-card"><strong>${{safe(item.title || item.sku || item.code)}}</strong><span class="muted">${{safe(item.code)}}</span><div class="metric-period">${{safe(period)}}</div><div class="metric-row"><span>Vendas 7d</span><b>${{sales ? formatted(sales.current) : 'N/D'}}</b></div><div class="metric-row"><span>Visitas 7d</span><b>${{visits ? formatted(visits.current) : 'N/D'}}</b></div><div class="metric-row"><span>Conversão 7d</span><b>${{conversion}}</b></div></article>`;
+      }});
+      document.getElementById('performance7dItems').innerHTML = cards.join('') || '<div class="muted">Nenhum anúncio neste filtro.</div>';
+    }}
     function renderTable() {{
       renderAlerts();
       detailItems.clear();
@@ -3457,6 +3515,7 @@ def render_dashboard(data):
             ? splitByMlbu(rows).length
             : rows.length;
       document.getElementById('tableTitle').textContent = `${{contextLabels[currentContext]}} - ${{viewLabels[currentViewMode]}} (${{displayedCount}})`;
+      renderPerformance7d(rows);
       const renderedBodies = currentViewMode === 'hybrid'
         ? groupedHybridBodies(rows)
         : currentViewMode === 'family'

@@ -1002,6 +1002,16 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "suggestedTestPrice": suggested_test_price,
             "pricingSignal": pricing_signal,
             "dailySeries": daily_series_by_item.get(code, []),
+            "performance7d": {
+                **{key: latest_payload.get("performance_7d", {}).get(key) for key in
+                   ("date_from", "date_to", "previous_to", "current_from")},
+                **latest_payload.get("performance_7d", {}).get("items", {}).get(code, {}),
+            } if (
+                isinstance(latest_payload.get("performance_7d"), dict)
+                and latest_payload["performance_7d"].get("client_id") == client
+                and isinstance(latest_payload["performance_7d"].get("items"), dict)
+                and isinstance(latest_payload["performance_7d"]["items"].get(code, {}), dict)
+            ) else {},
             "listingTypeId": str(raw.get("listing_type_id") or raw.get("listingTypeId") or "").strip(),
             "logisticType": str(raw.get("logistic_type") or shipping.get("logistic_type") or "").strip(),
             "freeShipping": bool(free_shipping) if free_shipping is not None else None,
