@@ -2746,6 +2746,9 @@ def render_dashboard(data):
         if (!date) return;
         const current = byDate.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, priceFallback:0}};
         current.orders += Number(row.orders || 0);
+        current.partial = Boolean(current.partial || row.partial);
+        current.salesPresent = Boolean(current.salesPresent || row.salesPresent);
+        current.adsPresent = Boolean(current.adsPresent || row.adsPresent);
         current.units += Number(row.units || 0);
         current.revenue += Number(row.revenue || 0);
         current.adsRevenue += Number(row.adsRevenue || 0);
@@ -2778,7 +2781,7 @@ def render_dashboard(data):
       const end = new Date(`${{dateTo}}T12:00:00`);
       while (cursor <= end) {{
         const date = cursor.toISOString().slice(0, 10);
-        complete.push(indexed.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, roas:0, tacos:0, price:0, priceFallback:0}});
+        complete.push(indexed.get(date) || {{date, partial:true, salesPresent:false, adsPresent:false}});
         cursor.setDate(cursor.getDate() + 1);
       }}
       return complete;
@@ -2869,9 +2872,16 @@ def render_dashboard(data):
       const padding = (rawMax - rawMin) * .18;
       return {{min:Math.max(0, rawMin - padding), max:rawMax + padding}};
     }}
+    function chartMetricAvailable(row, metric) {{
+      if (!row.partial) return true;
+      if (['adsRevenue', 'investment', 'roas'].includes(metric)) return Boolean(row.adsPresent);
+      if (metric === 'tacos') return Boolean(row.adsPresent && row.salesPresent);
+      return Boolean(row.salesPresent);
+    }}
     function renderDailyMetric(root, metric) {{
       const sourceRows = JSON.parse(decodeURIComponent(root.dataset.chartSeries || '%5B%5D'));
-      const rows = metric === 'price' ? sourceRows.filter(row => Number(row.price || 0) > 0) : sourceRows;
+      const rows = sourceRows;
+      const hasPartial = rows.some(row => row.partial);
       const config = chartMetricConfig(metric);
       const values = rows.map(row => Number(row[metric] || 0));
       const totals = rows.reduce((sum, row) => ({{
@@ -2895,6 +2905,7 @@ def render_dashboard(data):
       root.querySelectorAll('[data-chart-metric]').forEach(button => button.classList.toggle('active', button.dataset.chartMetric === metric));
       const summaryLabel = ['roas', 'tacos'].includes(metric) ? 'Resultado do periodo' : 'Media do periodo';
       root.querySelector('.chart-summary').textContent = `${{config.label}} por dia. ${{summaryLabel}}: ${{config.format(average)}}.`;
+      if (hasPartial) root.querySelector('.chart-summary').textContent = 'Dados parciais / cobertura nao comprovada: valores disponiveis, sujeitos a atualizacao. N/D = sem dados. Media e tendencia omitidas.';
       if (!rows.length || (metric === 'price' && !values.some(value => value > 0))) {{
         canvas.innerHTML = '<div class="muted" style="padding:28px">O snapshot ainda nao possui preco diario suficiente para esta visualizacao.</div>';
         return;
@@ -2925,14 +2936,16 @@ def render_dashboard(data):
       const barWidth = Math.max(8, Math.min(34, step * .62));
       const lineOnly = ['price', 'roas', 'tacos'].includes(metric);
       const bars = lineOnly ? '' : rows.map((row,index) => {{
+        if (!chartMetricAvailable(row, metric)) return '';
         const barY = y(values[index]);
         return `<rect class="chart-bar" x="${{(x(index)-barWidth/2).toFixed(1)}}" y="${{barY.toFixed(1)}}" width="${{barWidth.toFixed(1)}}" height="${{Math.max(0, top+chartH-barY).toFixed(1)}}" rx="${{Math.min(7,barWidth/3).toFixed(1)}}" fill="${{config.color}}" fill-opacity=".46"/>`;
       }}).join('');
       const trendValues = lineOnly ? values : movingAverage(values);
       const points = trendValues.map((value,index) => [x(index), y(value)]);
-      const path = smoothChartPath(points);
+      const path = hasPartial ? '' : smoothChartPath(points);
       const area = lineOnly && path ? `${{path}} L ${{x(rows.length-1).toFixed(1)}} ${{(top+chartH).toFixed(1)}} L ${{x(0).toFixed(1)}} ${{(top+chartH).toFixed(1)}} Z` : '';
-      const dots = lineOnly ? points.map(point => `<circle cx="${{point[0].toFixed(1)}}" cy="${{point[1].toFixed(1)}}" r="4" fill="#fff" stroke="${{config.color}}" stroke-width="2"/>`).join('') : '';
+      const dots = lineOnly ? points.map((point,index) => chartMetricAvailable(rows[index], metric) ? `<circle cx="${{point[0].toFixed(1)}}" cy="${{point[1].toFixed(1)}}" r="4" fill="#fff" stroke="${{rows[index].partial ? '#b45309' : config.color}}" stroke-width="2"/>` : '').join('') : '';
+      const partialMarks = rows.map((row,index) => row.partial ? `<text x="${{x(index)}}" y="${{top+12}}" text-anchor="middle" fill="#92400e" font-size="12">${{chartMetricAvailable(row, metric) ? '*' : 'N/D'}}</text>` : '').join('');
       const extremes = metric === 'tacos' ? rows.map((row,index) => {{
         const actual = Number(row.tacos || 0);
         if (actual <= scale.max) return '';
@@ -2942,7 +2955,7 @@ def render_dashboard(data):
       const hitWidth = Math.max(12, step);
       const hits = rows.map((row,index) => `<g><rect class="chart-hit" data-chart-index="${{index}}" x="${{(x(index)-hitWidth/2).toFixed(1)}}" y="${{top}}" width="${{hitWidth.toFixed(1)}}" height="${{chartH}}"/><line class="chart-hover-line" x1="${{x(index).toFixed(1)}}" y1="${{top}}" x2="${{x(index).toFixed(1)}}" y2="${{top+chartH}}"/></g>`).join('');
       canvas.innerHTML = `<svg class="daily-chart" viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="${{safe(config.label)}} por dia">
-        ${{grid}}${{averageLine}}${{referenceLine}}${{area ? `<path d="${{area}}" fill="${{config.color}}" fill-opacity=".10"/>` : ''}}${{bars}}<path d="${{path}}" fill="none" stroke="${{config.color}}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>${{dots}}${{extremes}}${{hits}}${{xLabels}}
+        ${{grid}}${{hasPartial ? '' : averageLine}}${{referenceLine}}${{area ? `<path d="${{area}}" fill="${{config.color}}" fill-opacity=".10"/>` : ''}}${{bars}}<path d="${{path}}" fill="none" stroke="${{config.color}}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>${{dots}}${{extremes}}${{partialMarks}}${{hits}}${{xLabels}}
       </svg>`;
       const tooltip = root.querySelector('.chart-tooltip');
       root.querySelectorAll('[data-chart-index]').forEach(hit => {{
@@ -2966,6 +2979,13 @@ def render_dashboard(data):
         <div class="chart-tooltip-row ${{metric === 'orders' ? 'active' : ''}}"><span>Pedidos</span><span>${{num(Number(row.orders || 0))}}</span></div>
         <div class="chart-tooltip-row ${{metric === 'price' ? 'active' : ''}}"><span>Preco medio</span><span>${{safe(priceText)}}</span></div>`;
       const relativeX = hitRect.left - stageRect.left + hitRect.width / 2;
+      if (row.partial) {{
+        tooltip.insertAdjacentHTML('afterbegin', '<div style="color:#92400e;font-weight:700">* Parcial — cobertura nao comprovada</div>');
+        const metrics = ['revenue','adsRevenue','investment','roas','tacos','units','orders','price'];
+        tooltip.querySelectorAll('.chart-tooltip-row').forEach((entry,index) => {{
+          if (!chartMetricAvailable(row, metrics[index])) entry.lastElementChild.textContent = 'N/D — sem dados';
+        }});
+      }}
       tooltip.classList.add('visible');
       const halfWidth = tooltip.getBoundingClientRect().width / 2;
       tooltip.style.left = `${{Math.max(halfWidth + 8, Math.min(stageRect.width - halfWidth - 8, relativeX))}}px`;

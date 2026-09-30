@@ -806,6 +806,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             continue
         daily_by_item_date.setdefault(daily_code, {})[snapshot_date] = {
             "date": snapshot_date,
+            "salesPresent": True,
+            "adsPresent": False,
             "orders": _number(daily_raw.get("orders_count")),
             "units": _number(daily_raw.get("units_total")),
             "revenue": _number(daily_raw.get("revenue_total")),
@@ -829,6 +831,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "lastSaleDate": "", "lastSalePrice": 0.0,
         })
         daily.update({
+            "adsPresent": True,
             "adsRevenue": _number(daily_raw.get("total_amount")),
             "adsDirectRevenue": _number(daily_raw.get("direct_amount")),
             "adsIndirectRevenue": _number(daily_raw.get("indirect_amount")),
@@ -841,6 +844,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     for daily_code, daily_by_date in daily_by_item_date.items():
         daily_series = []
         for daily in daily_by_date.values():
+            daily["partial"] = bool(latest_payload.get("operational_partial"))
+            daily.setdefault("salesPresent", False)
             daily["tacosBaseRevenue"] = _number(daily.get("revenue")) + max(
                 0.0, _number(daily.get("adsIndirectRevenue"))
             )
@@ -854,6 +859,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 continue
             account_daily = account_daily_by_date.setdefault(snapshot_date, {
                 "date": snapshot_date,
+                "partial": bool(latest_payload.get("operational_partial")),
+                "salesPresent": False,
+                "adsPresent": False,
                 "orders": 0.0,
                 "units": 0.0,
                 "revenue": 0.0,
@@ -867,6 +875,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 "adsUnits": 0.0,
                 "priceFallback": 0.0,
             })
+            account_daily["salesPresent"] |= daily.get("salesPresent", False)
+            account_daily["adsPresent"] |= daily.get("adsPresent", False)
             for field in (
                 "orders", "units", "revenue", "adsRevenue", "adsDirectRevenue",
                 "adsIndirectRevenue", "investment", "tacosBaseRevenue", "impressions",
@@ -875,6 +885,17 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 account_daily[field] += _number(daily.get(field))
             if _number(daily.get("lastSalePrice")) > 0:
                 account_daily["priceFallback"] = _number(daily.get("lastSalePrice"))
+    if latest_payload.get("operational_partial"):
+        cursor = date.fromisoformat(latest_date_from)
+        end = date.fromisoformat(latest_date_to)
+        while cursor <= end:
+            key = cursor.isoformat()
+            account_daily_by_date.setdefault(key, {
+                "date": key, "partial": True, "salesPresent": False, "adsPresent": False,
+                "revenue": 0, "units": 0, "priceFallback": 0, "adsRevenue": 0,
+                "investment": 0, "tacosBaseRevenue": 0,
+            })
+            cursor += timedelta(days=1)
     account_daily_series = []
     for account_daily in sorted(account_daily_by_date.values(), key=lambda row: row["date"]):
         account_daily["price"] = (
