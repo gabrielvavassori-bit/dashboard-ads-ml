@@ -13,13 +13,17 @@ class OperationalAvailabilityTests(unittest.TestCase):
         committed.pop("operational_partial")
         committed.update(complete_integrity_contract("demo", "7", "2026-09-01", "2026-09-02"))
         committed["latest"]["sales"]["complete"] = True
+        payload["ads"]["items"][0].update(title="Original product", family_id="family-original", thumbnail="original.jpg")
         payload["committed_period"] = committed
         with patch.object(app, "_fetch_dash_ads_json", return_value=payload), patch.object(
             app, "_load_snapshot_completeness_governance_rule", return_value=active_snapshot_completeness_rule()
         ):
             result, error = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
             self.assertEqual(error, "")
-            self.assertIs(result, committed)
+            self.assertTrue(result["chart_period_verified"])
+            self.assertIs(result["ads"], payload["ads"])
+            self.assertEqual(result["ads"]["items"][0]["family_id"], "family-original")
+            self.assertTrue(result["operational_partial"])
             committed["sales"]["items"]["MLB123"]["revenue_total"] = 50
             from test_online_periods import complete_daily_coverage
             coverage = complete_daily_coverage("2026-09-01", "2026-09-02")
@@ -32,6 +36,8 @@ class OperationalAvailabilityTests(unittest.TestCase):
             self.assertEqual(error, "")
             self.assertTrue(data["accountDailySeries"])
             self.assertTrue(all(not row["partial"] for row in data["accountDailySeries"]))
+            self.assertEqual(data["items"][0]["familyId"], "family-original")
+            self.assertEqual(data["items"][0]["thumbnailUrl"], "original.jpg")
             for field, value in (("client_id", "other"), ("advertiser_id", "8")):
                 previous = committed["integrity_contract"]["identity"][field]
                 committed["integrity_contract"]["identity"][field] = value

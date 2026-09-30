@@ -704,6 +704,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     if not latest_payload:
         return None, cache_error
 
+    daily_partial = bool(latest_payload.get("operational_partial")) and not latest_payload.get("chart_period_verified", False)
+
     latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
     ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
     sales = latest_payload.get("sales") if isinstance(latest_payload.get("sales"), dict) else {}
@@ -757,7 +759,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "Dados financeiros não foram exibidos. A receita atribuída por Ads supera o faturamento bruto "
             "do cache completo; a janela precisa ser reparada na origem. Estado da reparação: blocked."
         )
-    daily_sales_result = (latest_payload.get("daily_sales", []), {}, "partial_operational_cache") if latest_payload.get("operational_partial") else _sales_intelligence_fetch_daily_sales(
+    daily_sales_result = (latest_payload.get("daily_sales", []), {}, "partial_operational_cache") if daily_partial else _sales_intelligence_fetch_daily_sales(
         client,
         latest_date_from,
         latest_date_to,
@@ -767,7 +769,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         daily_sales_coverage_days = {}
     else:
         daily_sales_rows, daily_sales_coverage_days, daily_sales_error = daily_sales_result
-    daily_ads_rows, daily_ads_coverage_days, daily_ads_error = (latest_payload.get("daily_ads", []), {}, "partial_operational_cache") if latest_payload.get("operational_partial") else _sales_intelligence_fetch_daily_ads(
+    daily_ads_rows, daily_ads_coverage_days, daily_ads_error = (latest_payload.get("daily_ads", []), {}, "partial_operational_cache") if daily_partial else _sales_intelligence_fetch_daily_ads(
         client,
         latest_date_from,
         latest_date_to,
@@ -792,7 +794,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         )
         if issue
     ]
-    if daily_coverage_issues and not latest_payload.get("operational_partial"):
+    if daily_coverage_issues and not daily_partial:
         return None, (
             f"{ONLINE_CACHE_INTEGRITY_PREFIX}Período solicitado: {requested_from or 'sem data'} a {requested_to or 'sem data'}. "
             f"Dados financeiros não foram exibidos. {'; '.join(daily_coverage_issues)}. "
@@ -844,7 +846,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     for daily_code, daily_by_date in daily_by_item_date.items():
         daily_series = []
         for daily in daily_by_date.values():
-            daily["partial"] = bool(latest_payload.get("operational_partial"))
+            daily["partial"] = daily_partial
             daily.setdefault("salesPresent", False)
             daily["tacosBaseRevenue"] = _number(daily.get("revenue")) + max(
                 0.0, _number(daily.get("adsIndirectRevenue"))
@@ -859,7 +861,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 continue
             account_daily = account_daily_by_date.setdefault(snapshot_date, {
                 "date": snapshot_date,
-                "partial": bool(latest_payload.get("operational_partial")),
+                "partial": daily_partial,
                 "salesPresent": False,
                 "adsPresent": False,
                 "orders": 0.0,
@@ -885,7 +887,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 account_daily[field] += _number(daily.get(field))
             if _number(daily.get("lastSalePrice")) > 0:
                 account_daily["priceFallback"] = _number(daily.get("lastSalePrice"))
-    if latest_payload.get("operational_partial"):
+    if daily_partial:
         cursor = date.fromisoformat(latest_date_from)
         end = date.fromisoformat(latest_date_to)
         while cursor <= end:
@@ -1757,7 +1759,9 @@ def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_fro
     if isinstance(committed, dict):
         integrity = _online_cache_integrity_state(committed, client, advertiser_id, date_from, date_to)
         if integrity["ready"]:
-            return committed, ""
+            # Keep operational product metadata and table values intact.
+            # The exact committed contract certifies only the daily chart path.
+            return {**payload, "chart_period_verified": True}, ""
     return payload, ""
 
 
