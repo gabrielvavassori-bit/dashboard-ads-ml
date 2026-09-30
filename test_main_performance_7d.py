@@ -1,4 +1,5 @@
 import copy
+import re
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -41,7 +42,7 @@ class MainPerformance7dTests(unittest.TestCase):
 
     def test_browser_metric_renderer_keeps_missing_history_as_nd(self):
         html = render_dashboard({"items": [], "meta": {}})
-        function = html.split("function performance7dInline(source)", 1)[1].split("function renderTable()", 1)[0]
+        function = html.split("function performance7dInline(source)", 1)[1].split("let metricsFloat =", 1)[0]
         script = (
             "function performance7dInline(source)" + function +
             "console.log(performance7dInline([{code:'MLB1',title:'Produto',performance7d:{"
@@ -53,6 +54,26 @@ class MainPerformance7dTests(unittest.TestCase):
         self.assertIn("Vendas 7d: <b>10</b>", result.stdout)
         self.assertIn("Visitas: <b>N/D</b>", result.stdout)
         self.assertIn("Conversão: <b>N/D</b>", result.stdout)
+
+    def test_comparison_popup_shows_signed_difference_and_current_values(self):
+        html = render_dashboard({"items": [], "meta": {}})
+        function = html.split("function performance7dInline(source)", 1)[1].split("let metricsFloat =", 1)[0]
+        script = (
+            "function performance7dInline(source)" + function +
+            "const result = performance7dInline([{code:'MLB1',performance7d:{"
+            "date_from:'2026-09-16',previous_to:'2026-09-22',"
+            "current_from:'2026-09-23',date_to:'2026-09-29',"
+            "sales:{complete:true,previous:170,current:100},"
+            "visits:{complete:true,previous:1000,current:500}}}]);"
+            "console.log(decodeURIComponent(result.match(/data-metrics-tip=\"([^\"]+)/)[1]));"
+        )
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, encoding="utf-8", check=True)
+        text = re.sub(r"<[^>]+>", " ", result.stdout)
+        self.assertRegex(text, r"Anterior\s+Atual\s+Diferença\s+Variação")
+        self.assertRegex(text, r"Vendas\s+170\s+100\s+−70\s+−41,2%")
+        self.assertRegex(text, r"Visitas\s+1\.000\s+500\s+−500\s+−50%")
+        self.assertRegex(text, r"Conversão\s+17%\s+20%\s+\+3 pp\s+\+3 pp")
+        self.assertIn("document.body.appendChild(metricsFloat)", html)
 
 
 if __name__ == "__main__":
