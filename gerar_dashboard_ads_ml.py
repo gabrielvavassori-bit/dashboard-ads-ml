@@ -1789,6 +1789,18 @@ def render_dashboard(data):
     .metrics-7d-cell b {{ color:var(--ink); }}
     .metrics-7d-cell .up {{ color:var(--green); }}
     .metrics-7d-cell .down {{ color:var(--red); }}
+    .metrics-7d {{ cursor:help; border-radius:5px; }}
+    .metrics-7d:focus-visible {{ outline:2px solid #2563eb; outline-offset:3px; }}
+    .metrics-float {{ position:fixed; z-index:10000; width:410px; max-width:calc(100vw - 24px); box-sizing:border-box; padding:14px; border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--ink); box-shadow:0 5px 22px #10182830; font:12px/1.5 Arial,sans-serif; pointer-events:none; }}
+    .metrics-float[hidden] {{ display:none; }}
+    .metrics-float strong {{ display:block; margin-bottom:7px; }}
+    .metrics-float-period, .metrics-float-note {{ color:var(--muted); font-size:11px; }}
+    .metrics-float-period {{ margin-bottom:8px; }}
+    .metrics-float-note {{ margin-top:9px; }}
+    .metrics-float-grid {{ display:grid; grid-template-columns:minmax(68px,1fr) repeat(4,minmax(48px,auto)); gap:5px 9px; align-items:center; }}
+    .metrics-float-grid .muted {{ color:var(--muted); font-size:10px; }}
+    .metrics-float-grid .down {{ color:var(--red); }}
+    .metrics-float-grid .up {{ color:var(--green); }}
       .period-picker {{ position:relative; z-index:30; margin:0 0 12px; overflow:visible; }}
       .period-picker summary {{ list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; }}
       .period-picker summary::-webkit-details-marker {{ display:none; }}
@@ -3497,7 +3509,7 @@ def render_dashboard(data):
       const items = [...byCode.values()];
       const first = items[0] && items[0].performance7d;
       const sameWindow = first && items.every(item => item.performance7d &&
-        item.performance7d.current_from === first.current_from && item.performance7d.date_to === first.date_to);
+        ['date_from', 'previous_to', 'current_from', 'date_to'].every(key => item.performance7d[key] === first[key]));
       function sumMetric(name, period) {{
         if (!sameWindow) return null;
         const values = items.map(item => item.performance7d[name]);
@@ -3518,10 +3530,51 @@ def render_dashboard(data):
         const arrow = delta > 0 ? '▲' : delta < 0 ? '▼' : '•';
         return ` <small class="${{delta < 0 ? 'down' : delta > 0 ? 'up' : 'muted'}}">${{arrow}} ${{formatted(Math.abs(delta))}}${{points ? ' pp' : '%'}}</small>`;
       }}
-      return `<span>Vendas 7d: <b>${{sales === null ? 'N/D' : formatted(sales)}}</b>${{trend(sales, priorSales)}}</span>
+      const dateLabel = value => /^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$/.test(value || '') ? value.split('-').reverse().join('/') : 'N/D';
+      function tipRow(label, current, previous, points = false) {{
+        const available = current !== null && previous !== null;
+        const difference = available ? current - previous : null;
+        const variation = !available ? null : points ? difference : previous > 0 ? difference / previous * 100 : current === 0 ? 0 : null;
+        const signed = value => `${{value > 0 ? '+' : value < 0 ? '−' : ''}}${{formatted(Math.abs(value))}}`;
+        const suffix = points ? '%' : '';
+        return `<span>${{label}}</span><span>${{previous === null ? 'N/D' : formatted(previous) + suffix}}</span><b>${{current === null ? 'N/D' : formatted(current) + suffix}}</b><span class="${{difference < 0 ? 'down' : difference > 0 ? 'up' : ''}}">${{difference === null ? 'N/D' : signed(difference) + (points ? ' pp' : '')}}</span><span class="${{variation < 0 ? 'down' : variation > 0 ? 'up' : ''}}">${{variation === null ? 'N/D' : signed(variation) + (points ? ' pp' : '%')}}</span>`;
+      }}
+      const tip = `<strong>Em comparação ao período anterior:</strong><div class="metrics-float-period">Atual: ${{dateLabel(first?.current_from)}} a ${{dateLabel(first?.date_to)}}<br>Anterior: ${{dateLabel(first?.date_from)}} a ${{dateLabel(first?.previous_to)}}</div><div class="metrics-float-grid"><span></span><span class="muted">Anterior</span><span class="muted">Atual</span><span class="muted">Diferença</span><span class="muted">Variação</span>${{tipRow('Visitas', visits, priorVisits)}}${{tipRow('Vendas', sales, priorSales)}}${{tipRow('Conversão', conversion, priorConversion, true)}}</div><div class="metrics-float-note">Vendas = pedidos. Conversão = pedidos ÷ visitas. A diferença da conversão é em pontos percentuais. N/D indica histórico incompleto ou ausência de base para comparação.</div>`;
+      return `<div class="metrics-7d" tabindex="0" aria-label="Comparação de desempenho dos últimos 7 dias" data-metrics-tip="${{encodeURIComponent(tip)}}"><span>Vendas 7d: <b>${{sales === null ? 'N/D' : formatted(sales)}}</b>${{trend(sales, priorSales)}}</span>
         <span>Visitas: <b>${{visits === null ? 'N/D' : formatted(visits)}}</b>${{trend(visits, priorVisits)}}</span>
-        <span>Conversão: <b>${{conversion === null ? 'N/D' : formatted(conversion) + '%'}}</b>${{trend(conversion, priorConversion, true)}}</span>`;
+        <span>Conversão: <b>${{conversion === null ? 'N/D' : formatted(conversion) + '%'}}</b>${{trend(conversion, priorConversion, true)}}</span></div>`;
     }}
+    let metricsFloat = null, metricsAnchor = null;
+    function hideMetricsFloat() {{
+      if (metricsFloat) metricsFloat.hidden = true;
+      if (metricsAnchor) metricsAnchor.removeAttribute('aria-describedby');
+      metricsAnchor = null;
+    }}
+    function showMetricsFloat(anchor) {{
+      if (!metricsFloat) {{
+        metricsFloat = document.createElement('div');
+        metricsFloat.className = 'metrics-float';
+        metricsFloat.id = 'metrics-comparison-tooltip';
+        metricsFloat.setAttribute('role', 'tooltip');
+        document.body.appendChild(metricsFloat);
+      }}
+      if (metricsAnchor && metricsAnchor !== anchor) metricsAnchor.removeAttribute('aria-describedby');
+      metricsAnchor = anchor;
+      metricsFloat.innerHTML = decodeURIComponent(anchor.dataset.metricsTip);
+      metricsFloat.hidden = false;
+      anchor.setAttribute('aria-describedby', metricsFloat.id);
+      const rect = anchor.getBoundingClientRect(), box = metricsFloat.getBoundingClientRect();
+      metricsFloat.style.left = Math.max(12, Math.min(innerWidth - box.width - 12, rect.left)) + 'px';
+      metricsFloat.style.top = Math.max(12, rect.top - box.height - 10 >= 12 ? rect.top - box.height - 10 : Math.min(innerHeight - box.height - 12, rect.bottom + 10)) + 'px';
+    }}
+    document.addEventListener('pointerover', event => {{ const anchor = event.target.closest('[data-metrics-tip]'); if (anchor) showMetricsFloat(anchor); }});
+    document.addEventListener('pointerout', event => {{ if (metricsAnchor && !metricsAnchor.contains(event.relatedTarget)) hideMetricsFloat(); }});
+    document.addEventListener('focusin', event => {{ const anchor = event.target.closest('[data-metrics-tip]'); if (anchor) showMetricsFloat(anchor); }});
+    document.addEventListener('focusout', hideMetricsFloat);
+    document.addEventListener('keydown', event => {{ if (event.key === 'Escape') hideMetricsFloat(); }});
+    document.addEventListener('click', event => {{ const anchor = event.target.closest('[data-metrics-tip]'); if (anchor) showMetricsFloat(anchor); else hideMetricsFloat(); }});
+    window.addEventListener('scroll', hideMetricsFloat, true);
+    window.addEventListener('resize', hideMetricsFloat);
     function renderTable() {{
       renderAlerts();
       detailItems.clear();
