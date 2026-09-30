@@ -1753,6 +1753,11 @@ def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_fro
                 or source.get("date_to") != date_to
                 or (advertiser_id and str(source.get("advertiser_id") or "") != advertiser_id)):
             return None, "A conta ou o período do cache operacional não corresponde à consulta."
+    committed = payload.get("committed_period")
+    if isinstance(committed, dict):
+        integrity = _online_cache_integrity_state(committed, client, advertiser_id, date_from, date_to)
+        if integrity["ready"]:
+            return committed, ""
     return payload, ""
 
 

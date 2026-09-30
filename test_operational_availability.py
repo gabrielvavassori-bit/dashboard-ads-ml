@@ -6,6 +6,42 @@ from gerar_dashboard_ads_ml import render_dashboard
 
 
 class OperationalAvailabilityTests(unittest.TestCase):
+    def test_committed_period_is_scoped_and_partial_fallback_preserved(self):
+        from test_online_periods import complete_integrity_contract, active_snapshot_completeness_rule
+        payload = self.payload()
+        committed = copy.deepcopy(payload)
+        committed.pop("operational_partial")
+        committed.update(complete_integrity_contract("demo", "7", "2026-09-01", "2026-09-02"))
+        committed["latest"]["sales"]["complete"] = True
+        payload["committed_period"] = committed
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload), patch.object(
+            app, "_load_snapshot_completeness_governance_rule", return_value=active_snapshot_completeness_rule()
+        ):
+            result, error = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
+            self.assertEqual(error, "")
+            self.assertIs(result, committed)
+            committed["sales"]["items"]["MLB123"]["revenue_total"] = 50
+            from test_online_periods import complete_daily_coverage
+            coverage = complete_daily_coverage("2026-09-01", "2026-09-02")
+            with patch.object(app, "_sales_intelligence_fetch_daily_sales", return_value=(
+                [dict(item_id="MLB123", snapshot_date="2026-09-01", revenue_total=50, units_total=1, orders_count=1)], coverage, ""
+            )), patch.object(app, "_sales_intelligence_fetch_daily_ads", return_value=(
+                [dict(item_id="MLB123", snapshot_date="2026-09-01", total_amount=40, cost=10)], coverage, ""
+            )):
+                data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+            self.assertEqual(error, "")
+            self.assertTrue(data["accountDailySeries"])
+            self.assertTrue(all(not row["partial"] for row in data["accountDailySeries"]))
+            for field, value in (("client_id", "other"), ("advertiser_id", "8")):
+                previous = committed["integrity_contract"]["identity"][field]
+                committed["integrity_contract"]["identity"][field] = value
+                result, _ = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
+                self.assertIs(result, payload)
+                committed["integrity_contract"]["identity"][field] = previous
+            committed["integrity_contract"]["requested_period"]["date_to"] = "2026-09-03"
+            result, _ = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
+            self.assertIs(result, payload)
+
     def payload(self):
         identity = dict(client_id="demo", advertiser_id="7", date_from="2026-09-01", date_to="2026-09-02")
         return dict(ok=True, operational_partial=True, client_id="demo", period_cache_hit=True,
