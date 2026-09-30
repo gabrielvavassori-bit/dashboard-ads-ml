@@ -21,6 +21,9 @@ class OperationalAvailabilityTests(unittest.TestCase):
         self.assertIsNotNone(data)
         self.assertFalse(data["meta"]["onlineMode"]["complete"])
         self.assertIn("DADOS PARCIAIS", render_dashboard(data))
+        self.assertEqual(len(data["accountDailySeries"]), 2)
+        self.assertTrue(all(row["partial"] and not row["salesPresent"] and not row["adsPresent"]
+                            for row in data["accountDailySeries"]))
         self.assertEqual(fetch.call_count, 1)
         self.assertEqual(fetch.call_args.args[0], "/internal/dash-ads/operational-cache")
 
@@ -39,6 +42,30 @@ class OperationalAvailabilityTests(unittest.TestCase):
         with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
             data, _ = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
         self.assertIsNotNone(data)
+
+    def test_partial_daily_values_preserved_with_source_presence(self):
+        payload = self.payload()
+        payload["daily_sales"] = [dict(item_id="MLB123", snapshot_date="2026-09-01",
+                                       revenue_total=20, units_total=1, orders_count=1)]
+        payload["daily_ads"] = [dict(item_id="MLB123", snapshot_date="2026-09-02",
+                                     total_amount=40, cost=10)]
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertEqual(error, "")
+        first, second = data["accountDailySeries"]
+        self.assertEqual(first["revenue"], 20)
+        self.assertEqual(second["adsRevenue"], 40)
+        self.assertEqual(second["investment"], 10)
+        self.assertTrue(first["partial"] and second["partial"])
+        self.assertTrue(first["salesPresent"])
+        self.assertFalse(first["adsPresent"])
+        self.assertFalse(second["salesPresent"])
+        self.assertTrue(second["adsPresent"])
+        html = render_dashboard(data)
+        self.assertIn("chartMetricAvailable", html)
+        self.assertIn("N/D — sem dados", html)
+        self.assertIn("hasPartial ? '' : averageLine", html)
+        self.assertIn("hasPartial ? '' : smoothChartPath(points)", html)
 
     def test_empty_cache_not_presented_as_zero(self):
         with patch.object(app, "_fetch_dash_ads_json", return_value={"ok": False}):
