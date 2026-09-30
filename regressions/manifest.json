@@ -2,6 +2,38 @@
   "schema_version": "1.0.0",
   "canonical_catalog": "https://github.com/gabrielvavassori-bit/marketplace-governance/blob/master/knowledge/regression_catalog.json",
   "regressions": [
+{
+  "id": "REGRESSION-008",
+  "title": "Pendencias identificadas e graficos isolados por conta e periodo",
+  "severity": "ALTA",
+  "components": [
+    "dash_ads_snapshot_integrity",
+    "operational_cache"
+  ],
+  "domains": [
+    "cache_integrity"
+  ],
+  "tags": [
+    "account_isolation",
+    "chart"
+  ],
+  "file_globs": [
+    "app.py",
+    "dash_ads_snapshot_queue.py"
+  ],
+  "invariant": "Saude global nao certifica nem invalida uma conta. Cada incidente administrativo identifica conta do banco, identidade gravada e periodo; divergencia nao autoriza reatribuicao. Graficos completos exigem contrato exato; leitura nao coleta nem repara.",
+  "protections": [
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "test_operational_availability"
+      ],
+      "blocking": true
+    }
+  ]
+},
     {
       "id": "REGRESSION-001",
       "title": "Integridade dos snapshots financeiros do Dash Ads",
