@@ -3903,7 +3903,9 @@ def render_dashboard(data):
         return {{error:'Esse grupo não foi encontrado nos anúncios da análise atual.'}};
       if (family.length) return {{item:{{promotionGuide:true, detailScope:'family', detailId:digits, code:digits, children:family}}}};
       if (mlbu.length) return {{item:{{promotionGuide:true, detailScope:'mlbu', detailId:digits, code:digits, children:mlbu}}}};
-      return {{item:{{code:`MLB${{digits}}`}}}};
+      const code = `MLB${{digits}}`;
+      const direct = items.find(item => String(item.code || '').trim().toUpperCase() === code);
+      return {{item:direct ? {{...direct}} : {{code}}}};
     }}
     function renderPromotionGuide() {{
       const target = document.getElementById('promotionGuideResult');

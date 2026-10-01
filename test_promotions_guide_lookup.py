@@ -149,7 +149,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
             source.index('    function renderPromotionGuide')
         ].replace('{{', '{').replace('}}', '}').replace('\\\\s', '\\s')
         items = [
-            {'code': 'MLB111', 'familyId': '5064438396869903', 'userProductId': '765'},
+            {'code': 'MLB111', 'familyId': '5064438396869903', 'userProductId': '765', 'sku': 'LAZ-2X2'},
             {'code': 'MLB222', 'familyId': '5064438396869903', 'userProductId': '765'},
             {'code': 'MLB333', 'familyId': '5064438396869903', 'userProductId': '999'},
         ]
@@ -166,7 +166,9 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertEqual(mlbu['item']['detailScope'], 'mlbu')
         self.assertEqual([row['code'] for row in mlbu['item']['children']], ['MLB111', 'MLB222'])
         self.assertEqual(mlb['item']['code'], 'MLB111')
+        self.assertEqual(mlb['item']['sku'], 'LAZ-2X2')
         self.assertEqual(numeric_mlb['item']['code'], 'MLB111')
+        self.assertEqual(numeric_mlb['item']['sku'], 'LAZ-2X2')
         self.assertIn('não foi encontrado', missing['error'])
 
 
