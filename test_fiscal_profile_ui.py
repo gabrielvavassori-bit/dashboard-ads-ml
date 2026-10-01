@@ -31,6 +31,11 @@ class FiscalProfileUiTests(unittest.TestCase):
     def test_new_fiscal_editor_is_not_exposed_in_sales_intelligence(self):
         self.assertNotIn('id="fiscalConfig"', self.intelligence)
 
+    def test_primary_navigation_is_sticky_and_hides_technical_online_beta_tab(self):
+        self.assertIn('.page-nav {{ position:sticky; top:0;', self.source)
+        self.assertNotIn('data-view="online-beta" type="button"', self.source)
+        self.assertIn('id="view-online-beta"', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
