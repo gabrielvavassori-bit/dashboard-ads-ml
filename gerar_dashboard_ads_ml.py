@@ -3501,8 +3501,19 @@ def render_dashboard(data):
       const parts = [];
       if (Number(row.min_discounted_price || 0) > 0) parts.push(`minimo ${{brl(Number(row.min_discounted_price))}}`);
       if (Number(row.max_discounted_price || 0) > 0) parts.push(`maximo ${{brl(Number(row.max_discounted_price))}}`);
-      if (Number(row.suggested_discounted_price || 0) > 0) parts.push(`sugerido ${{brl(Number(row.suggested_discounted_price))}}`);
+      if (Number(row.suggested_discounted_price || 0) > 0) parts.push(`sugestao adicional da API ${{brl(Number(row.suggested_discounted_price))}}`);
       return parts.length ? parts.join(' | ') : 'O Mercado Livre validara o limite na previa.';
+    }}
+    function promotionEffectivePrice(row, item = null) {{
+      const price = Number(row.price);
+      if (Number.isFinite(price) && price > 0) return price;
+      const suggested = Number(row.suggested_discounted_price);
+      if (Number.isFinite(suggested) && suggested > 0) return suggested;
+      return Number(item?.suggestedTestPrice || 0);
+    }}
+    function promotionQuoteMatchesPrice(row, price) {{
+      const quotePrice = Number(row.receipt_quote?.price);
+      return row.receipt_quote?.available === true && Number.isFinite(quotePrice) && Number.isFinite(price) && Math.abs(quotePrice - price) <= 0.01;
     }}
     function promotionDiscountBreakdown(row) {{
       const original = Number(row.original_price);
@@ -3609,7 +3620,7 @@ def render_dashboard(data):
       return status === 'started' || status === 'active' ? '' : 'candidate';
     }}
     function promotionPayoutScore(row, item) {{
-      const price = Number(row.suggested_discounted_price || row.price || item.suggestedTestPrice || 0);
+      const price = promotionEffectivePrice(row, item);
       const rebate = Number(row.discount_meli_boost_amount || 0);
       return (Number.isFinite(price) ? price : 0) + (Number.isFinite(rebate) ? rebate : 0);
     }}
@@ -3624,18 +3635,21 @@ def render_dashboard(data):
     }}
     function promotionTotalCellValue(row) {{
       const original = Number(row.original_price);
-      const price = Number(row.suggested_discounted_price || row.price);
+      const price = promotionEffectivePrice(row);
       if (Number.isFinite(original) && Number.isFinite(price) && original > price && price > 0) return (original - price) / original * 100;
       const percentage = Number(row.discount_percentage);
       return Number.isFinite(percentage) ? percentage : 0;
     }}
     function promotionReceiptValue(row) {{
+      if (!promotionQuoteMatchesPrice(row, promotionEffectivePrice(row))) return -Infinity;
       const value = Number(row.receipt_quote?.receipt_before_cost_tax);
       return row.receipt_quote?.available === true && Number.isFinite(value) ? value : -Infinity;
     }}
     function promotionReceiptCell(row) {{
       const quote = row.receipt_quote || {{}};
       if (quote.available !== true) return `<span class="muted">Não calculado</span><small>${{safe(quote.reason || 'Cotação indisponível.')}}</small>`;
+      const effectivePrice = promotionEffectivePrice(row);
+      if (!promotionQuoteMatchesPrice(row, effectivePrice)) return `<span class="muted">Não calculado</span><small>Cotação recebida para ${{brl(Number(quote.price || 0))}}, diferente do preço da oferta ${{brl(effectivePrice)}}; gere uma prévia antes de aplicar.</small>`;
       const price = Number(quote.price || 0);
       const fee = Number(quote.sale_fee || 0);
       const shipping = Number(quote.shipping_cost || 0);
@@ -3671,7 +3685,7 @@ def render_dashboard(data):
       const hasCost = sku && Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku);
       const cost = hasCost ? Number(financeProfile.costBySku[sku]) : NaN;
       const profile = (financeProfile.fiscalBySku || {{}})[sku];
-      if (quote.available !== true || ![price,receipt,fee,freight,rebate,cost].every(Number.isFinite) || !profile)
+      if (!promotionQuoteMatchesPrice(row, promotionEffectivePrice(row, item)) || ![price,receipt,fee,freight,rebate,cost].every(Number.isFinite) || !profile)
         return {{available:false}};
       const hasDetailedProfile = ['user_informed','document_confirmed'].includes(String(profile.evidenceStatus || ''));
       if (!hasDetailedProfile && financeProfile.fiscalMode !== 'detailed') {{
@@ -3731,17 +3745,18 @@ def render_dashboard(data):
     function promotionTableRow(item, entry, allowAction, listing = null) {{
       const {{row, index, payout, bestPayout, bestDiscount, bestSubsidy}} = entry;
       const original = Number(row.original_price || item.currentPrice || item.lastPrice || 0);
-      const price = Number(row.suggested_discounted_price || row.price || item.suggestedTestPrice || 0);
+      const price = promotionEffectivePrice(row, item);
       const status = String(row.status || 'status não informado');
       const active = ['started', 'active'].includes(status.toLowerCase());
-      const canJoin = allowAction && row.can_join === true && !active;
-      const canUpdate = allowAction && row.can_update === true && active;
+      const quoteConsistent = row.receipt_quote?.available !== true || promotionQuoteMatchesPrice(row, price);
+      const canJoin = allowAction && row.can_join === true && !active && quoteConsistent;
+      const canUpdate = allowAction && row.can_update === true && active && quoteConsistent;
       const canRemove = allowAction && row.can_leave === true && active;
       const actionControls = canJoin || canUpdate
         ? `<div class="promotion-form"><label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label><button type="button" title="Revisar preço e condições antes de confirmar a alteração" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Alterar' : 'Participar'}}</button>${{canRemove ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>` : ''}}</div>`
         : (canRemove
           ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>`
-          : `<span class="muted">${{safe(row.read_only_reason || 'Somente leitura')}}</span>`);
+          : `<span class="muted">${{safe(!quoteConsistent ? 'Cotação divergente; gere uma prévia atualizada antes de aplicar.' : row.read_only_reason || 'Somente leitura')}}</span>`);
       const quote = row.receipt_quote || {{}};
       const receipt = quote.available === true ? brl(Number(quote.receipt_before_cost_tax || 0)) : 'Não calculado';
       const primaryAction = canJoin || canUpdate ? `<button type="button" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Alterar' : 'Participar'}}</button>` : '';
@@ -3764,7 +3779,7 @@ def render_dashboard(data):
       const discountBadge = bestDiscount ? '<span class="promotion-rank">Maior desconto</span>' : '';
       const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
       const identity = listing ? `<div class="promotion-listing-identity">${{productImage({{thumbnailUrl:listing.thumbnailUrl, title:listing.title}})}}<div><b>${{safe(listing.code)}}</b><small class="promotion-listing-name">${{safe(listing.title)}}</small>${{listing.sku ? `<small class="promotion-listing-sku">SKU ${{safe(listing.sku)}}</small>` : ''}}${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}</div></div>` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
-      return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{promotionMarginCell(row, item)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
+      return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b><small>Preço original</small></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{active ? 'Preço promocional ativo' : 'Preço da oportunidade retornado pela API'}}</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{promotionMarginCell(row, item)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
     function promotionTableHtml(item, rows, allowAction = false) {{
       const ranked = promotionRankRows(item, rows);
@@ -3965,7 +3980,7 @@ def render_dashboard(data):
         }}
         const action = button.dataset.promoOperation || 'join';
         const body = {{item_id:code, action, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
-        if (action !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = Number(row.suggested_discounted_price || row.price || 0);
+      if (action !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = promotionEffectivePrice(row);
         promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
         try {{
           const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);

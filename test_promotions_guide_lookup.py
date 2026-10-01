@@ -27,6 +27,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionPreviewHtml = () => '';
         const promotionState = new Map();
         const brl = value => `R$ ${value}`;
+        const promotionEffectivePrice = (row, item={}) => Number(row.price || row.suggested_discounted_price || item.suggestedTestPrice || 0);
+        const promotionQuoteMatchesPrice = (row, price) => row.receipt_quote?.available !== true || Math.abs(Number(row.receipt_quote.price) - price) <= 0.01;
         """
         script = stubs + function + "\nconsole.log(promotionTableRow({code:'MLB111'}, {row:{name:'10.10',can_join:true,suggested_discounted_price:71.9},index:2}, true, {code:'MLB111',title:'Lona Azul',sku:'LAZ-3X3',thumbnailUrl:'https://example.test/foto.jpg'}));"
         html = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout
@@ -41,6 +43,13 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('data-promo-campaign="2"', html)
         self.assertNotIn('Gerar prévia para participar', html)
         self.assertIn('data-promo-item="MLB111"', html)
+
+        mismatch_script = stubs + function + "\nconsole.log(promotionTableRow({code:'MLB111'}, {row:{name:'Oferta relâmpago',can_join:true,original_price:32.9,price:19.94,suggested_discounted_price:27.97,receipt_quote:{available:true,price:27.97}},index:2}, true));"
+        mismatch = subprocess.run(['node', '-e', mismatch_script], capture_output=True, text=True, encoding='utf-8', check=True).stdout
+        self.assertIn('R$ 19.94', mismatch)
+        self.assertIn('Cotação divergente', mismatch)
+        self.assertNotIn('value="27.97"', mismatch)
+        self.assertNotIn('>Participar</button>', mismatch)
 
     def test_partial_margin_shows_breakdown_without_inventing_cost_or_tax(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
@@ -62,6 +71,17 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('N/D', result[1])
         self.assertNotIn('Frete ausente', result[1])
 
+    def test_effective_offer_price_precedes_unconfirmed_api_suggestion(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        functions = source[
+            source.index('    function promotionEffectivePrice'):
+            source.index('    function promotionDiscountBreakdown')
+        ].replace('{{', '{').replace('}}', '}')
+        script = functions + "\nconst row={price:19.94,suggested_discounted_price:27.97,receipt_quote:{available:true,price:27.97}}; console.log(JSON.stringify({price:promotionEffectivePrice(row),matches:promotionQuoteMatchesPrice(row,promotionEffectivePrice(row))}));"
+        result = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
+        self.assertEqual(result['price'], 19.94)
+        self.assertFalse(result['matches'])
+
     def test_promotion_row_retains_descriptive_margin_hover(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         functions = source[
@@ -81,6 +101,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionTotalCell = () => '10%';
         const promotionLimits = () => '';
         const promotionReceiptCell = () => 'R$ 57.54';
+        const promotionEffectivePrice = (row, item={}) => Number(row.price || row.suggested_discounted_price || item.suggestedTestPrice || 0);
+        const promotionQuoteMatchesPrice = (row, price) => row.receipt_quote?.available !== true || Math.abs(Number(row.receipt_quote.price) - price) <= 0.01;
         """
         row = {'name': '10.10', 'original_price': 124.9, 'price': 74.9,
                'receipt_quote': {'available': True, 'price': 74.9, 'sale_fee': 8.61,
@@ -112,6 +134,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
             destinationIcmsRate:18, freightCreditEnabled:true, freightIcmsCreditRate:12
           }}
         };
+        const promotionEffectivePrice = row => Number(row.price || row.suggested_discounted_price || row.receipt_quote?.price || 0);
+        const promotionQuoteMatchesPrice = (row, price) => row.receipt_quote?.available === true && Math.abs(Number(row.receipt_quote.price) - price) <= 0.01;
         """
         row = {'receipt_quote': {'available': True, 'price': 16.51, 'sale_fee': 1.89865,
                                  'shipping_cost': 6.15, 'rebate': 0,
