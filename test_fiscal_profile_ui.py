@@ -7,6 +7,7 @@ class FiscalProfileUiTests(unittest.TestCase):
     def setUpClass(cls):
         cls.source = pathlib.Path("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
         cls.intelligence = pathlib.Path("assets/inteligencia-vendas-marketplace.html").read_text(encoding="utf-8")
+        cls.app_source = pathlib.Path("app.py").read_text(encoding="utf-8")
 
     def test_account_fiscal_form_exposes_required_scenarios(self):
         for marker in (
@@ -25,6 +26,8 @@ class FiscalProfileUiTests(unittest.TestCase):
         self.assertIn("costBySku:costs", self.source)
         self.assertIn("fiscalProfile:", self.source)
         self.assertIn("fiscalBySku", self.source)
+        self.assertIn("const stored = payload.profile || payload", self.source)
+        self.assertIn("O servidor não confirmou a leitura dos dados salvos", self.source)
 
     def test_ui_warns_that_detailed_formula_is_not_active_yet(self):
         self.assertIn("ainda não altera automaticamente lucro, margem ou promoções", self.source)
@@ -42,6 +45,14 @@ class FiscalProfileUiTests(unittest.TestCase):
         self.assertIn('fiscalBySku:{{...(financeProfile.fiscalBySku || {{}}), [sku]:profile}}', self.source)
         self.assertIn('originState:', self.source)
         self.assertIn('icmsInputRate:', self.source)
+
+    def test_selected_page_survives_reload(self):
+        self.assertIn("localStorage.setItem('dashboardAdsActiveView'", self.source)
+        self.assertIn("localStorage.getItem('dashboardAdsActiveView'", self.source)
+
+    def test_save_response_reads_profile_back_from_database(self):
+        self.assertIn('persisted = db.get_intelligence_finance_cache', self.app_source)
+        self.assertIn('"profile": persisted.get("profile") or {}', self.app_source)
 
 
 if __name__ == "__main__":

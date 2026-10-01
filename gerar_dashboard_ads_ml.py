@@ -2291,6 +2291,9 @@ def render_dashboard(data):
       const response = await fetch('/api/finance-profile', {{method:'POST', credentials:'same-origin', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{costProfile:financeProfile, saleCosts:[]}})}});
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'Não foi possível salvar.');
+      const stored = payload.profile;
+      if (!stored || typeof stored !== 'object') throw new Error('O servidor não confirmou a leitura dos dados salvos.');
+      financeProfile = {{...financeProfile, ...stored, costBySku:stored.costBySku || {{}}, costByKey:stored.costByKey || {{}}, fiscalProfile:stored.fiscalProfile || {{}}, fiscalBySku:stored.fiscalBySku || {{}}}};
       financeSetStatus(successMessage, 'success');
     }}
     async function saveFinanceSku() {{
@@ -2321,7 +2324,8 @@ def render_dashboard(data):
         const response = await fetch('/api/finance-profile', {{credentials:'same-origin'}});
         const payload = await response.json();
         if (!response.ok || !payload.ok) throw new Error(payload.error || 'Não foi possível carregar os dados.');
-        financeProfile = {{...financeProfile, ...payload, costBySku:payload.costBySku || {{}}, costByKey:payload.costByKey || {{}}, fiscalProfile:payload.fiscalProfile || {{}}, fiscalBySku:payload.fiscalBySku || {{}}}};
+        const stored = payload.profile || payload;
+        financeProfile = {{...financeProfile, ...stored, costBySku:stored.costBySku || {{}}, costByKey:stored.costByKey || {{}}, fiscalProfile:stored.fiscalProfile || {{}}, fiscalBySku:stored.fiscalBySku || {{}}}};
         financeLoaded = true;
         fillFinanceForm();
         financeSetStatus('Cadastro carregado.');
@@ -4472,6 +4476,7 @@ def render_dashboard(data):
         document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
         button.classList.add('active');
         document.getElementById(`view-${{button.dataset.view}}`).classList.add('active');
+        try {{ localStorage.setItem('dashboardAdsActiveView', button.dataset.view); }} catch (error) {{}}
         if (button.dataset.view === 'finance') loadFinanceProfile();
       }});
     }});
@@ -4561,6 +4566,11 @@ def render_dashboard(data):
       if (event.key === 'Escape' && activeDetailKey) closeDetailModal();
     }});
     renderKpis(); activateAccountDailyChart(); renderAbc(); renderAlerts(); renderTable(); renderOnlineBeta();
+    try {{
+      const savedView = localStorage.getItem('dashboardAdsActiveView');
+      const savedButton = savedView ? document.querySelector(`button[data-view="${{savedView}}"]`) : null;
+      if (savedButton) savedButton.click();
+    }} catch (error) {{}}
   </script>
 </body>
 </html>"""

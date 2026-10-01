@@ -2693,7 +2693,11 @@ class Handler(BaseHTTPRequestHandler):
                 row.update({field: number(raw_row.get(field)) for field in fields})
                 clean_rows.append(row)
             saved = db.upsert_intelligence_finance_cache(user["id"], link["client_id"], clean_profile, clean_rows)
-            _send_json(self, {"ok": True, "clientId": link["client_id"], "saved": saved})
+            persisted = db.get_intelligence_finance_cache(user["id"], link["client_id"])
+            _send_json(self, {
+                "ok": True, "clientId": link["client_id"], "saved": saved,
+                "profile": persisted.get("profile") or {},
+            })
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             _send_json(self, {"ok": False, "error": str(exc)}, 400)
         except Exception:
