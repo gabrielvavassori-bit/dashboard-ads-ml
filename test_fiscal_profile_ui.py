@@ -17,6 +17,9 @@ class FiscalProfileUiTests(unittest.TestCase):
             'id="skuFiscalDifal"', 'id="skuFiscalStDecision"', 'id="skuFiscalEvidence"',
             'id="financeSkuRows"', 'data-finance-edit=', 'id="financeSkuModal"',
             'id="skuFiscalOrigin"', 'id="skuFiscalOriginState"',
+            'id="skuFiscalCalculationMode"', 'id="skuFiscalDestinationState"',
+            'id="skuFiscalSaleType"', 'id="skuFiscalFreightCredit"',
+            'id="skuFiscalFreightIcms"',
         ):
             self.assertIn(marker, self.source)
 
@@ -29,8 +32,8 @@ class FiscalProfileUiTests(unittest.TestCase):
         self.assertIn("const stored = payload.profile || payload", self.source)
         self.assertIn("O servidor não confirmou a leitura dos dados salvos", self.source)
 
-    def test_ui_warns_that_detailed_formula_is_not_active_yet(self):
-        self.assertIn("ainda não altera automaticamente lucro, margem ou promoções", self.source)
+    def test_ui_states_that_detailed_formula_feeds_promotions(self):
+        self.assertIn("alimentam a margem líquida estimada das promoções", self.source)
 
     def test_new_fiscal_editor_is_not_exposed_in_sales_intelligence(self):
         self.assertNotIn('id="fiscalConfig"', self.intelligence)
@@ -45,6 +48,8 @@ class FiscalProfileUiTests(unittest.TestCase):
         self.assertIn('fiscalBySku:{{...(financeProfile.fiscalBySku || {{}}), [sku]:profile}}', self.source)
         self.assertIn('originState:', self.source)
         self.assertIn('icmsInputRate:', self.source)
+        self.assertIn('destinationState:', self.source)
+        self.assertIn('freightCreditEnabled:', self.source)
 
     def test_selected_page_survives_reload(self):
         self.assertIn("localStorage.setItem('dashboardAdsActiveView'", self.source)

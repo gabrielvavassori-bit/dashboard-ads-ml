@@ -48,7 +48,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
             source.index('    function promotionMarginCell'):
             source.index('    function promotionTableRow')
         ].replace('{{', '{').replace('}}', '}')
-        stubs = "const safe = value => String(value ?? ''); const brl = value => `R$ ${Number(value).toFixed(2)}`;\n"
+        stubs = "const safe = value => String(value ?? ''); const brl = value => `R$ ${Number(value).toFixed(2)}`; const promotionFinancialResult=()=>({available:false});\n"
         script = stubs + function + "\nconsole.log(promotionMarginCell({receipt_quote:{available:true,price:74.9,sale_fee:8.61,shipping_cost:8.75,rebate:0,receipt_before_cost_tax:57.54}})); console.log(promotionMarginCell({receipt_quote:{available:false,reason:'Frete ausente'}}));"
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout.splitlines()
         self.assertIn('R$ 57.54', result[0])
@@ -71,6 +71,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         stubs = """
         const safe = value => String(value ?? '');
         const brl = value => `R$ ${Number(value).toFixed(2)}`;
+        const promotionFinancialResult=()=>({available:false});
         const productImage = () => '<img src="foto.jpg">';
         const promotionDisplayName = row => row.name;
         const promotionPeriod = () => 'Período';
@@ -92,6 +93,34 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('Tarifa de venda', tooltip)
         self.assertIn('Frete do vendedor', tooltip)
         self.assertIn('Custo do produto', tooltip)
+
+    def test_laz_real_tax_and_freight_credits_match_calculator(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        functions = source[
+            source.index('    function promotionDifalValue'):
+            source.index('    function promotionMarginCell')
+        ].replace('{{', '{').replace('}}', '}')
+        stubs = """
+        const financeDifalDoubleBaseStates=new Set(['SP']);
+        const financeProfile={
+          fiscalMode:'detailed', taxRegime:'real', flexCarrierCost:0,
+          costBySku:{'LAZ-2X2':5.8},
+          fiscalBySku:{'LAZ-2X2':{
+            costBasis:'gross', ipiInputRate:0, icmsInputRate:4, pisCofinsInputRate:9.25,
+            ipiOutputRate:0, icmsOutputRate:4, pisCofinsOutputRate:9.25,
+            difalEnabled:false, saleType:'b2c', originState:'SP', destinationState:'SP',
+            destinationIcmsRate:18, freightCreditEnabled:true, freightIcmsCreditRate:12
+          }}
+        };
+        """
+        row = {'receipt_quote': {'available': True, 'price': 16.51, 'sale_fee': 1.89865,
+                                 'shipping_cost': 6.15, 'rebate': 0,
+                                 'receipt_before_cost_tax': 8.46135}}
+        script = stubs + functions + '\nconsole.log(JSON.stringify(promotionFinancialResult(' + json.dumps(row) + ',{sku:"LAZ-2X2"})));'
+        result = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
+        self.assertAlmostEqual(result['difal'], 0, places=6)
+        self.assertAlmostEqual(result['profit'], 2.48, delta=0.02)
+        self.assertAlmostEqual(result['margin'], 15.0, delta=0.1)
 
     def test_campaign_view_groups_variations_without_losing_individual_prices(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
