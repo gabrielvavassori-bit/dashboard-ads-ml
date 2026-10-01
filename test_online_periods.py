@@ -585,7 +585,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("<h3>Desempenho diário da conta</h3>", html)
         self.assertNotIn("<summary>Desempenho diário da conta</summary>", html)
         self.assertLess(html.index('id="kpis"'), html.index('data-account-daily-chart'))
-        self.assertLess(html.index('data-account-daily-chart'), html.index('aria-label="Visoes do dashboard"'))
+        self.assertLess(html.index('aria-label="Visoes do dashboard"'), html.index('data-account-daily-chart'))
         self.assertIn("Vendas diarias do periodo", html)
         self.assertIn('data-chart-metric="revenue"', html)
         self.assertIn('data-chart-metric="adsRevenue"', html)

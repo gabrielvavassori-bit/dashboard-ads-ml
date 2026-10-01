@@ -1600,6 +1600,17 @@ def render_dashboard(data):
     .finance-status {{ min-height:18px; margin-top:8px; font-weight:700; }}
     .finance-status.error {{ color:#b42318; }}
     .finance-status.success {{ color:#067647; }}
+    .finance-table .secondary-action {{ padding:7px 10px; cursor:pointer; }}
+    .finance-profile-badge {{ display:inline-block; padding:4px 7px; border-radius:999px; background:#f2f4f7; color:#475467; font-size:11px; font-weight:800; white-space:nowrap; }}
+    .finance-profile-badge.complete {{ background:#ecfdf3; color:#067647; }}
+    .finance-modal-backdrop {{ position:fixed; inset:0; z-index:90; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(16,24,40,.62); }}
+    .finance-modal-backdrop.open {{ display:flex; }}
+    .finance-modal-shell {{ width:min(1040px,96vw); max-height:92vh; display:flex; flex-direction:column; overflow:hidden; border-radius:14px; background:#fff; box-shadow:0 24px 70px rgba(16,24,40,.32); }}
+    .finance-modal-head {{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px; padding:16px 18px; border-bottom:1px solid var(--line); }}
+    .finance-modal-head h2 {{ margin:0 0 3px; }}
+    .finance-modal-head button {{ width:38px; height:38px; border:1px solid var(--line); border-radius:10px; background:#fff; font-size:24px; cursor:pointer; }}
+    .finance-modal-body {{ overflow:auto; padding:18px; }}
+    .finance-modal-actions {{ display:flex; justify-content:flex-end; gap:9px; padding:13px 18px; border-top:1px solid var(--line); background:#f8fafc; }}
     .abc-panel {{ margin:0; }}
     .abc-head {{ display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:10px; }}
     .abc-controls {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }}
@@ -1895,16 +1906,16 @@ def render_dashboard(data):
     </div>
   </header>
   <main>
-    {f'<section class="online-notice">{online_notice}</section>' if online_notice else ''}
-    {online_period_filter}
-    <section class="kpis" id="kpis"></section>
-    {account_daily_chart}
     <nav class="page-nav" aria-label="Visoes do dashboard">
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
       <button class="page-tab" data-view="abc" type="button">Curva ABC</button>
       <button class="page-tab" data-view="promotions" type="button">Promoções</button>
       <button class="page-tab" data-view="finance" type="button">Custos e impostos</button>
     </nav>
+    {f'<section class="online-notice">{online_notice}</section>' if online_notice else ''}
+    {online_period_filter}
+    <section class="kpis" id="kpis"></section>
+    {account_daily_chart}
     <section class="view active" id="view-operational">
       <section class="grid">
         <div class="card">
@@ -2042,41 +2053,52 @@ def render_dashboard(data):
       <section class="card finance-layout">
         <div>
           <h2>Custos e impostos por SKU</h2>
-          <p class="note">Cadastre no Dash Ads o custo unitário e os parâmetros fiscais da conta. Os dados ficam na base compartilhada e poderão ser lidos pela Inteligência de Vendas. Nesta etapa beta, o cadastro ainda não altera automaticamente lucro, margem ou promoções.</p>
+          <p class="note">Cadastre cada produto individualmente. Custo, origem e parâmetros fiscais por SKU ficam na base compartilhada com a Inteligência de Vendas. Nesta etapa beta, o cadastro ainda não altera automaticamente lucro, margem ou promoções.</p>
         </div>
         <div class="finance-config">
-          <h3>Configuração fiscal da conta</h3>
-          <p class="note">Não presuma alíquotas. Informe somente parâmetros validados para esta conta.</p>
+          <h3>Regra geral da conta</h3>
+          <p class="note">Define somente o regime de trabalho. No modo detalhado, as características tributárias são informadas individualmente em cada SKU.</p>
           <div class="finance-grid">
-            <label class="finance-field">Modo de cálculo<select id="financeFiscalMode"><option value="simple">Percentual simples</option><option value="detailed">Fiscal detalhado</option></select></label>
+            <label class="finance-field">Modo de cálculo<select id="financeFiscalMode"><option value="simple">Percentual simples</option><option value="detailed">Fiscal detalhado por SKU</option></select></label>
             <label class="finance-field finance-detailed">Regime<select id="financeTaxRegime"><option value="real">Lucro Real</option><option value="presumed">Lucro Presumido</option></select></label>
-            <label class="finance-field">Imposto simples (%)<input id="financeSimpleTax" type="number" min="0" step="0.01"></label>
+            <label class="finance-field finance-simple">Imposto simples (%)<input id="financeSimpleTax" type="number" min="0" step="0.01"></label>
             <label class="finance-field">Flex por pedido (R$)<input id="financeFlexCost" type="number" min="0" step="0.01"></label>
-            <label class="finance-field finance-detailed">Custo informado<select id="financeCostBasis"><option value="gross">Bruto, antes dos créditos</option><option value="net">Líquido, créditos já descontados</option></select></label>
-            <label class="finance-field finance-detailed">Origem dos parâmetros<select id="financeEvidence"><option value="pending">Pendente de validação</option><option value="user_informed">Informado pelo usuário</option><option value="document_confirmed">Confirmado por documento</option></select></label>
-            <label class="finance-field finance-real">IPI entrada (%)<input id="financeIpiInput" type="number" min="0" step="0.01"></label>
-            <label class="finance-field finance-real">ICMS entrada (%)<input id="financeIcmsInput" type="number" min="0" step="0.01"></label>
-            <label class="finance-field finance-real">PIS/COFINS entrada (%)<input id="financePisInput" type="number" min="0" step="0.01"></label>
-            <label class="finance-field finance-real">IPI saída (%)<input id="financeIpiOutput" type="number" min="0" step="0.01"></label>
-            <label class="finance-field finance-real">ICMS saída (%)<input id="financeIcmsOutput" type="number" min="0" step="0.01"></label>
-            <label class="finance-field finance-real">PIS/COFINS saída (%)<input id="financePisOutput" type="number" min="0" step="0.01"></label>
-            <label class="finance-field finance-presumed">Tributos efetivos Presumido (%)<input id="financePresumedRate" type="number" min="0" step="0.01"></label>
-            <label class="finance-field finance-detailed">DIFAL<select id="financeDifal"><option value="pending">Pendente de validação</option><option value="enabled">Aplicar</option><option value="disabled">Não aplicar - cenário informado</option></select></label>
-            <label class="finance-field finance-detailed">ICMS interno destino (%)<input id="financeDestinationIcms" type="number" min="0" step="0.01"></label>
-            <label class="finance-field finance-detailed">ICMS-ST / antecipação<select id="financeStDecision"><option value="unknown">Desconhecido</option><option value="included_in_cost">Incluído no custo</option><option value="out_of_scope">Fora do escopo</option></select></label>
           </div>
         </div>
         <div>
           <div class="finance-sku-toolbar">
             <label class="finance-field">Buscar SKU, anúncio ou título<input class="finance-search" id="financeSkuSearch" placeholder="Ex.: SCH-447 ou MLB..."></label>
-            <button class="primary-action" id="financeSave" type="button">Salvar custos e impostos</button>
+            <button class="primary-action" id="financeSave" type="button">Salvar regra geral</button>
           </div>
-          <div class="finance-table-wrap"><table class="finance-table"><thead><tr><th>SKU</th><th>Anúncio</th><th>Título</th><th class="num">Preço atual</th><th class="num">Custo unitário (R$)</th></tr></thead><tbody id="financeSkuRows"></tbody></table></div>
+          <div class="finance-table-wrap"><table class="finance-table"><thead><tr><th>SKU</th><th>Anúncio</th><th>Título</th><th class="num">Preço atual</th><th class="num">Custo</th><th>Fiscal do produto</th><th>Ação</th></tr></thead><tbody id="financeSkuRows"></tbody></table></div>
           <div class="finance-status" id="financeStatus" aria-live="polite"></div>
         </div>
       </section>
     </section>
   </main>
+  <div class="finance-modal-backdrop" id="financeSkuModal" aria-hidden="true">
+    <section class="finance-modal-shell" role="dialog" aria-modal="true" aria-labelledby="financeSkuModalTitle">
+      <header class="finance-modal-head"><div><h2 id="financeSkuModalTitle">Editar produto</h2><div class="muted" id="financeSkuModalSubtitle"></div></div><button type="button" id="financeSkuModalClose" aria-label="Fechar">×</button></header>
+      <div class="finance-modal-body"><div class="finance-grid">
+        <label class="finance-field">Custo unitário (R$)<input id="skuFiscalCost" type="number" min="0" step="0.01"></label>
+        <label class="finance-field">Origem do produto<select id="skuFiscalOrigin"><option value="unknown">Não informado</option><option value="national">Nacional</option><option value="imported_direct">Importado diretamente</option><option value="imported_domestic">Importado adquirido no Brasil</option></select></label>
+        <label class="finance-field">UF de origem<select id="skuFiscalOriginState"><option value="">Não informado</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select></label>
+        <label class="finance-field">Custo informado<select id="skuFiscalCostBasis"><option value="gross">Bruto, antes dos créditos</option><option value="net">Líquido, créditos já descontados</option></select></label>
+        <label class="finance-field">Origem dos parâmetros<select id="skuFiscalEvidence"><option value="pending">Pendente de validação</option><option value="user_informed">Informado pelo usuário</option><option value="document_confirmed">Confirmado por documento</option></select></label>
+        <label class="finance-field sku-real">IPI entrada (%)<input id="skuFiscalIpiInput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">ICMS entrada (%)<input id="skuFiscalIcmsInput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">PIS/COFINS entrada (%)<input id="skuFiscalPisInput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">IPI saída (%)<input id="skuFiscalIpiOutput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">ICMS saída (%)<input id="skuFiscalIcmsOutput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">PIS/COFINS saída (%)<input id="skuFiscalPisOutput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-presumed">Tributos efetivos Presumido (%)<input id="skuFiscalPresumedRate" type="number" min="0" step="0.01"></label>
+        <label class="finance-field">DIFAL<select id="skuFiscalDifal"><option value="pending">Pendente de validação</option><option value="enabled">Aplicar</option><option value="disabled">Não aplicar - cenário validado</option></select></label>
+        <label class="finance-field">ICMS interno destino (%)<input id="skuFiscalDestinationIcms" type="number" min="0" step="0.01"></label>
+        <label class="finance-field">ICMS-ST / antecipação<select id="skuFiscalStDecision"><option value="unknown">Desconhecido</option><option value="included_in_cost">Incluído no custo</option><option value="out_of_scope">Fora do escopo</option></select></label>
+      </div><p class="note">Campos sem comprovação permanecem não informados ou pendentes; zero não será tratado como alíquota comprovada nesta etapa.</p></div>
+      <footer class="finance-modal-actions"><button type="button" class="secondary-action" id="financeSkuModalCancel">Cancelar</button><button type="button" class="primary-action" id="financeSkuModalSave">Salvar produto</button></footer>
+    </section>
+  </div>
   <div class="detail-modal-backdrop" id="detailModal" aria-hidden="true">
     <section class="detail-modal-shell" role="dialog" aria-modal="true" aria-labelledby="detailModalHeading">
       <header class="detail-modal-head">
@@ -2149,6 +2171,7 @@ def render_dashboard(data):
       fiscalMode: 'simple', taxRegime: 'real', fiscalProfile: {{}}, fiscalBySku: {{}}
     }};
     let financeLoaded = false;
+    let activeFinanceSku = '';
     let sortState = {{ key:'revenue', direction:1 }};
     let abcMode = 'hybrid';
     let abcMetric = 'totalRevenue';
@@ -2196,27 +2219,15 @@ def render_dashboard(data):
       const detailed = financeField('financeFiscalMode')?.value === 'detailed';
       const real = financeField('financeTaxRegime')?.value === 'real';
       document.querySelectorAll('.finance-detailed').forEach(node => node.hidden = !detailed);
+      document.querySelectorAll('.finance-simple').forEach(node => node.hidden = detailed);
       document.querySelectorAll('.finance-real').forEach(node => node.hidden = !detailed || !real);
       document.querySelectorAll('.finance-presumed').forEach(node => node.hidden = !detailed || real);
     }}
     function fillFinanceForm() {{
-      const fiscal = financeProfile.fiscalProfile || {{}};
       financeField('financeFiscalMode').value = financeProfile.fiscalMode || 'simple';
       financeField('financeTaxRegime').value = financeProfile.taxRegime === 'presumed' ? 'presumed' : 'real';
       financeField('financeSimpleTax').value = Number(financeProfile.profitTaxRate || 0);
       financeField('financeFlexCost').value = Number(financeProfile.flexCarrierCost || 0);
-      financeField('financeCostBasis').value = fiscal.costBasis === 'net' ? 'net' : 'gross';
-      financeField('financeEvidence').value = fiscal.evidenceStatus || 'pending';
-      financeField('financeIpiInput').value = Number(fiscal.ipiInputRate || 0);
-      financeField('financeIcmsInput').value = Number(fiscal.icmsInputRate || 0);
-      financeField('financePisInput').value = Number(fiscal.pisCofinsInputRate || 0);
-      financeField('financeIpiOutput').value = Number(fiscal.ipiOutputRate || 0);
-      financeField('financeIcmsOutput').value = Number(fiscal.icmsOutputRate || 0);
-      financeField('financePisOutput').value = Number(fiscal.pisCofinsOutputRate || 0);
-      financeField('financePresumedRate').value = Number(fiscal.presumedTaxRate || 0);
-      financeField('financeDifal').value = fiscal.difalStatus || (fiscal.difalEnabled === true ? 'enabled' : fiscal.difalEnabled === false ? 'disabled' : 'pending');
-      financeField('financeDestinationIcms').value = Number(fiscal.destinationIcmsRate || 0);
-      financeField('financeStDecision').value = fiscal.icmsStDecision || 'unknown';
       syncFinanceVisibility();
       renderFinanceRows();
     }}
@@ -2228,8 +2239,80 @@ def render_dashboard(data):
       target.innerHTML = rows.map(item => {{
         const sku = String(item.sku || '').trim();
         const value = Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku) ? financeProfile.costBySku[sku] : '';
-        return `<tr><td><b>${{safe(sku)}}</b></td><td>${{safe(item.code || '—')}}</td><td>${{safe(item.title || '—')}}</td><td class="num">${{brl(Number(item.currentPrice || item.lastPrice || 0))}}</td><td class="num"><input type="number" min="0" step="0.01" value="${{safe(value)}}" data-finance-sku="${{safe(sku)}}" aria-label="Custo unitário do SKU ${{safe(sku)}}"></td></tr>`;
-      }}).join('') || '<tr><td colspan="5">Nenhum SKU encontrado nesta análise.</td></tr>';
+        const profile = (financeProfile.fiscalBySku || {{}})[sku] || {{}};
+        const configured = profile.evidenceStatus === 'document_confirmed' || profile.evidenceStatus === 'user_informed';
+        const status = configured ? 'Configurado' : 'Pendente';
+        return `<tr><td><b>${{safe(sku)}}</b></td><td>${{safe(item.code || '—')}}</td><td>${{safe(item.title || '—')}}</td><td class="num">${{brl(Number(item.currentPrice || item.lastPrice || 0))}}</td><td class="num">${{value === '' ? 'Não informado' : brl(Number(value))}}</td><td><span class="finance-profile-badge ${{configured ? 'complete' : ''}}">${{status}}</span></td><td><button type="button" class="secondary-action" data-finance-edit="${{safe(sku)}}">Editar</button></td></tr>`;
+      }}).join('') || '<tr><td colspan="7">Nenhum SKU encontrado nesta análise.</td></tr>';
+    }}
+    const skuFiscalOptionalNumber = id => {{
+      const raw = String(financeField(id)?.value || '').trim().replace(',', '.');
+      if (!raw) return null;
+      const value = Number(raw);
+      return Number.isFinite(value) && value >= 0 ? value : null;
+    }};
+    function syncSkuFiscalVisibility() {{
+      const real = financeProfile.taxRegime !== 'presumed';
+      document.querySelectorAll('.sku-real').forEach(node => node.hidden = !real);
+      document.querySelectorAll('.sku-presumed').forEach(node => node.hidden = real);
+    }}
+    function setSkuFiscalNumber(id, value) {{ financeField(id).value = value == null ? '' : value; }}
+    function openFinanceSkuModal(sku) {{
+      const item = financeSkuItems().find(row => String(row.sku || '').trim() === sku) || {{sku}};
+      const profile = (financeProfile.fiscalBySku || {{}})[sku] || {{}};
+      activeFinanceSku = sku;
+      financeField('financeSkuModalTitle').textContent = `Editar ${{sku}}`;
+      financeField('financeSkuModalSubtitle').textContent = `${{item.code || 'Sem MLB'}} · ${{item.title || 'Produto sem título'}}`;
+      setSkuFiscalNumber('skuFiscalCost', Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku) ? financeProfile.costBySku[sku] : null);
+      financeField('skuFiscalOrigin').value = profile.productOrigin || 'unknown';
+      financeField('skuFiscalOriginState').value = profile.originState || '';
+      financeField('skuFiscalCostBasis').value = profile.costBasis === 'net' ? 'net' : 'gross';
+      financeField('skuFiscalEvidence').value = profile.evidenceStatus || 'pending';
+      setSkuFiscalNumber('skuFiscalIpiInput', profile.ipiInputRate);
+      setSkuFiscalNumber('skuFiscalIcmsInput', profile.icmsInputRate);
+      setSkuFiscalNumber('skuFiscalPisInput', profile.pisCofinsInputRate);
+      setSkuFiscalNumber('skuFiscalIpiOutput', profile.ipiOutputRate);
+      setSkuFiscalNumber('skuFiscalIcmsOutput', profile.icmsOutputRate);
+      setSkuFiscalNumber('skuFiscalPisOutput', profile.pisCofinsOutputRate);
+      setSkuFiscalNumber('skuFiscalPresumedRate', profile.presumedTaxRate);
+      financeField('skuFiscalDifal').value = profile.difalStatus || 'pending';
+      setSkuFiscalNumber('skuFiscalDestinationIcms', profile.destinationIcmsRate);
+      financeField('skuFiscalStDecision').value = profile.icmsStDecision || 'unknown';
+      syncSkuFiscalVisibility();
+      financeField('financeSkuModal').classList.add('open');
+      financeField('financeSkuModal').setAttribute('aria-hidden', 'false');
+    }}
+    function closeFinanceSkuModal() {{
+      activeFinanceSku = '';
+      financeField('financeSkuModal').classList.remove('open');
+      financeField('financeSkuModal').setAttribute('aria-hidden', 'true');
+    }}
+    async function persistFinanceProfile(successMessage) {{
+      const response = await fetch('/api/finance-profile', {{method:'POST', credentials:'same-origin', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{costProfile:financeProfile, saleCosts:[]}})}});
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Não foi possível salvar.');
+      financeSetStatus(successMessage, 'success');
+    }}
+    async function saveFinanceSku() {{
+      if (!activeFinanceSku) return;
+      const sku = activeFinanceSku;
+      const cost = skuFiscalOptionalNumber('skuFiscalCost');
+      const costs = {{...(financeProfile.costBySku || {{}})}};
+      if (cost == null) delete costs[sku]; else costs[sku] = cost;
+      const difalStatus = financeField('skuFiscalDifal').value;
+      const profile = {{
+        productOrigin:financeField('skuFiscalOrigin').value, originState:financeField('skuFiscalOriginState').value,
+        costBasis:financeField('skuFiscalCostBasis').value, evidenceStatus:financeField('skuFiscalEvidence').value,
+        ipiInputRate:skuFiscalOptionalNumber('skuFiscalIpiInput'), icmsInputRate:skuFiscalOptionalNumber('skuFiscalIcmsInput'), pisCofinsInputRate:skuFiscalOptionalNumber('skuFiscalPisInput'),
+        ipiOutputRate:skuFiscalOptionalNumber('skuFiscalIpiOutput'), icmsOutputRate:skuFiscalOptionalNumber('skuFiscalIcmsOutput'), pisCofinsOutputRate:skuFiscalOptionalNumber('skuFiscalPisOutput'),
+        presumedTaxRate:skuFiscalOptionalNumber('skuFiscalPresumedRate'), difalStatus, difalEnabled:difalStatus === 'enabled' ? true : difalStatus === 'disabled' ? false : null,
+        destinationIcmsRate:skuFiscalOptionalNumber('skuFiscalDestinationIcms'), icmsStDecision:financeField('skuFiscalStDecision').value
+      }};
+      financeProfile = {{...financeProfile, costBySku:costs, fiscalBySku:{{...(financeProfile.fiscalBySku || {{}}), [sku]:profile}}}};
+      financeField('financeSkuModalSave').disabled = true;
+      try {{ await persistFinanceProfile(`Produto ${{sku}} salvo.`); closeFinanceSkuModal(); renderFinanceRows(); }}
+      catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
+      finally {{ financeField('financeSkuModalSave').disabled = false; }}
     }}
     async function loadFinanceProfile() {{
       if (financeLoaded) return;
@@ -2245,37 +2328,17 @@ def render_dashboard(data):
       }} catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
     }}
     async function saveFinanceProfile() {{
-      const costs = {{...(financeProfile.costBySku || {{}})}};
-      document.querySelectorAll('[data-finance-sku]').forEach(input => {{
-        const raw = String(input.value || '').trim();
-        if (!raw) delete costs[input.dataset.financeSku];
-        else costs[input.dataset.financeSku] = Math.max(0, Number(raw.replace(',', '.')) || 0);
-      }});
-      const difalStatus = financeField('financeDifal').value;
       financeProfile = {{
         ...financeProfile,
-        costBySku: costs,
         profitTaxRate: financeNumber('financeSimpleTax'),
         flexCarrierCost: financeNumber('financeFlexCost'),
         fiscalMode: financeField('financeFiscalMode').value,
-        taxRegime: financeField('financeTaxRegime').value,
-        fiscalProfile: {{
-          ...(financeProfile.fiscalProfile || {{}}),
-          costBasis: financeField('financeCostBasis').value,
-          evidenceStatus: financeField('financeEvidence').value,
-          ipiInputRate: financeNumber('financeIpiInput'), icmsInputRate: financeNumber('financeIcmsInput'), pisCofinsInputRate: financeNumber('financePisInput'),
-          ipiOutputRate: financeNumber('financeIpiOutput'), icmsOutputRate: financeNumber('financeIcmsOutput'), pisCofinsOutputRate: financeNumber('financePisOutput'),
-          presumedTaxRate: financeNumber('financePresumedRate'), difalStatus, difalEnabled: difalStatus === 'enabled' ? true : difalStatus === 'disabled' ? false : null,
-          destinationIcmsRate: financeNumber('financeDestinationIcms'), icmsStDecision: financeField('financeStDecision').value
-        }}
+        taxRegime: financeField('financeTaxRegime').value
       }};
       financeSetStatus('Salvando...');
       financeField('financeSave').disabled = true;
       try {{
-        const response = await fetch('/api/finance-profile', {{method:'POST', credentials:'same-origin', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{costProfile:financeProfile, saleCosts:[]}})}});
-        const payload = await response.json();
-        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Não foi possível salvar.');
-        financeSetStatus('Custos e impostos salvos para esta conta.', 'success');
+        await persistFinanceProfile('Regra geral da conta salva.');
       }} catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
       finally {{ financeField('financeSave').disabled = false; }}
     }}
@@ -4416,6 +4479,14 @@ def render_dashboard(data):
     document.getElementById('financeFiscalMode').addEventListener('change', syncFinanceVisibility);
     document.getElementById('financeTaxRegime').addEventListener('change', syncFinanceVisibility);
     document.getElementById('financeSave').addEventListener('click', saveFinanceProfile);
+    document.getElementById('financeSkuRows').addEventListener('click', event => {{
+      const button = event.target.closest('[data-finance-edit]');
+      if (button) openFinanceSkuModal(button.dataset.financeEdit);
+    }});
+    document.getElementById('financeSkuModalClose').addEventListener('click', closeFinanceSkuModal);
+    document.getElementById('financeSkuModalCancel').addEventListener('click', closeFinanceSkuModal);
+    document.getElementById('financeSkuModalSave').addEventListener('click', saveFinanceSku);
+    document.getElementById('financeSkuModal').addEventListener('click', event => {{ if (event.target.id === 'financeSkuModal') closeFinanceSkuModal(); }});
     document.getElementById('promotionGuideForm').addEventListener('submit', event => {{
       event.preventDefault();
       const raw = document.getElementById('promotionGuideMlb').value;

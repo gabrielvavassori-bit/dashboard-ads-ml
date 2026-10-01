@@ -12,16 +12,17 @@ class FiscalProfileUiTests(unittest.TestCase):
         for marker in (
             'data-view="finance"', 'id="view-finance"', 'id="financeFiscalMode"',
             'value="detailed"', 'id="financeTaxRegime"', 'value="real"',
-            'value="presumed"', 'id="financeIcmsInput"', 'id="financeIcmsOutput"',
-            'id="financeDifal"', 'id="financeStDecision"', 'id="financeEvidence"',
-            'id="financeSkuRows"', 'data-finance-sku=',
+            'value="presumed"', 'id="skuFiscalIcmsInput"', 'id="skuFiscalIcmsOutput"',
+            'id="skuFiscalDifal"', 'id="skuFiscalStDecision"', 'id="skuFiscalEvidence"',
+            'id="financeSkuRows"', 'data-finance-edit=', 'id="financeSkuModal"',
+            'id="skuFiscalOrigin"', 'id="skuFiscalOriginState"',
         ):
             self.assertIn(marker, self.source)
 
     def test_fiscal_profile_is_in_remote_payload_and_local_backup(self):
         self.assertIn("fetch('/api/finance-profile'", self.source)
         self.assertIn("costProfile:financeProfile", self.source)
-        self.assertIn("costBySku: costs", self.source)
+        self.assertIn("costBySku:costs", self.source)
         self.assertIn("fiscalProfile:", self.source)
         self.assertIn("fiscalBySku", self.source)
 
@@ -35,6 +36,12 @@ class FiscalProfileUiTests(unittest.TestCase):
         self.assertIn('.page-nav {{ position:sticky; top:0;', self.source)
         self.assertNotIn('data-view="online-beta" type="button"', self.source)
         self.assertIn('id="view-online-beta"', self.source)
+        self.assertLess(self.source.index('<nav class="page-nav"'), self.source.index("{f'<section class=\"online-notice\""))
+
+    def test_detailed_tax_data_is_saved_per_sku(self):
+        self.assertIn('fiscalBySku:{{...(financeProfile.fiscalBySku || {{}}), [sku]:profile}}', self.source)
+        self.assertIn('originState:', self.source)
+        self.assertIn('icmsInputRate:', self.source)
 
 
 if __name__ == "__main__":
