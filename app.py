@@ -848,9 +848,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         for daily in daily_by_date.values():
             daily["partial"] = daily_partial
             daily.setdefault("salesPresent", False)
-            daily["tacosBaseRevenue"] = _number(daily.get("revenue")) + max(
-                0.0, _number(daily.get("adsIndirectRevenue"))
-            )
+            # Attribution is not additional turnover. Use the same base as the KPI.
+            daily["tacosBaseRevenue"] = _number(daily.get("revenue"))
             daily_series.append(daily)
         daily_series_by_item[daily_code] = sorted(daily_series, key=lambda row: row["date"])
     account_daily_by_date: dict[str, dict] = {}
@@ -965,7 +964,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         impressions = _number(raw.get("prints"))
         clicks = _number(raw.get("clicks"))
         organic_revenue = max(0.0, total_revenue - ads_direct_revenue)
-        tacos_base = organic_revenue + ads_direct_revenue + ads_indirect_revenue
+        tacos_base = total_revenue
         campaign_id = str(raw.get("campaign_id") or "").strip()
         campaign_config = campaign_config_by_id.get(campaign_id, {})
         campaign_observed = set(campaign_config.get("observed_fields") or [])
