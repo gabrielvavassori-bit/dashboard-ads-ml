@@ -103,10 +103,10 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         stubs = """
         const financeDifalDoubleBaseStates=new Set(['SP']);
         const financeProfile={
-          fiscalMode:'detailed', taxRegime:'real', flexCarrierCost:0,
+          fiscalMode:'simple', taxRegime:'real', flexCarrierCost:0,
           costBySku:{'LAZ-2X2':5.8},
           fiscalBySku:{'LAZ-2X2':{
-            costBasis:'gross', ipiInputRate:0, icmsInputRate:4, pisCofinsInputRate:9.25,
+            evidenceStatus:'user_informed', costBasis:'gross', ipiInputRate:0, icmsInputRate:4, pisCofinsInputRate:9.25,
             ipiOutputRate:0, icmsOutputRate:4, pisCofinsOutputRate:9.25,
             difalEnabled:false, saleType:'b2c', originState:'SP', destinationState:'SP',
             destinationIcmsRate:18, freightCreditEnabled:true, freightIcmsCreditRate:12

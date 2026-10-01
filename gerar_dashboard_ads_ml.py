@@ -3673,7 +3673,8 @@ def render_dashboard(data):
       const profile = (financeProfile.fiscalBySku || {{}})[sku];
       if (quote.available !== true || ![price,receipt,fee,freight,rebate,cost].every(Number.isFinite) || !profile)
         return {{available:false}};
-      if (financeProfile.fiscalMode !== 'detailed') {{
+      const hasDetailedProfile = ['user_informed','document_confirmed'].includes(String(profile.evidenceStatus || ''));
+      if (!hasDetailedProfile && financeProfile.fiscalMode !== 'detailed') {{
         const rate = Number(financeProfile.profitTaxRate || 0) / 100;
         const tax = price * rate;
         const profit = receipt - cost - tax - Number(financeProfile.flexCarrierCost || 0);
