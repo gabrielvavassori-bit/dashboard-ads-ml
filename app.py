@@ -2569,12 +2569,12 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):  # noqa: A002
         return
 
-    def _intelligence_finance_context(self):
+    def _intelligence_finance_context(self, require_sales=True):
         user, token = _current_user(self)
         if not user:
             _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
             return None
-        if not _sales_access_allowed(user):
+        if require_sales and not _sales_access_allowed(user):
             _send_json(self, {"ok": False, "error": "sales_access_blocked"}, 403)
             return None
         link, _, _ = _current_ml_account(user, token)
@@ -2583,8 +2583,8 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return user, link
 
-    def _get_intelligence_finance_cache(self):
-        context = self._intelligence_finance_context()
+    def _get_intelligence_finance_cache(self, require_sales=True):
+        context = self._intelligence_finance_context(require_sales=require_sales)
         if not context:
             return
         user, link = context
@@ -2609,8 +2609,8 @@ class Handler(BaseHTTPRequestHandler):
         )
         _send_json(self, payload, 200 if payload.get("ok") else 502)
 
-    def _post_intelligence_finance_cache(self):
-        context = self._intelligence_finance_context()
+    def _post_intelligence_finance_cache(self, require_sales=True):
+        context = self._intelligence_finance_context(require_sales=require_sales)
         if not context:
             _read_and_discard_body(self)
             return
@@ -2912,6 +2912,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/inteligencia/finance-cache":
                 self._get_intelligence_finance_cache()
                 return
+            if path == "/api/finance-profile":
+                self._get_intelligence_finance_cache(require_sales=False)
+                return
             if path == "/api/inteligencia/order-financials":
                 self._get_intelligence_order_financials()
                 return
@@ -3138,6 +3141,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/inteligencia/finance-cache":
                 self._post_intelligence_finance_cache()
+                return
+            if path == "/api/finance-profile":
+                self._post_intelligence_finance_cache(require_sales=False)
                 return
             if path == "/admin/beta-sync-all":
                 self._post_admin_beta_sync_all()

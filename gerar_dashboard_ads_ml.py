@@ -1585,6 +1585,21 @@ def render_dashboard(data):
     .page-tab.active {{ background:var(--navy); color:#fff; border-color:var(--navy); }}
     .view {{ display:none; }}
     .view.active {{ display:block; }}
+    .finance-layout {{ display:grid; gap:14px; }}
+    .finance-config {{ border:1px solid var(--line); border-radius:10px; padding:14px; background:#f8fbff; }}
+    .finance-config h3 {{ margin:0 0 5px; }}
+    .finance-grid {{ display:grid; grid-template-columns:repeat(4,minmax(170px,1fr)); gap:10px; margin-top:12px; }}
+    .finance-field {{ display:flex; flex-direction:column; gap:5px; font-size:12px; font-weight:800; color:#475467; }}
+    .finance-field input, .finance-field select, .finance-search {{ min-width:0; width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:#101828; }}
+    .finance-sku-toolbar {{ display:flex; justify-content:space-between; align-items:end; gap:12px; flex-wrap:wrap; margin:14px 0 10px; }}
+    .finance-sku-toolbar .finance-field {{ flex:1 1 320px; }}
+    .finance-table-wrap {{ max-height:52vh; overflow:auto; border:1px solid var(--line); border-radius:10px; }}
+    .finance-table {{ width:100%; min-width:760px; border-collapse:collapse; }}
+    .finance-table th {{ position:sticky; top:0; z-index:1; background:#eef3f9; }}
+    .finance-table input {{ width:130px; padding:7px 8px; border:1px solid var(--line); border-radius:7px; text-align:right; }}
+    .finance-status {{ min-height:18px; margin-top:8px; font-weight:700; }}
+    .finance-status.error {{ color:#b42318; }}
+    .finance-status.success {{ color:#067647; }}
     .abc-panel {{ margin:0; }}
     .abc-head {{ display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:10px; }}
     .abc-controls {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }}
@@ -1857,7 +1872,8 @@ def render_dashboard(data):
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
     @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .chart-head {{ align-items:stretch; }} .chart-metric-tabs {{ width:100%; }} .chart-metric-button {{ flex:1 1 auto; }} .campaign-config-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .campaign-child-tools {{ align-items:stretch; flex-direction:column; }} .campaign-child-tools input {{ width:100%; }} .campaign-child-count {{ white-space:normal; }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
     @media (max-width:700px) {{ .detail-modal-backdrop {{ padding:0; }} .detail-modal-shell {{ width:100vw; max-width:100vw; height:100dvh; max-height:none; border:0; border-radius:0; }} .detail-modal-head {{ padding:12px; }} .detail-modal-tabs {{ grid-auto-flow:row; grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-columns:auto; min-width:0; min-height:98px; padding:8px 12px; overflow:hidden; }} .detail-modal-tabs button {{ width:100%; min-width:0; }} .detail-modal-body {{ padding:12px; }} .detail-modal-body .detail-grid {{ grid-template-columns:1fr; }} }}
-    @media (max-width:700px) {{ .promotion-panel-grid {{ grid-template-columns:1fr; }} .promotion-discount-breakdown {{ grid-template-columns:1fr; }} .promotion-form label, .promotion-form input, .promotion-form button {{ width:100%; }} }}
+    @media (max-width:900px) {{ .finance-grid {{ grid-template-columns:repeat(2,minmax(150px,1fr)); }} }}
+    @media (max-width:700px) {{ .promotion-panel-grid {{ grid-template-columns:1fr; }} .promotion-discount-breakdown {{ grid-template-columns:1fr; }} .promotion-form label, .promotion-form input, .promotion-form button {{ width:100%; }} .page-nav {{ overflow-x:auto; padding-bottom:4px; }} .page-tab {{ flex:0 0 auto; }} .finance-grid {{ grid-template-columns:1fr; }} }}
   </style>
 </head>
 <body>
@@ -1888,6 +1904,7 @@ def render_dashboard(data):
       <button class="page-tab" data-view="abc" type="button">Curva ABC</button>
       <button class="page-tab" data-view="online-beta" type="button">Online Beta</button>
       <button class="page-tab" data-view="promotions" type="button">Promoções</button>
+      <button class="page-tab" data-view="finance" type="button">Custos e impostos</button>
     </nav>
     <section class="view active" id="view-operational">
       <section class="grid">
@@ -2022,6 +2039,44 @@ def render_dashboard(data):
         <div id="promotionGuideResult" aria-live="polite"></div>
       </section>
     </section>
+    <section class="view" id="view-finance">
+      <section class="card finance-layout">
+        <div>
+          <h2>Custos e impostos por SKU</h2>
+          <p class="note">Cadastre no Dash Ads o custo unitário e os parâmetros fiscais da conta. Os dados ficam na base compartilhada e poderão ser lidos pela Inteligência de Vendas. Nesta etapa beta, o cadastro ainda não altera automaticamente lucro, margem ou promoções.</p>
+        </div>
+        <div class="finance-config">
+          <h3>Configuração fiscal da conta</h3>
+          <p class="note">Não presuma alíquotas. Informe somente parâmetros validados para esta conta.</p>
+          <div class="finance-grid">
+            <label class="finance-field">Modo de cálculo<select id="financeFiscalMode"><option value="simple">Percentual simples</option><option value="detailed">Fiscal detalhado</option></select></label>
+            <label class="finance-field finance-detailed">Regime<select id="financeTaxRegime"><option value="real">Lucro Real</option><option value="presumed">Lucro Presumido</option></select></label>
+            <label class="finance-field">Imposto simples (%)<input id="financeSimpleTax" type="number" min="0" step="0.01"></label>
+            <label class="finance-field">Flex por pedido (R$)<input id="financeFlexCost" type="number" min="0" step="0.01"></label>
+            <label class="finance-field finance-detailed">Custo informado<select id="financeCostBasis"><option value="gross">Bruto, antes dos créditos</option><option value="net">Líquido, créditos já descontados</option></select></label>
+            <label class="finance-field finance-detailed">Origem dos parâmetros<select id="financeEvidence"><option value="pending">Pendente de validação</option><option value="user_informed">Informado pelo usuário</option><option value="document_confirmed">Confirmado por documento</option></select></label>
+            <label class="finance-field finance-real">IPI entrada (%)<input id="financeIpiInput" type="number" min="0" step="0.01"></label>
+            <label class="finance-field finance-real">ICMS entrada (%)<input id="financeIcmsInput" type="number" min="0" step="0.01"></label>
+            <label class="finance-field finance-real">PIS/COFINS entrada (%)<input id="financePisInput" type="number" min="0" step="0.01"></label>
+            <label class="finance-field finance-real">IPI saída (%)<input id="financeIpiOutput" type="number" min="0" step="0.01"></label>
+            <label class="finance-field finance-real">ICMS saída (%)<input id="financeIcmsOutput" type="number" min="0" step="0.01"></label>
+            <label class="finance-field finance-real">PIS/COFINS saída (%)<input id="financePisOutput" type="number" min="0" step="0.01"></label>
+            <label class="finance-field finance-presumed">Tributos efetivos Presumido (%)<input id="financePresumedRate" type="number" min="0" step="0.01"></label>
+            <label class="finance-field finance-detailed">DIFAL<select id="financeDifal"><option value="pending">Pendente de validação</option><option value="enabled">Aplicar</option><option value="disabled">Não aplicar - cenário informado</option></select></label>
+            <label class="finance-field finance-detailed">ICMS interno destino (%)<input id="financeDestinationIcms" type="number" min="0" step="0.01"></label>
+            <label class="finance-field finance-detailed">ICMS-ST / antecipação<select id="financeStDecision"><option value="unknown">Desconhecido</option><option value="included_in_cost">Incluído no custo</option><option value="out_of_scope">Fora do escopo</option></select></label>
+          </div>
+        </div>
+        <div>
+          <div class="finance-sku-toolbar">
+            <label class="finance-field">Buscar SKU, anúncio ou título<input class="finance-search" id="financeSkuSearch" placeholder="Ex.: SCH-447 ou MLB..."></label>
+            <button class="primary-action" id="financeSave" type="button">Salvar custos e impostos</button>
+          </div>
+          <div class="finance-table-wrap"><table class="finance-table"><thead><tr><th>SKU</th><th>Anúncio</th><th>Título</th><th class="num">Preço atual</th><th class="num">Custo unitário (R$)</th></tr></thead><tbody id="financeSkuRows"></tbody></table></div>
+          <div class="finance-status" id="financeStatus" aria-live="polite"></div>
+        </div>
+      </section>
+    </section>
   </main>
   <div class="detail-modal-backdrop" id="detailModal" aria-hidden="true">
     <section class="detail-modal-shell" role="dialog" aria-modal="true" aria-labelledby="detailModalHeading">
@@ -2090,6 +2145,11 @@ def render_dashboard(data):
     const promotionState = new Map();
     let promotionGuideItem = null;
     let activePromotionConfigKey = '';
+    let financeProfile = {{
+      costBySku: {{}}, costByKey: {{}}, profitTaxRate: 0, flexCarrierCost: 0,
+      fiscalMode: 'simple', taxRegime: 'real', fiscalProfile: {{}}, fiscalBySku: {{}}
+    }};
+    let financeLoaded = false;
     let sortState = {{ key:'revenue', direction:1 }};
     let abcMode = 'hybrid';
     let abcMetric = 'totalRevenue';
@@ -2111,6 +2171,115 @@ def render_dashboard(data):
       adsDependency:'Dependencia de Ads > 50%', priceAboveAvg:'Preco acima da media > 5%', attention:'Requer atencao',
       opportunity:'Oportunidade para anunciar'
     }};
+    const financeField = id => document.getElementById(id);
+    const financeNumber = id => {{
+      const value = Number(String(financeField(id)?.value || '').replace(',', '.'));
+      return Number.isFinite(value) && value >= 0 ? value : 0;
+    }};
+    function financeSkuItems() {{
+      const rows = new Map();
+      allItems.forEach(item => {{
+        const sku = String(item?.sku || '').trim();
+        if (!sku) return;
+        const key = sku.toLocaleUpperCase('pt-BR');
+        const prior = rows.get(key);
+        if (!prior || Number(item.totalRevenue || item.revenue || 0) > Number(prior.totalRevenue || prior.revenue || 0)) rows.set(key, item);
+      }});
+      return [...rows.values()].sort((a, b) => String(a.sku).localeCompare(String(b.sku), 'pt-BR'));
+    }}
+    function financeSetStatus(message, kind = '') {{
+      const node = financeField('financeStatus');
+      if (!node) return;
+      node.textContent = message;
+      node.className = `finance-status ${{kind}}`;
+    }}
+    function syncFinanceVisibility() {{
+      const detailed = financeField('financeFiscalMode')?.value === 'detailed';
+      const real = financeField('financeTaxRegime')?.value === 'real';
+      document.querySelectorAll('.finance-detailed').forEach(node => node.hidden = !detailed);
+      document.querySelectorAll('.finance-real').forEach(node => node.hidden = !detailed || !real);
+      document.querySelectorAll('.finance-presumed').forEach(node => node.hidden = !detailed || real);
+    }}
+    function fillFinanceForm() {{
+      const fiscal = financeProfile.fiscalProfile || {{}};
+      financeField('financeFiscalMode').value = financeProfile.fiscalMode || 'simple';
+      financeField('financeTaxRegime').value = financeProfile.taxRegime === 'presumed' ? 'presumed' : 'real';
+      financeField('financeSimpleTax').value = Number(financeProfile.profitTaxRate || 0);
+      financeField('financeFlexCost').value = Number(financeProfile.flexCarrierCost || 0);
+      financeField('financeCostBasis').value = fiscal.costBasis === 'net' ? 'net' : 'gross';
+      financeField('financeEvidence').value = fiscal.evidenceStatus || 'pending';
+      financeField('financeIpiInput').value = Number(fiscal.ipiInputRate || 0);
+      financeField('financeIcmsInput').value = Number(fiscal.icmsInputRate || 0);
+      financeField('financePisInput').value = Number(fiscal.pisCofinsInputRate || 0);
+      financeField('financeIpiOutput').value = Number(fiscal.ipiOutputRate || 0);
+      financeField('financeIcmsOutput').value = Number(fiscal.icmsOutputRate || 0);
+      financeField('financePisOutput').value = Number(fiscal.pisCofinsOutputRate || 0);
+      financeField('financePresumedRate').value = Number(fiscal.presumedTaxRate || 0);
+      financeField('financeDifal').value = fiscal.difalStatus || (fiscal.difalEnabled === true ? 'enabled' : fiscal.difalEnabled === false ? 'disabled' : 'pending');
+      financeField('financeDestinationIcms').value = Number(fiscal.destinationIcmsRate || 0);
+      financeField('financeStDecision').value = fiscal.icmsStDecision || 'unknown';
+      syncFinanceVisibility();
+      renderFinanceRows();
+    }}
+    function renderFinanceRows() {{
+      const target = financeField('financeSkuRows');
+      if (!target) return;
+      const query = String(financeField('financeSkuSearch')?.value || '').trim().toLocaleLowerCase('pt-BR');
+      const rows = financeSkuItems().filter(item => !query || [item.sku, item.code, item.title].some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(query)));
+      target.innerHTML = rows.map(item => {{
+        const sku = String(item.sku || '').trim();
+        const value = Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku) ? financeProfile.costBySku[sku] : '';
+        return `<tr><td><b>${{safe(sku)}}</b></td><td>${{safe(item.code || '—')}}</td><td>${{safe(item.title || '—')}}</td><td class="num">${{brl(Number(item.currentPrice || item.lastPrice || 0))}}</td><td class="num"><input type="number" min="0" step="0.01" value="${{safe(value)}}" data-finance-sku="${{safe(sku)}}" aria-label="Custo unitário do SKU ${{safe(sku)}}"></td></tr>`;
+      }}).join('') || '<tr><td colspan="5">Nenhum SKU encontrado nesta análise.</td></tr>';
+    }}
+    async function loadFinanceProfile() {{
+      if (financeLoaded) return;
+      financeSetStatus('Carregando cadastro financeiro...');
+      try {{
+        const response = await fetch('/api/finance-profile', {{credentials:'same-origin'}});
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Não foi possível carregar os dados.');
+        financeProfile = {{...financeProfile, ...payload, costBySku:payload.costBySku || {{}}, costByKey:payload.costByKey || {{}}, fiscalProfile:payload.fiscalProfile || {{}}, fiscalBySku:payload.fiscalBySku || {{}}}};
+        financeLoaded = true;
+        fillFinanceForm();
+        financeSetStatus('Cadastro carregado.');
+      }} catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
+    }}
+    async function saveFinanceProfile() {{
+      const costs = {{...(financeProfile.costBySku || {{}})}};
+      document.querySelectorAll('[data-finance-sku]').forEach(input => {{
+        const raw = String(input.value || '').trim();
+        if (!raw) delete costs[input.dataset.financeSku];
+        else costs[input.dataset.financeSku] = Math.max(0, Number(raw.replace(',', '.')) || 0);
+      }});
+      const difalStatus = financeField('financeDifal').value;
+      financeProfile = {{
+        ...financeProfile,
+        costBySku: costs,
+        profitTaxRate: financeNumber('financeSimpleTax'),
+        flexCarrierCost: financeNumber('financeFlexCost'),
+        fiscalMode: financeField('financeFiscalMode').value,
+        taxRegime: financeField('financeTaxRegime').value,
+        fiscalProfile: {{
+          ...(financeProfile.fiscalProfile || {{}}),
+          costBasis: financeField('financeCostBasis').value,
+          evidenceStatus: financeField('financeEvidence').value,
+          ipiInputRate: financeNumber('financeIpiInput'), icmsInputRate: financeNumber('financeIcmsInput'), pisCofinsInputRate: financeNumber('financePisInput'),
+          ipiOutputRate: financeNumber('financeIpiOutput'), icmsOutputRate: financeNumber('financeIcmsOutput'), pisCofinsOutputRate: financeNumber('financePisOutput'),
+          presumedTaxRate: financeNumber('financePresumedRate'), difalStatus, difalEnabled: difalStatus === 'enabled' ? true : difalStatus === 'disabled' ? false : null,
+          destinationIcmsRate: financeNumber('financeDestinationIcms'), icmsStDecision: financeField('financeStDecision').value
+        }}
+      }};
+      financeSetStatus('Salvando...');
+      financeField('financeSave').disabled = true;
+      try {{
+        const response = await fetch('/api/finance-profile', {{method:'POST', credentials:'same-origin', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{costProfile:financeProfile, saleCosts:[]}})}});
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Não foi possível salvar.');
+        financeSetStatus('Custos e impostos salvos para esta conta.', 'success');
+      }} catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
+      finally {{ financeField('financeSave').disabled = false; }}
+    }}
     function actionClass(action) {{ return (action || '').split(' ')[0].replace('/', ''); }}
     function abcClass(value) {{ return `abc abc${{value || 'C'}}`; }}
     const abcMetricLabels = {{
@@ -4241,8 +4410,13 @@ def render_dashboard(data):
         document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
         button.classList.add('active');
         document.getElementById(`view-${{button.dataset.view}}`).classList.add('active');
+        if (button.dataset.view === 'finance') loadFinanceProfile();
       }});
     }});
+    document.getElementById('financeSkuSearch').addEventListener('input', renderFinanceRows);
+    document.getElementById('financeFiscalMode').addEventListener('change', syncFinanceVisibility);
+    document.getElementById('financeTaxRegime').addEventListener('change', syncFinanceVisibility);
+    document.getElementById('financeSave').addEventListener('click', saveFinanceProfile);
     document.getElementById('promotionGuideForm').addEventListener('submit', event => {{
       event.preventDefault();
       const raw = document.getElementById('promotionGuideMlb').value;

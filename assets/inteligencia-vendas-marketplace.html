@@ -769,29 +769,6 @@
             </div>
           </div>
           <div class="section-body">
-            <details class="fiscal-config" id="fiscalConfig">
-              <summary>Configuracao fiscal e custo da conta <span class="muted" id="fiscalConfigSummary">Percentual simples</span></summary>
-              <div class="fiscal-config-body">
-                <div class="fiscal-grid">
-                  <div class="fiscal-field"><label for="fiscalMode">Modo de calculo</label><select class="control" id="fiscalMode"><option value="simple">Percentual simples</option><option value="detailed">Fiscal detalhado</option></select></div>
-                  <div class="fiscal-field fiscal-detailed"><label for="taxRegime">Regime detalhado</label><select class="control" id="taxRegime"><option value="real">Lucro Real</option><option value="presumed">Lucro Presumido</option></select></div>
-                  <div class="fiscal-field fiscal-detailed"><label for="fiscalCostBasis">Custo informado</label><select class="control" id="fiscalCostBasis"><option value="gross">Bruto, antes dos creditos</option><option value="net">Liquido, creditos ja descontados</option></select></div>
-                  <div class="fiscal-field fiscal-detailed"><label for="fiscalEvidence">Origem dos parametros</label><select class="control" id="fiscalEvidence"><option value="pending">Pendente de validacao</option><option value="user_informed">Informado pelo usuario</option><option value="document_confirmed">Confirmado por documento</option></select></div>
-                  <div class="fiscal-field fiscal-real"><label for="fiscalIpiInput">IPI entrada (%)</label><input class="control fiscal-number" id="fiscalIpiInput" type="number" min="0" step="0.01"></div>
-                  <div class="fiscal-field fiscal-real"><label for="fiscalIcmsInput">ICMS entrada (%)</label><input class="control fiscal-number" id="fiscalIcmsInput" type="number" min="0" step="0.01"></div>
-                  <div class="fiscal-field fiscal-real"><label for="fiscalPisInput">PIS/COFINS entrada (%)</label><input class="control fiscal-number" id="fiscalPisInput" type="number" min="0" step="0.01"></div>
-                  <div class="fiscal-field fiscal-real"><label for="fiscalIpiOutput">IPI saida (%)</label><input class="control fiscal-number" id="fiscalIpiOutput" type="number" min="0" step="0.01"></div>
-                  <div class="fiscal-field fiscal-real"><label for="fiscalIcmsOutput">ICMS saida (%)</label><input class="control fiscal-number" id="fiscalIcmsOutput" type="number" min="0" step="0.01"></div>
-                  <div class="fiscal-field fiscal-real"><label for="fiscalPisOutput">PIS/COFINS saida (%)</label><input class="control fiscal-number" id="fiscalPisOutput" type="number" min="0" step="0.01"></div>
-                  <div class="fiscal-field fiscal-presumed"><label for="fiscalPresumedRate">Tributos efetivos Presumido (%)</label><input class="control fiscal-number" id="fiscalPresumedRate" type="number" min="0" step="0.01"></div>
-                  <div class="fiscal-field fiscal-detailed"><label for="fiscalDifal">DIFAL</label><select class="control" id="fiscalDifal"><option value="pending">Pendente de validacao</option><option value="enabled">Aplicar</option><option value="disabled">Nao aplicar - cenario informado</option></select></div>
-                  <div class="fiscal-field fiscal-detailed"><label for="fiscalDestinationIcms">ICMS interno destino (%)</label><input class="control fiscal-number" id="fiscalDestinationIcms" type="number" min="0" step="0.01"></div>
-                  <div class="fiscal-field fiscal-detailed"><label for="fiscalStDecision">ICMS-ST / antecipacao</label><select class="control" id="fiscalStDecision"><option value="unknown">Desconhecido</option><option value="included_in_cost">Incluido no custo</option><option value="out_of_scope">Fora do escopo</option></select></div>
-                </div>
-                <div class="fiscal-note">Cadastro beta: estes parametros ficam salvos e compartilhados pela conta. Ainda nao alteram o lucro exibido; a aplicacao da formula sera liberada somente depois da conferencia dos dados.</div>
-                <div class="muted" id="fiscalSaveStatus" style="margin-top:8px">Aguardando alteracoes.</div>
-              </div>
-            </details>
             <div id="profitSummary" style="margin-bottom:10px"></div>
             <div id="profitTable"></div>
             <div id="profitDetail" style="margin-top:10px"></div>
