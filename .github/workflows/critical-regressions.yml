@@ -20,6 +20,7 @@ jobs:
           python -m unittest -v
           test_regression_001_snapshot_integrity.py
           test_operational_availability.py
+          test_tacos_status_consistency.py
           test_online_periods.OnlinePeriodTests.test_sales_intelligence_blocks_daily_partial_coverage_before_recommendations
           test_online_periods.OnlinePeriodTests.test_never_sold_listing_requires_active_status_and_creation_coverage
           test_integrations.HTTPRouteTests.test_sales_intelligence_integrity_block_hides_online_recommendations

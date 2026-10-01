@@ -21,14 +21,15 @@
     "app.py",
     "dash_ads_snapshot_queue.py"
   ],
-  "invariant": "Saude global nao certifica nem invalida uma conta. Cada incidente administrativo identifica conta do banco, identidade gravada e periodo; divergencia nao autoriza reatribuicao. Graficos completos exigem contrato exato; leitura nao coleta nem repara.",
+  "invariant": "Saude global nao certifica nem invalida uma conta. Graficos completos exigem contrato exato; leitura nao coleta nem repara. TACOS online usa faturamento sem somar atribuicao indireta, no KPI, itens, grupos e serie diaria. Status ausente nunca significa publicidade encerrada nem zero confirmado de ativas.",
   "protections": [
     {
       "command": [
         "{python}",
         "-m",
         "unittest",
-        "test_operational_availability"
+        "test_operational_availability",
+        "test_tacos_status_consistency"
       ],
       "blocking": true
     }
@@ -94,6 +95,7 @@
             "-v",
             "test_regression_001_snapshot_integrity.py",
             "test_operational_availability.py",
+            "test_tacos_status_consistency.py",
             "test_online_periods.OnlinePeriodTests.test_never_sold_listing_requires_active_status_and_creation_coverage",
             "test_antiregression_hook.AntiregressionStopHookTests"
           ],

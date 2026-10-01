@@ -1896,7 +1896,8 @@ def render_dashboard(data):
             <select id="contextSelect">
               <option value="all" selected>Todos os itens</option>
               <option value="active">Publicidade ativa</option>
-              <option value="ended">Publicidade encerrada</option>
+              <option value="ended">Publicidade encerrada (confirmada)</option>
+              <option value="unknownAds">Publicidade sem status confirmado</option>
               <option value="noReturn">Gasto sem retorno ADS</option>
               <option value="highTacos">TACOS fora da meta</option>
               <option value="adsDependency">Dependencia de Ads &gt; 50%</option>
@@ -2069,7 +2070,7 @@ def render_dashboard(data):
     }};
     const viewLabels = {{ hybrid:'Híbrida', family:'Família', variation:'Variação/MLBU', mlb:'MLB', sku:'SKU', campaign:'Campanha' }};
     const contextLabels = {{
-      all:'Todos os itens', active:'Publicidade ativa', ended:'Publicidade encerrada',
+      all:'Todos os itens', active:'Publicidade ativa', ended:'Publicidade encerrada (confirmada)', unknownAds:'Publicidade sem status confirmado',
       noReturn:'Gasto sem retorno ADS', highTacos:'TACOS fora da meta',
       adsDependency:'Dependencia de Ads > 50%', priceAboveAvg:'Preco acima da media > 5%', attention:'Requer atencao',
       opportunity:'Oportunidade para anunciar'
@@ -2662,10 +2663,22 @@ def render_dashboard(data):
       if (currentViewMode === 'campaign') return DATA.campaignAds || [];
       return DATA.items || [];
     }}
+    function advertisingState(item) {{
+      // Group defaults and absence of status are not proof of termination.
+      if (Array.isArray(item.children) && item.children.length) {{
+        const states = item.children.map(advertisingState);
+        if (states.includes('active')) return 'active';
+        return states.every(state => state === 'ended') ? 'ended' : 'unknown';
+      }}
+      const status = String(item.campaignStatus || '').trim().toLowerCase();
+      if (status === 'ativa' || status === 'ativa por sku') return 'active';
+      if (status === 'encerrada' || status === 'deleted' || status === 'finished') return 'ended';
+      return 'unknown';
+    }}
     function matchesContext(item, context = currentContext) {{
-      const status = String(item.campaignStatus || '').toLowerCase();
-      if (context === 'active') return status.startsWith('ativa');
-      if (context === 'ended') return !status.startsWith('ativa');
+      if (context === 'active') return advertisingState(item) === 'active';
+      if (context === 'ended') return advertisingState(item) === 'ended';
+      if (context === 'unknownAds') return advertisingState(item) === 'unknown';
       if (context === 'noReturn') return (item.investment || 0) > 0 && (item.adsRevenue || 0) <= 0;
       if (context === 'highTacos') return (item.investment || 0) > 0 && (item.tacos || 0) > .03;
       if (context === 'adsDependency') return (item.adsDependencyRatio || 0) > .50;
@@ -2678,8 +2691,9 @@ def render_dashboard(data):
       const rows = rowsByViewMode();
       const stats = [
         ['Todos os itens', rows.length, 'Base completa da visao atual.'],
-        ['Publicidade ativa', rows.filter(item => matchesContext(item, 'active')).length, 'Itens com campanha ativa no periodo.'],
-        ['Publicidade encerrada', rows.filter(item => matchesContext(item, 'ended')).length, 'Itens sem campanha ativa no periodo.'],
+        ['Publicidade ativa', rows.some(item => matchesContext(item, 'unknownAds')) ? null : rows.filter(item => matchesContext(item, 'active')).length, 'Status confirmado no cache; N/D quando a classificacao esta incompleta.'],
+        ['Publicidade encerrada', rows.some(item => matchesContext(item, 'unknownAds')) ? null : rows.filter(item => matchesContext(item, 'ended')).length, 'Somente encerramento explicito; ausencia, pausa e falta de campanha nao significam encerramento.'],
+        ['Publicidade sem status confirmado', rows.filter(item => matchesContext(item, 'unknownAds')).length, 'Status indisponivel ou insuficiente. Nao implica anuncio encerrado.'],
         ['Gasto sem retorno ADS', rows.filter(item => matchesContext(item, 'noReturn')).length, 'Houve gasto, mas nao houve receita ADS atribuida.'],
         ['TACOS fora da meta', rows.filter(item => matchesContext(item, 'highTacos')).length, 'Itens com TACOS acima da meta de 3%.'],
         ['Dependencia de Ads > 50%', rows.filter(item => matchesContext(item, 'adsDependency')).length, 'Mais de 50% da receita direta veio de ADS.'],
@@ -2689,7 +2703,7 @@ def render_dashboard(data):
       ];
       document.getElementById('alerts').innerHTML = `<table>
         <tr><th>Filtro de analise</th><th class="num">Qtd.</th><th>Leitura</th></tr>
-        ${{stats.map(stat => `<tr><td>${{safe(stat[0])}}</td><td class="num">${{num(stat[1])}}</td><td>${{safe(stat[2])}}</td></tr>`).join('')}}
+        ${{stats.map(stat => `<tr><td>${{safe(stat[0])}}</td><td class="num">${{stat[1] === null ? 'N/D' : num(stat[1])}}</td><td>${{safe(stat[2])}}</td></tr>`).join('')}}
       </table>`;
     }}
     function detailKey(item) {{
