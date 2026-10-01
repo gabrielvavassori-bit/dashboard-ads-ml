@@ -3727,6 +3727,8 @@ def render_dashboard(data):
       const receipt = Number(quote.receipt_before_cost_tax);
       if (quote.available !== true || !Number.isFinite(price) || price <= 0 || !Number.isFinite(receipt))
         return '<span class="muted">N/D</span>';
+      if (!promotionQuoteMatchesPrice(row, promotionEffectivePrice(row, item)))
+        return '<span class="muted">N/D</span><small>Cotação divergente; gere uma prévia atualizada.</small>';
       const fee = Number(quote.sale_fee);
       const freight = Number(quote.shipping_cost);
       const rebate = Number(quote.rebate || 0);

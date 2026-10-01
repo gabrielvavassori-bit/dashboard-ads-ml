@@ -57,8 +57,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
             source.index('    function promotionMarginCell'):
             source.index('    function promotionTableRow')
         ].replace('{{', '{').replace('}}', '}')
-        stubs = "const safe = value => String(value ?? ''); const brl = value => `R$ ${Number(value).toFixed(2)}`; const promotionFinancialResult=()=>({available:false});\n"
-        script = stubs + function + "\nconsole.log(promotionMarginCell({receipt_quote:{available:true,price:74.9,sale_fee:8.61,shipping_cost:8.75,rebate:0,receipt_before_cost_tax:57.54}})); console.log(promotionMarginCell({receipt_quote:{available:false,reason:'Frete ausente'}}));"
+        stubs = "const safe = value => String(value ?? ''); const brl = value => `R$ ${Number(value).toFixed(2)}`; const promotionEffectivePrice = row => Number(row.price || row.receipt_quote?.price || 0); const promotionQuoteMatchesPrice = (row, price) => Math.abs(Number(row.receipt_quote?.price) - price) < 0.01; const promotionFinancialResult=()=>({available:false});\n"
+        script = stubs + function + "\nconsole.log(promotionMarginCell({price:74.9,receipt_quote:{available:true,price:74.9,sale_fee:8.61,shipping_cost:8.75,rebate:0,receipt_before_cost_tax:57.54}})); console.log(promotionMarginCell({receipt_quote:{available:false,reason:'Frete ausente'}})); console.log(promotionMarginCell({price:19.94,receipt_quote:{available:true,price:27.97,sale_fee:3.22,shipping_cost:7.45,rebate:0,receipt_before_cost_tax:17.30}}));"
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout.splitlines()
         self.assertIn('R$ 57.54', result[0])
         self.assertIn('76,82%', result[0])
@@ -70,6 +70,9 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertNotIn('Imposto</span><b>R$ 0.00', tooltip)
         self.assertIn('N/D', result[1])
         self.assertNotIn('Frete ausente', result[1])
+        self.assertIn('N/D', result[2])
+        self.assertIn('Cotação divergente', result[2])
+        self.assertNotIn('R$ 17.30', result[2])
 
     def test_effective_offer_price_precedes_unconfirmed_api_suggestion(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
