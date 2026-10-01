@@ -2644,6 +2644,26 @@ class Handler(BaseHTTPRequestHandler):
                 "profitTaxRate": number(profile.get("profitTaxRate")),
                 "flexCarrierCost": number(profile.get("flexCarrierCost")),
             }
+            if "fiscalMode" in profile:
+                fiscal_mode = str(profile.get("fiscalMode") or "simple").strip().lower()
+                if fiscal_mode not in {"simple", "detailed"}:
+                    raise ValueError("Modo fiscal invalido.")
+                clean_profile["fiscalMode"] = fiscal_mode
+            if "taxRegime" in profile:
+                tax_regime = str(profile.get("taxRegime") or "simple").strip().lower()
+                if tax_regime not in {"mei", "simple", "presumed", "real"}:
+                    raise ValueError("Regime tributario invalido.")
+                clean_profile["taxRegime"] = tax_regime
+            for field in ("fiscalProfile", "fiscalBySku"):
+                if field not in profile:
+                    continue
+                value = profile.get(field)
+                if not isinstance(value, dict):
+                    raise ValueError("Configuracao fiscal invalida.")
+                encoded = json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+                if len(encoded.encode("utf-8")) > 500_000:
+                    raise ValueError("Configuracao fiscal excede o limite permitido.")
+                clean_profile[field] = json.loads(encoded)
             fields = (
                 "productRevenue", "buyerPriceIncrease", "shippingRevenue", "sellingFee",
                 "installmentFee", "shippingFee", "shippingExchangeCost",
