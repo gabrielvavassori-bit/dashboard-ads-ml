@@ -153,6 +153,29 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertAlmostEqual(result['profit'], 2.48, delta=0.02)
         self.assertAlmostEqual(result['margin'], 15.0, delta=0.1)
 
+    def test_flex_cost_is_only_a_consultative_promotion_scenario(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        functions = source[
+            source.index('    function promotionDifalValue'):
+            source.index('    function promotionMarginCell')
+        ].replace('{{', '{').replace('}}', '}')
+        stubs = """
+        const financeDifalDoubleBaseStates=new Set();
+        const financeProfile={taxRegime:'simple', flexCarrierCost:13, costBySku:{SKU1:40}, fiscalBySku:{SKU1:{taxRegime:'simple', simpleTaxRate:8}}};
+        const promotionEffectivePrice=row=>Number(row.price);
+        const promotionQuoteMatchesPrice=(row,price)=>row.receipt_quote.available === true && Math.abs(row.receipt_quote.price-price) <= .01;
+        """
+        row = {'price': 100, 'receipt_quote': {'available': True, 'price': 100, 'sale_fee': 12,
+                                               'shipping_cost': 10, 'rebate': 0,
+                                               'receipt_before_cost_tax': 78}}
+        script = stubs + functions + '\nconsole.log(JSON.stringify(promotionFinancialResult(' + json.dumps(row) + ',{sku:"SKU1"})));'
+        result = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
+        self.assertEqual(result['profit'], 30)
+        self.assertEqual(result['margin'], 30)
+        self.assertEqual(result['flexCarrierCost'], 13)
+        self.assertEqual(result['flexProfit'], 17)
+        self.assertEqual(result['flexMargin'], 17)
+
     def test_campaign_view_groups_variations_without_losing_individual_prices(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         function = source[

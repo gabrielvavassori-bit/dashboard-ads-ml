@@ -3760,14 +3760,19 @@ def render_dashboard(data):
       const regime = ['simple','presumed','real'].includes(profile.taxRegime) ? profile.taxRegime : legacyRegime;
       const flexCarrierCost = Number(profile.flexCarrierCost ?? financeProfile.flexCarrierCost ?? 0);
       if (!regime || !Number.isFinite(flexCarrierCost)) return {{available:false}};
+      const flexScenario = profit => ({{
+        flexCarrierCost,
+        flexProfit:profit - flexCarrierCost,
+        flexMargin:price > 0 ? (profit - flexCarrierCost) / price * 100 : 0,
+      }});
       if (regime === 'simple') {{
         const simpleTaxRate = Number(profile.simpleTaxRate ?? financeProfile.profitTaxRate);
         if (!Number.isFinite(simpleTaxRate)) return {{available:false}};
         const rate = simpleTaxRate / 100;
         const tax = price * rate;
-        const profit = receipt - cost - tax - flexCarrierCost;
+        const profit = receipt - cost - tax;
         return {{available:true, price, receipt, cost, tax, difal:0, profit, margin:price > 0 ? profit / price * 100 : 0,
-          credits:0, debits:tax, fee, freight, rebate, mode:'simple'}};
+          credits:0, debits:tax, fee, freight, rebate, mode:'simple', ...flexScenario(profit)}};
       }}
       const rate = key => {{ const value = Number(profile[key]); return Number.isFinite(value) ? value / 100 : 0; }};
       const grossCost = profile.costBasis !== 'net';
@@ -3790,10 +3795,10 @@ def render_dashboard(data):
       const netPis = Math.max(0, outputPis - inputPisCost - inputPisCommission - inputPisFreight);
       const tax = netIpi + netIcms + netPis + presumedTax;
       const difal = promotionDifalValue(price, profile, Number(profile.icmsOutputRate));
-      const profit = receipt - cost - tax - difal - flexCarrierCost;
+      const profit = receipt - cost - tax - difal;
       return {{available:true, price, receipt, cost, tax, difal, profit, margin:price > 0 ? profit / price * 100 : 0,
         credits:inputIpi + inputIcmsProduct + inputIcmsFreight + inputPisCost + inputPisCommission + inputPisFreight,
-        debits:outputIpi + outputIcms + outputPis + presumedTax, fee, freight, rebate, mode:'detailed'}};
+        debits:outputIpi + outputIcms + outputPis + presumedTax, fee, freight, rebate, mode:'detailed', ...flexScenario(profit)}};
     }}
     function promotionMarginCell(row, item) {{
       const quote = row.receipt_quote || {{}};
@@ -3812,8 +3817,10 @@ def render_dashboard(data):
       const result = promotionFinancialResult(row, item);
       if (result.available) {{
         const margin = result.margin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
-        const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}${{line('Custo do produto', '−' + brl(result.cost))}}${{line('Débitos fiscais', '−' + brl(result.debits))}}${{line('Créditos fiscais aproveitados', '+' + brl(result.credits))}}${{result.difal > 0 ? line('DIFAL', '−' + brl(result.difal)) : line('DIFAL', brl(0))}}<div class="promotion-margin-total">${{line('Lucro líquido estimado', brl(result.profit))}}</div><div class="promotion-margin-note">Margem líquida estimada: ${{margin}}%. Rebate, tarifa e frete vêm da cotação da oportunidade; custo e parâmetros fiscais vêm do SKU.</div>`;
-        return `<span class="promotion-margin-value ${{result.profit < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small></span>`;
+        const flexMargin = result.flexMargin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
+        const flexScenario = result.flexCarrierCost > 0 ? `<div class="promotion-margin-note"><b>Cenário consultivo Flex</b>${{line('Custo manual do Flex', '−' + brl(result.flexCarrierCost))}}${{line('Resultado com Flex', brl(result.flexProfit))}}${{line('Margem com Flex', flexMargin + '%')}}Este cenário não altera a margem usada para avaliar a promoção.</div>` : '';
+        const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}${{line('Custo do produto', '−' + brl(result.cost))}}${{line('Débitos fiscais', '−' + brl(result.debits))}}${{line('Créditos fiscais aproveitados', '+' + brl(result.credits))}}${{result.difal > 0 ? line('DIFAL', '−' + brl(result.difal)) : line('DIFAL', brl(0))}}<div class="promotion-margin-total">${{line('Lucro líquido estimado', brl(result.profit))}}</div><div class="promotion-margin-note">Margem líquida estimada: ${{margin}}%. Rebate, tarifa e frete vêm da cotação da oportunidade; custo e parâmetros fiscais vêm do SKU. O Flex não compõe esta margem.</div>${{flexScenario}}`;
+        return `<span class="promotion-margin-value ${{result.profit < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small>${{result.flexCarrierCost > 0 ? `<small>Flex consultivo: ${{brl(result.flexProfit)}} · ${{flexMargin}}%</small>` : ''}}</span>`;
       }}
       const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{line('Custo do produto', 'Não informado')}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line('Saldo antes de custo e imposto', brl(receipt))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. A margem de contribuição real depende do custo e do imposto cadastrados; estes não foram assumidos como zero.</div>`;
       return `<span class="promotion-margin-value ${{receipt < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small></span>`;
