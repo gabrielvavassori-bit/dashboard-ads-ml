@@ -184,6 +184,29 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertEqual(result['flexFee'], 11)
         self.assertEqual(result['flexMlShippingCost'], 5)
 
+    def test_flex_alert_only_appears_below_selected_margin_target(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        function = source[
+            source.index('    function promotionMarginCell'):
+            source.index('    function promotionTableRow')
+        ].replace('{{', '{').replace('}}', '}')
+        stubs = """
+        const brl=value=>`R$ ${Number(value).toFixed(2)}`;
+        const safe=value=>String(value ?? '');
+        const promotionMarginTarget=15;
+        const promotionEffectivePrice=row=>Number(row.price);
+        const promotionQuoteMatchesPrice=()=>true;
+        let flexMargin=11;
+        const promotionFinancialResult=()=>({available:true,price:100,receipt:78,cost:40,tax:8,difal:0,
+          profit:30,margin:30,credits:0,debits:8,fee:12,freight:10,rebate:0,flexActive:true,
+          flexAvailable:true,flexCarrierCost:13,flexProfit:11,flexMargin,flexFee:11,flexMlShippingCost:5});
+        const row={price:100,receipt_quote:{available:true,price:100,receipt_before_cost_tax:78,sale_fee:12,shipping_cost:10,rebate:0}};
+        """
+        script = stubs + function + "\nconst low=promotionMarginCell(row,{sku:'SKU1'}); flexMargin=16; const ok=promotionMarginCell(row,{sku:'SKU1'}); console.log(JSON.stringify({low,ok}));"
+        rendered = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
+        self.assertIn('Flex ativo: margem 11,00%, abaixo da meta de 15%', rendered['low'])
+        self.assertNotIn('promotion-flex-warning', rendered['ok'])
+
     def test_campaign_view_groups_variations_without_losing_individual_prices(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         function = source[
