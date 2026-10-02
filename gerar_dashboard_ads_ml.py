@@ -3693,15 +3693,21 @@ def render_dashboard(data):
       let meli = meliRaw == null || meliRaw === '' ? null : Number(meliRaw);
       let sellerDerived = false;
       let meliDerived = false;
+      let sellerEstimatedFromTotal = false;
       if (!Number.isFinite(seller)) seller = null;
       if (!Number.isFinite(meli)) meli = null;
       if (seller == null && meli != null && Number.isFinite(total)) {{ seller = Math.max(0, total - meli); sellerDerived = true; }}
       if (meli == null && seller != null && Number.isFinite(total)) {{ meli = Math.max(0, total - seller); meliDerived = true; }}
-      return {{total, seller, meli, sellerDerived, meliDerived}};
+      if (seller == null && meli == null && Number.isFinite(total) && total > 0) {{
+        seller = total;
+        sellerDerived = true;
+        sellerEstimatedFromTotal = true;
+      }}
+      return {{total, seller, meli, sellerDerived, meliDerived, sellerEstimatedFromTotal}};
     }}
-    function promotionAllocationCell(value, original, derived) {{
+    function promotionAllocationCell(value, original, derived, derivedLabel) {{
       const cell = promotionValueCell(value, original);
-      return derived ? `${{cell}}<small>Calculado pelo total</small>` : cell;
+      return derived ? `${{cell}}<small>${{safe(derivedLabel || 'Calculado pelo total')}}</small>` : cell;
     }}
     function promotionReceiptValue(row) {{
       if (!promotionQuoteMatchesPrice(row, promotionEffectivePrice(row))) return -Infinity;
@@ -3851,7 +3857,7 @@ def render_dashboard(data):
       const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
       const selectionControl = selection ? `<input class="promotion-bulk-select" type="checkbox" data-promo-bulk-select="${{safe(selection.key)}}" data-promo-scope-key="${{safe(selection.scopeKey)}}"${{selection.checked ? ' checked' : ''}} aria-label="Selecionar ${{safe(item.code)}} para prévia coletiva">` : '';
       const identity = listing ? `<div class="promotion-listing-select">${{selectionControl}}<div class="promotion-listing-identity">${{productImage({{thumbnailUrl:listing.thumbnailUrl, title:listing.title}})}}<div><b>${{safe(listing.code)}}</b><small class="promotion-listing-name">${{safe(listing.title)}}</small>${{listing.sku ? `<small class="promotion-listing-sku">SKU ${{safe(listing.sku)}}</small>` : ''}}${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}</div></div></div>` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
-      return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionAllocationCell(allocation.meli, original, allocation.meliDerived)}}${{subsidyBadge}}</td><td class="num">${{promotionAllocationCell(allocation.seller, original, allocation.sellerDerived)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b><small>Preço original</small></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{active ? 'Preço promocional ativo' : 'Preço da oportunidade retornado pela API'}}</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{promotionMarginCell(row, item)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
+      return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionAllocationCell(allocation.meli, original, allocation.meliDerived)}}${{subsidyBadge}}</td><td class="num">${{promotionAllocationCell(allocation.seller, original, allocation.sellerDerived, allocation.sellerEstimatedFromTotal ? 'Estimado pelo total; subsídio ML não informado' : '')}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b><small>Preço original</small></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{active ? 'Preço promocional ativo' : 'Preço da oportunidade retornado pela API'}}</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{promotionMarginCell(row, item)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
     function promotionTableHtml(item, rows, allowAction = false) {{
       const ranked = promotionRankRows(item, rows);

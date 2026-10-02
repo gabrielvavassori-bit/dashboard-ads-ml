@@ -242,6 +242,19 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertAlmostEqual(allocation['seller'], 52.31, places=2)
         self.assertTrue(allocation['sellerDerived'])
 
+    def test_discount_allocation_estimates_seller_when_api_omits_both_parts(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        functions = source[
+            source.index('    function promotionTotalCellValue'):
+            source.index('    function promotionReceiptValue')
+        ].replace('{{', '{').replace('}}', '}')
+        script = "const promotionEffectivePrice=row=>Number(row.price); const promotionValueCell=(value)=>String(value); const safe=value=>String(value);\n" + functions + "\nconsole.log(JSON.stringify(promotionDiscountAllocation({original_price:259.8,price:123.9})));"
+        allocation = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
+        self.assertIsNone(allocation['meli'])
+        self.assertAlmostEqual(allocation['seller'], 52.31, places=2)
+        self.assertTrue(allocation['sellerDerived'])
+        self.assertTrue(allocation['sellerEstimatedFromTotal'])
+
     def test_account_campaign_inventory_loads_without_product_search(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         app_source = Path('app.py').read_text(encoding='utf-8')
