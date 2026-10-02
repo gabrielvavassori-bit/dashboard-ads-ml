@@ -179,10 +179,10 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertTrue(result['flexActive'])
         self.assertTrue(result['flexAvailable'])
         self.assertEqual(result['flexCarrierCost'], 13)
-        self.assertEqual(result['flexProfit'], 23)
-        self.assertEqual(result['flexMargin'], 23)
+        self.assertEqual(result['flexProfit'], 28)
+        self.assertAlmostEqual(result['flexMargin'], 28, places=6)
         self.assertEqual(result['flexFee'], 11)
-        self.assertEqual(result['flexMlShippingCost'], 5)
+        self.assertEqual(result['flexIgnoredShippingCost'], 5)
 
     def test_flex_alert_only_appears_below_selected_margin_target(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
@@ -199,13 +199,18 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         let flexMargin=11;
         const promotionFinancialResult=()=>({available:true,price:100,receipt:78,cost:40,tax:8,difal:0,
           profit:30,margin:30,credits:0,debits:8,fee:12,freight:10,rebate:0,flexActive:true,
-          flexAvailable:true,flexCarrierCost:13,flexProfit:11,flexMargin,flexFee:11,flexMlShippingCost:5});
+          flexAvailable:true,flexCarrierCost:13,flexProfit:16,flexMargin,flexFee:11,flexIgnoredShippingCost:5});
         const row={price:100,receipt_quote:{available:true,price:100,receipt_before_cost_tax:78,sale_fee:12,shipping_cost:10,rebate:0}};
         """
         script = stubs + function + "\nconst low=promotionMarginCell(row,{sku:'SKU1'}); flexMargin=16; const ok=promotionMarginCell(row,{sku:'SKU1'}); console.log(JSON.stringify({low,ok}));"
         rendered = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
         self.assertIn('Flex ativo: margem 11,00%, abaixo da meta de 15%', rendered['low'])
         self.assertNotIn('promotion-flex-warning', rendered['ok'])
+        decoded = __import__('urllib.parse', fromlist=['unquote']).unquote(rendered['low'])
+        self.assertIn('Tarifa de venda Flex (inclui taxa fixa)', decoded)
+        self.assertIn('Frete tradicional', decoded)
+        self.assertIn('Desconsiderado', decoded)
+        self.assertNotIn('Cobrança logística ML no Flex', decoded)
 
     def test_campaign_view_groups_variations_without_losing_individual_prices(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
