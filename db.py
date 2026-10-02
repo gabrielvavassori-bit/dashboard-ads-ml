@@ -163,6 +163,22 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS promotion_action_audit (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    client_id      TEXT NOT NULL,
+    item_id        TEXT NOT NULL,
+    status         TEXT NOT NULL,
+    agent_audit_id TEXT,
+    idempotent     INTEGER NOT NULL DEFAULT 0,
+    response_json  TEXT NOT NULL DEFAULT '{}',
+    created_at     INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_promotion_action_audit_scope
+    ON promotion_action_audit(user_id, client_id, created_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS beta_handoffs (
     nonce_hash TEXT PRIMARY KEY,
     expires_at INTEGER NOT NULL,
@@ -1561,6 +1577,45 @@ def list_recent_audit_for_user(user_id: int, limit: int = 10):
                ORDER BY created_at DESC, id DESC
                LIMIT ?""",
             (user_id, limit),
+        )
+        return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def record_promotion_action(user_id: int, client_id: str, item_id: str, payload: dict):
+    """Persiste somente o resultado seguro devolvido pelo agente, nunca o preview_token."""
+    safe_payload = dict(payload or {})
+    safe_payload.pop("preview_token", None)
+    status = "success" if safe_payload.get("ok") is True else "failed"
+    conn = get_conn()
+    try:
+        conn.execute(
+            """INSERT INTO promotion_action_audit
+               (user_id, client_id, item_id, status, agent_audit_id, idempotent, response_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                int(user_id), str(client_id or ""), str(item_id or ""), status,
+                str(safe_payload.get("audit_id") or "") or None,
+                1 if safe_payload.get("idempotent") is True else 0,
+                json.dumps(safe_payload, ensure_ascii=False, separators=(",", ":")),
+                now(),
+            ),
+        )
+    finally:
+        conn.close()
+
+
+def list_promotion_action_audit(user_id: int, client_id: str, limit: int = 50):
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """SELECT id, item_id, status, agent_audit_id, idempotent, created_at
+               FROM promotion_action_audit
+               WHERE user_id=? AND client_id=?
+               ORDER BY created_at DESC, id DESC
+               LIMIT ?""",
+            (int(user_id), str(client_id or ""), max(1, min(int(limit or 50), 100))),
         )
         return cur.fetchall()
     finally:

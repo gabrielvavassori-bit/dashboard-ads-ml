@@ -2737,6 +2737,21 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
                 return
+            if path == "/api/promotions/audit":
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if not beta_config.BETA_MODE or not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Historico de promocoes disponivel somente no beta autorizado."}, 403)
+                    return
+                link, _, _ = _current_ml_account(user, token)
+                if not link:
+                    _send_json(self, {"ok": False, "message": "Selecione uma conta Mercado Livre."}, 400)
+                    return
+                rows = db.list_promotion_action_audit(user["id"], (link["client_id"] or "").strip())
+                _send_json(self, {"ok": True, "entries": [dict(row) for row in rows]})
+                return
             if path == "/api/governance/summary":
                 user, _ = _current_user(self)
                 if not user:
@@ -3098,6 +3113,10 @@ class Handler(BaseHTTPRequestHandler):
                 body["client"] = (link["client_id"] or "").strip()
                 agent_path = "/internal/dash-ads/promotions/preview" if path.endswith("/preview") else "/internal/dash-ads/promotions/confirm"
                 payload = _post_dash_ads_json(agent_path, body)
+                if path.endswith("/confirm"):
+                    db.record_promotion_action(
+                        user["id"], (link["client_id"] or "").strip(), item_id, payload,
+                    )
                 _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
                 return
             if path == "/login":

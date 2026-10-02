@@ -2067,6 +2067,7 @@ def render_dashboard(data):
           <button type="submit">Consultar promoções</button>
         </form>
         <div id="promotionGuideResult" aria-live="polite"></div>
+        <details class="promotion-audit"><summary>Histórico de confirmações</summary><button type="button" id="promotionAuditLoad">Atualizar histórico</button><div id="promotionAuditResult" class="note" aria-live="polite">Abra para consultar as confirmações desta conta.</div></details>
       </section>
     </section>
     <section class="view" id="view-finance">
@@ -4047,6 +4048,18 @@ def render_dashboard(data):
         : promotionPanelHtml({{...item, currentPrice:state.data?.item?.price || item.currentPrice || 0}});
       activatePromotionPanels();
     }}
+    function promotionAuditHtml(entries) {{
+      if (!entries.length) return '<p>Nenhuma confirmação registrada nesta conta pelo Dash Ads.</p>';
+      return `<div class="scroll-frame"><table><thead><tr><th>Data</th><th>MLB</th><th>Resultado</th><th>Auditoria do agente</th></tr></thead><tbody>${{entries.map(entry => `<tr><td>${{safe(new Date(Number(entry.created_at || 0) * 1000).toLocaleString('pt-BR'))}}</td><td>${{safe(entry.item_id)}}</td><td>${{entry.status === 'success' ? 'Confirmada' : 'Falhou'}}${{entry.idempotent ? ' (repetição segura)' : ''}}</td><td>${{safe(entry.agent_audit_id || 'N/D')}}</td></tr>`).join('')}}</tbody></table></div>`;
+    }}
+    async function loadPromotionAudit() {{
+      const target = document.getElementById('promotionAuditResult');
+      target.textContent = 'Carregando histórico...';
+      try {{
+        const data = await promotionApiRequest('/api/promotions/audit');
+        target.innerHTML = promotionAuditHtml(data.entries || []);
+      }} catch (error) {{ target.innerHTML = `<p class="promotion-error">${{safe(error.message)}}</p>`; }}
+    }}
     function activatePromotionPanels() {{
       document.querySelectorAll('[data-promo-config-open]').forEach(button => button.addEventListener('click', () => {{
         const dialog = button.parentElement.querySelector('dialog');
@@ -4166,6 +4179,7 @@ def render_dashboard(data):
         try {{
           const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
           const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:code, preview_token:preview.preview_token}});
+          loadPromotionAudit();
           const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
           promotionStateUpdate(code, {{loading:false, data, preview:null, result, error:''}});
         }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
@@ -4184,6 +4198,7 @@ def render_dashboard(data):
         try {{
           const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
           const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:code, preview_token:preview.preview_token}});
+          loadPromotionAudit();
           const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
           promotionStateUpdate(code, {{loading:false, data, preview:null, result, error:''}});
         }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
@@ -4213,6 +4228,7 @@ def render_dashboard(data):
         promotionStateUpdate(code, {{loading:true, error:'', result:null}});
         try {{
           const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:code, preview_token:state.preview.preview_token}});
+          loadPromotionAudit();
           const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
           promotionStateUpdate(code, {{loading:false, data, preview:null, result, error:''}});
         }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
@@ -4832,6 +4848,7 @@ def render_dashboard(data):
       renderPromotionGuide();
       target.querySelector('[data-promo-load-scope], [data-promo-load]')?.click();
     }});
+    document.getElementById('promotionAuditLoad').addEventListener('click', loadPromotionAudit);
     document.getElementById('contextSelect').addEventListener('change', event => {{
       currentContext = event.target.value;
       sortState = defaultTableSort();
