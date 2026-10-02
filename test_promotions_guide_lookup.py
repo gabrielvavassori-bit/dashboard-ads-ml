@@ -217,6 +217,17 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('Todas as campanhas', source)
         self.assertIn("const view = state.view || 'hybrid';", source)
 
+    def test_bulk_campaign_action_only_generates_individual_previews(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('data-promo-bulk-select=', source)
+        self.assertIn('data-promo-bulk-operation', source)
+        self.assertIn('data-promo-bulk-preview=', source)
+        self.assertIn('Somente prepara as prévias; nenhuma alteração é aplicada.', source)
+        handler = source[source.index("document.querySelectorAll('[data-promo-bulk-preview]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
+        self.assertIn("promotionApiRequest('/api/promotions/preview'", handler)
+        self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", handler)
+        self.assertIn('selectedListingKeys', handler)
+
 
 if __name__ == '__main__':
     unittest.main()

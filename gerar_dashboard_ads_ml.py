@@ -1754,6 +1754,10 @@ def render_dashboard(data):
     button.promotion-campaign-card[aria-pressed="true"] .muted {{ color:#e4e7ec; }}
     .promotion-hybrid-sku {{ margin-top:10px; padding-top:8px; border-top:1px solid var(--line); }}
     .promotion-hybrid-sku h6 {{ margin:0 0 6px; font-size:12px; }}
+    .promotion-bulk-toolbar {{ display:flex; flex-wrap:wrap; align-items:end; gap:8px; margin:10px 0; padding:9px; border:1px solid var(--line); border-radius:8px; background:var(--soft); }}
+    .promotion-bulk-toolbar label {{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; }}
+    .promotion-bulk-toolbar select {{ min-height:34px; }}
+    .promotion-bulk-select {{ width:18px; height:18px; margin:0 7px 0 0; vertical-align:middle; }}
     .promotion-scope-list h5 {{ margin:0 0 3px; font-size:14px; }}
     .promotion-listing-identity {{ display:flex; align-items:center; gap:8px; min-width:220px; }}
     .promotion-listing-identity .product-thumbnail {{ flex:0 0 42px; width:42px; height:42px; }}
@@ -3767,7 +3771,7 @@ def render_dashboard(data):
       const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{line('Custo do produto', 'Não informado')}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line('Saldo antes de custo e imposto', brl(receipt))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. A margem de contribuição real depende do custo e do imposto cadastrados; estes não foram assumidos como zero.</div>`;
       return `<span class="promotion-margin-value ${{receipt < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small></span>`;
     }}
-    function promotionTableRow(item, entry, allowAction, listing = null) {{
+    function promotionTableRow(item, entry, allowAction, listing = null, selection = null) {{
       const {{row, index, payout, bestPayout, bestDiscount, bestSubsidy}} = entry;
       const original = Number(row.original_price || item.currentPrice || item.lastPrice || 0);
       const price = promotionEffectivePrice(row, item);
@@ -3803,7 +3807,8 @@ def render_dashboard(data):
       const payoutBadge = bestPayout ? '<span class="promotion-rank">Maior recebimento estimado</span>' : '';
       const discountBadge = bestDiscount ? '<span class="promotion-rank">Maior desconto</span>' : '';
       const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
-      const identity = listing ? `<div class="promotion-listing-identity">${{productImage({{thumbnailUrl:listing.thumbnailUrl, title:listing.title}})}}<div><b>${{safe(listing.code)}}</b><small class="promotion-listing-name">${{safe(listing.title)}}</small>${{listing.sku ? `<small class="promotion-listing-sku">SKU ${{safe(listing.sku)}}</small>` : ''}}${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}</div></div>` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
+      const selectionControl = selection ? `<input class="promotion-bulk-select" type="checkbox" data-promo-bulk-select="${{safe(selection.key)}}" data-promo-scope-key="${{safe(selection.scopeKey)}}"${{selection.checked ? ' checked' : ''}} aria-label="Selecionar ${{safe(item.code)}} para prévia coletiva">` : '';
+      const identity = listing ? `${{selectionControl}}<div class="promotion-listing-identity">${{productImage({{thumbnailUrl:listing.thumbnailUrl, title:listing.title}})}}<div><b>${{safe(listing.code)}}</b><small class="promotion-listing-name">${{safe(listing.title)}}</small>${{listing.sku ? `<small class="promotion-listing-sku">SKU ${{safe(listing.sku)}}</small>` : ''}}${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}</div></div>` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
       return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b><small>Preço original</small></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{active ? 'Preço promocional ativo' : 'Preço da oportunidade retornado pela API'}}</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{promotionMarginCell(row, item)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
     function promotionTableHtml(item, rows, allowAction = false) {{
@@ -3866,6 +3871,7 @@ def render_dashboard(data):
       const selector = `<div class="promotion-scope-view" aria-label="Visualizar promoções por"><button type="button" data-promo-scope-view="campaign" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'campaign'}}">Campanha</button><button type="button" data-promo-scope-view="sku" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'sku'}}">SKU</button><button type="button" data-promo-scope-view="hybrid" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'hybrid'}}">Híbrida</button><button type="button" data-promo-scope-view="listing" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'listing'}}">Anúncio/variação</button></div>`;
       const campaignGroups = promotionCampaignGroups(state.results);
       const selectedCampaignKey = String(state.campaignKey || '');
+      const selectedListingKeys = new Set(state.selectedListingKeys || []);
       const campaignInventory = `<div class="promotion-option"><h5>Campanhas encontradas neste grupo</h5><div class="muted">Selecione uma campanha para ver somente os anúncios vinculados a ela.</div><div class="promotion-card-grid"><button type="button" class="promotion-campaign-card" data-promo-campaign-filter="" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{!selectedCampaignKey}}"><b>Todas as campanhas</b><span class="muted">${{num(campaignGroups.length)}} campanha(s)</span></button>${{campaignGroups.map(group => `<button type="button" class="promotion-campaign-card" data-promo-campaign-filter="${{safe(group.key)}}" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{selectedCampaignKey === group.key}}"><b>${{safe(group.name)}}</b><span class="muted">${{safe(promotionStatusLabel(group.row))}} · ${{num(group.listings.length)}} anúncio(s)</span><span class="muted">${{safe(promotionPeriod(group.row))}}</span></button>`).join('')}}</div></div>`;
       const results = state.results.map(result => {{
         const title = result.data?.item?.title || result.code;
@@ -3882,9 +3888,13 @@ def render_dashboard(data):
           const source = {{...item, code:listing.code, currentPrice:state.results.find(result => result.code === listing.code)?.data?.item?.price || item.currentPrice}};
           const individualState = promotionState.get(listing.code) || {{}};
           const entry = {{row:listing.row, index:listing.index, payout:promotionReceiptValue(listing.row), bestPayout:false, bestDiscount:false, bestSubsidy:false}};
-          return promotionTableRow(source, entry, true, listing);
+          const selectionKey = `${{group.key}}|${{listing.code}}|${{listing.index}}`;
+          return promotionTableRow(source, entry, true, listing, {{key:selectionKey, scopeKey:key, checked:selectedListingKeys.has(selectionKey)}});
         }}).join('');
-        return `<div class="promotion-option"><h5>${{safe(group.name)}}</h5><div class="muted">${{safe(promotionPeriod(group.row))}} · ${{num(listings.length)}} anúncio(s)</div><div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Anúncio/variação</th><th>Mercado Livre</th><th>Vendedor</th><th>Total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div></div>`;
+        const groupSelectionKeys = listings.map(listing => `${{group.key}}|${{listing.code}}|${{listing.index}}`);
+        const selectedCount = groupSelectionKeys.filter(selectionKey => selectedListingKeys.has(selectionKey)).length;
+        const bulk = `<div class="promotion-bulk-toolbar" data-promo-bulk-group="${{safe(group.key)}}"><label><input type="checkbox" data-promo-bulk-all="${{safe(group.key)}}" data-promo-scope-key="${{safe(key)}}"${{selectedCount === groupSelectionKeys.length && groupSelectionKeys.length ? ' checked' : ''}}> Selecionar os ${{num(groupSelectionKeys.length)}} anúncios</label><label>Ação<select data-promo-bulk-operation><option value="join">Participar</option><option value="update">Alterar</option><option value="remove">Sair</option></select></label><button type="button" data-promo-bulk-preview="${{safe(group.key)}}" data-promo-scope-key="${{safe(key)}}"${{selectedCount ? '' : ' disabled'}}>Gerar ${{num(selectedCount)}} prévia(s)</button><span class="muted">Somente prepara as prévias; nenhuma alteração é aplicada.</span></div>`;
+        return `<div class="promotion-option"><h5>${{safe(group.name)}}</h5><div class="muted">${{safe(promotionPeriod(group.row))}} · ${{num(listings.length)}} anúncio(s)</div>${{bulk}}<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Anúncio/variação</th><th>Mercado Livre</th><th>Vendedor</th><th>Total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div></div>`;
       }}).join('') || '<div class="detail-modal-empty">Nenhuma campanha retornada para os anúncios consultados.</div>';
       const bySku = promotionSkuGroups(state.results, sources).map(group => {{
         const skuResults = group.results.filter(result => result.data);
@@ -4017,6 +4027,50 @@ def render_dashboard(data):
       }}));
       document.querySelectorAll('[data-promo-campaign-filter]').forEach(button => button.addEventListener('click', () => {{
         promotionStateUpdate(button.dataset.promoScopeKey, {{campaignKey:button.dataset.promoCampaignFilter || '', view:'campaign'}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-select]').forEach(input => input.addEventListener('change', () => {{
+        const state = promotionState.get(input.dataset.promoScopeKey) || {{}};
+        const selected = new Set(state.selectedListingKeys || []);
+        if (input.checked) selected.add(input.dataset.promoBulkSelect); else selected.delete(input.dataset.promoBulkSelect);
+        promotionStateUpdate(input.dataset.promoScopeKey, {{selectedListingKeys:[...selected]}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-all]').forEach(input => input.addEventListener('change', () => {{
+        const key = input.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const selected = new Set(state.selectedListingKeys || []);
+        const group = promotionCampaignGroups(state.results || []).find(candidate => candidate.key === input.dataset.promoBulkAll);
+        (group?.listings || []).forEach(listing => {{
+          const selectionKey = `${{group.key}}|${{listing.code}}|${{listing.index}}`;
+          if (input.checked) selected.add(selectionKey); else selected.delete(selectionKey);
+        }});
+        promotionStateUpdate(key, {{selectedListingKeys:[...selected]}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-preview]').forEach(button => button.addEventListener('click', async () => {{
+        const key = button.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const group = promotionCampaignGroups(state.results || []).find(candidate => candidate.key === button.dataset.promoBulkPreview);
+        const selected = new Set(state.selectedListingKeys || []);
+        const operation = button.closest('[data-promo-bulk-group]')?.querySelector('[data-promo-bulk-operation]')?.value || 'join';
+        const jobs = (group?.listings || []).filter(listing => selected.has(`${{group.key}}|${{listing.code}}|${{listing.index}}`));
+        if (!jobs.length) return;
+        button.disabled = true;
+        const pending = [...jobs];
+        const worker = async () => {{
+          while (pending.length) {{
+            const listing = pending.shift();
+            const individualState = promotionState.get(listing.code) || {{}};
+            const row = (individualState.data?.promotions || [])[listing.index];
+            const active = ['started','active'].includes(String(row?.status || '').toLowerCase());
+            const allowed = row && ((operation === 'join' && row.can_join === true && !active) || (operation === 'update' && row.can_update === true && active) || (operation === 'remove' && row.can_leave === true && active));
+            if (!allowed) {{ promotionStateUpdate(listing.code, {{loading:false, preview:null, error:`A ação selecionada (${{operation === 'join' ? 'Participar' : operation === 'update' ? 'Alterar' : 'Sair'}}) não está disponível para este anúncio.`}}); continue; }}
+            const body = {{item_id:listing.code, action:operation, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
+            if (operation !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = promotionEffectivePrice(row);
+            promotionStateUpdate(listing.code, {{loading:true, error:'', preview:null, result:null}});
+            try {{ const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body); promotionStateUpdate(listing.code, {{loading:false, preview, error:''}}); }}
+            catch (error) {{ promotionStateUpdate(listing.code, {{loading:false, preview:null, error:error.message}}); }}
+          }}
+        }};
+        await Promise.all(Array.from({{length:Math.min(3, pending.length)}}, worker));
       }}));
       document.querySelectorAll('[data-promo-load]').forEach(button => button.addEventListener('click', async () => {{
         const code = button.dataset.promoLoad;
