@@ -1763,6 +1763,10 @@ def render_dashboard(data):
     .promotion-bulk-toolbar input[type="checkbox"], .promotion-bulk-select {{ appearance:auto; flex:0 0 18px; width:18px; min-width:18px; height:18px; margin:0; padding:0; vertical-align:middle; }}
     .promotion-listing-select {{ display:flex; align-items:center; gap:8px; min-width:0; }}
     .promotion-bulk-summary {{ margin:10px 0; padding:11px; border:1px solid #84adff; border-radius:9px; background:#f5f8ff; }}
+    .promotion-recommendation {{ margin:10px 0; padding:12px; border:1px solid #87c99a; border-radius:9px; background:#f2fbf5; }}
+    .promotion-recommendation-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }}
+    .promotion-recommendation-stats {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }}
+    .promotion-recommendation-stats span {{ padding:5px 8px; border:1px solid var(--line); border-radius:999px; background:#fff; font-size:11px; }}
     .promotion-bulk-summary-head {{ display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; margin-bottom:8px; }}
     .promotion-bulk-summary-list {{ display:grid; gap:6px; }}
     .promotion-bulk-summary-row {{ display:grid; grid-template-columns:minmax(150px,1.5fr) minmax(90px,.7fr) minmax(90px,.7fr) minmax(110px,.8fr) auto; align-items:center; gap:8px; padding:8px; border:1px solid var(--line); border-radius:7px; background:#fff; }}
@@ -3964,6 +3968,40 @@ def render_dashboard(data):
       }}).join('');
       return `<div class="promotion-bulk-summary"><div class="promotion-bulk-summary-head"><div><b>Resumo das prévias coletivas</b><div class="muted">${{safe(run.campaignName || 'Campanha')}} · cada confirmação continua individual.</div></div><div><b>${{ready}} pronta(s)</b> · ${{errors}} impedida(s) · ${{pending}} em processamento</div></div><div class="promotion-bulk-summary-list">${{rows}}</div></div>`;
     }}
+    function promotionMarginRecommendations(results, sources, target, campaignKey = '', query = '') {{
+      const sourceByCode = new Map(sources.map(source => [String(source.code || '').toUpperCase(), source]));
+      const groups = promotionCampaignGroups(results.filter(result => promotionMatchesScopeSearch(result, query)));
+      const candidates = [];
+      let blocked = 0;
+      let belowTarget = 0;
+      let unavailable = 0;
+      groups.filter(group => !campaignKey || group.key === campaignKey).forEach(group => group.listings.forEach(listing => {{
+        const source = sourceByCode.get(listing.code) || {{}};
+        const active = ['started','active'].includes(String(listing.row.status || '').toLowerCase());
+        if (active || listing.row.can_join !== true) {{ unavailable += 1; return; }}
+        const financial = promotionFinancialResult(listing.row, source);
+        if (!financial.available) {{ blocked += 1; return; }}
+        if (financial.margin < target) {{ belowTarget += 1; return; }}
+        candidates.push({{
+          code:listing.code, campaignKey:group.key, campaignName:group.name, index:listing.index,
+          selectionKey:`${{group.key}}|${{listing.code}}|${{listing.index}}`,
+          receipt:financial.receipt, profit:financial.profit, margin:financial.margin
+        }});
+      }}));
+      const bestByListing = new Map();
+      candidates.forEach(candidate => {{
+        const current = bestByListing.get(candidate.code);
+        if (!current || candidate.receipt > current.receipt || (candidate.receipt === current.receipt && candidate.profit > current.profit))
+          bestByListing.set(candidate.code, candidate);
+      }});
+      const recommended = [...bestByListing.values()].sort((a, b) => b.receipt - a.receipt || b.profit - a.profit || a.code.localeCompare(b.code));
+      return {{recommended, qualifying:candidates.length, blocked, belowTarget, unavailable}};
+    }}
+    function promotionRecommendationHtml(recommendation, scopeKey, target, campaignKey) {{
+      const count = recommendation.recommended.length;
+      const context = campaignKey ? 'na campanha selecionada' : 'entre as campanhas carregadas';
+      return `<div class="promotion-recommendation"><div class="promotion-recommendation-head"><div><b>Seleção consultiva por margem</b><div class="muted">Usa envio tradicional e escolhe, para cada MLB, a oportunidade com maior valor líquido recebido ${{context}}. Flex aparece apenas como alerta e não reprova a promoção.</div></div><button type="button" data-promo-recommend data-promo-scope-key="${{safe(scopeKey)}}"${{count ? '' : ' disabled'}}>Selecionar ${{num(count)}} recomendada(s)</button></div><div class="promotion-recommendation-stats"><span><b>${{num(count)}}</b> recomendada(s)</span><span><b>${{num(recommendation.qualifying)}}</b> acima de ${{target.toLocaleString('pt-BR')}}%</span><span><b>${{num(recommendation.belowTarget)}}</b> abaixo da meta</span><span><b>${{num(recommendation.blocked)}}</b> sem cálculo completo</span><span><b>${{num(recommendation.unavailable)}}</b> sem ação Participar</span></div><div class="muted" style="margin-top:8px">Este botão apenas marca as linhas. Ainda será necessário gerar as prévias e confirmar cada ação; nenhuma promoção é aplicada agora.</div></div>`;
+    }}
     function promotionScopePanelHtml(item) {{
       const sources = promotionScopeItems(item);
       const key = promotionScopeKey(item);
@@ -3980,6 +4018,8 @@ def render_dashboard(data):
       const selectedCampaignKey = String(state.campaignKey || '');
       const selectedListingKeys = new Set(state.selectedListingKeys || []);
       const bulkSummary = promotionBulkSummaryHtml(state);
+      const recommendation = promotionMarginRecommendations(state.results, sources, promotionMarginTarget, selectedCampaignKey, searchQuery);
+      const recommendationHtml = promotionRecommendationHtml(recommendation, key, promotionMarginTarget, selectedCampaignKey);
       const campaignInventory = `<div class="promotion-option"><h5>Campanhas encontradas neste grupo</h5><div class="muted">Selecione uma campanha para ver somente os anúncios vinculados a ela.</div><div class="promotion-card-grid"><button type="button" class="promotion-campaign-card" data-promo-campaign-filter="" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{!selectedCampaignKey}}"><b>Todas as campanhas</b><span class="muted">${{num(allCampaignGroups.length)}} campanha(s)</span></button>${{allCampaignGroups.map(group => `<button type="button" class="promotion-campaign-card" data-promo-campaign-filter="${{safe(group.key)}}" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{selectedCampaignKey === group.key}}"><b>${{safe(group.name)}}</b><span class="muted">${{safe(promotionStatusLabel(group.row))}} · ${{num(group.listings.length)}} anúncio(s) carregado(s)</span><span class="muted">${{safe(promotionPeriod(group.row))}}</span></button>`).join('')}}</div></div>`;
       const results = visibleResults.map(result => {{
         const title = result.data?.item?.title || result.code;
@@ -4052,7 +4092,7 @@ def render_dashboard(data):
       const pagination = item.detailScope === 'campaign'
         ? `<div class="promotion-bulk-toolbar"><span><b>${{num(loaded)}}</b> anúncio(s) carregado(s)${{total > loaded ? ` de ${{num(total)}}` : ''}}.</span>${{state.nextSearchAfter ? `<button type="button" data-promo-campaign-more data-promo-scope-key="${{safe(key)}}"${{state.loadingMore ? ' disabled' : ''}}>${{state.loadingMore ? 'Carregando...' : 'Carregar próximos anúncios'}}</button>` : ''}}</div>`
         : '';
-      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{campaignInventory}}${{selector}}${{pagination}}${{bulkSummary}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}${{previews}}</div></div>`;
+      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{campaignInventory}}${{selector}}${{pagination}}${{recommendationHtml}}${{bulkSummary}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}${{previews}}</div></div>`;
     }}
     function promotionPanelHtml(item) {{
       const code = String(item.code || '').toUpperCase();
@@ -4278,6 +4318,13 @@ def render_dashboard(data):
           if (input.checked) selected.add(selectionKey); else selected.delete(selectionKey);
         }});
         promotionStateUpdate(key, {{selectedListingKeys:[...selected]}});
+      }}));
+      document.querySelectorAll('[data-promo-recommend]').forEach(button => button.addEventListener('click', () => {{
+        const key = button.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const sources = promotionGuideItem ? promotionScopeItems(promotionGuideItem) : [];
+        const recommendation = promotionMarginRecommendations(state.results || [], sources, promotionMarginTarget, String(state.campaignKey || ''), String(state.scopeSearch || ''));
+        promotionStateUpdate(key, {{selectedListingKeys:recommendation.recommended.map(item => item.selectionKey)}});
       }}));
       document.querySelectorAll('[data-promo-bulk-preview]').forEach(button => button.addEventListener('click', async () => {{
         const key = button.dataset.promoScopeKey;

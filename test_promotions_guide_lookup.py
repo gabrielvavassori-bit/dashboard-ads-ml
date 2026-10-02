@@ -227,6 +227,57 @@ class PromotionsGuideLookupTests(unittest.TestCase):
                          [('MLB111', 0, 71.9, 5), ('MLB222', 0, 69.8, 10)])
         self.assertEqual(len(groups), 2)
 
+    def test_margin_recommendation_selects_best_receipt_per_listing_without_applying(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        functions = source[
+            source.index('    function promotionMarginRecommendations'):
+            source.index('    function promotionScopePanelHtml')
+        ].replace('{{', '{').replace('}}', '}')
+        stubs = """
+        function promotionDisplayName(row){return row.name;}
+        function promotionMatchesScopeSearch(){return true;}
+        function promotionCampaignGroups(results){
+          const groups=new Map();
+          results.forEach(result=>(result.data.promotions||[]).forEach((row,index)=>{
+            const key='DEAL:id:'+row.promotion_id;
+            if(!groups.has(key)) groups.set(key,{key,name:row.name,row,listings:[]});
+            groups.get(key).listings.push({code:result.code,row,index});
+          }));
+          return [...groups.values()];
+        }
+        function promotionFinancialResult(row){return row.financial || {available:false};}
+        """
+        results = [
+            {'code': 'MLB1', 'data': {'promotions': [
+                {'name': 'A', 'promotion_id': 'A', 'can_join': True, 'financial': {'available': True, 'margin': 18, 'receipt': 80, 'profit': 18}},
+                {'name': 'B', 'promotion_id': 'B', 'can_join': True, 'financial': {'available': True, 'margin': 20, 'receipt': 85, 'profit': 20}},
+            ]}},
+            {'code': 'MLB2', 'data': {'promotions': [
+                {'name': 'A', 'promotion_id': 'A', 'can_join': True, 'financial': {'available': True, 'margin': 12, 'receipt': 70, 'profit': 12}},
+                {'name': 'B', 'promotion_id': 'B', 'can_join': True, 'financial': {'available': False}},
+            ]}},
+            {'code': 'MLB3', 'data': {'promotions': [
+                {'name': 'A', 'promotion_id': 'A', 'can_join': False, 'financial': {'available': True, 'margin': 30, 'receipt': 90, 'profit': 30}},
+            ]}},
+        ]
+        script = stubs + functions + '\nconsole.log(JSON.stringify(promotionMarginRecommendations(' + json.dumps(results) + ',[{code:"MLB1"},{code:"MLB2"},{code:"MLB3"}],15)));'
+        result = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
+        self.assertEqual([row['selectionKey'] for row in result['recommended']], ['DEAL:id:B|MLB1|1'])
+        self.assertEqual(result['qualifying'], 2)
+        self.assertEqual(result['belowTarget'], 1)
+        self.assertEqual(result['blocked'], 1)
+        self.assertEqual(result['unavailable'], 1)
+
+    def test_margin_recommendation_ui_is_explicitly_non_mutating(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('Seleção consultiva por margem', source)
+        self.assertIn('Este botão apenas marca as linhas', source)
+        self.assertIn('nenhuma promoção é aplicada agora', source)
+        self.assertIn("data-promo-recommend", source)
+        handler = source[source.index("document.querySelectorAll('[data-promo-recommend]')"):source.index("document.querySelectorAll('[data-promo-bulk-preview]')")]
+        self.assertNotIn('/api/promotions/preview', handler)
+        self.assertNotIn('/api/promotions/confirm', handler)
+
     def test_sku_family_mlbu_and_mlb_route_to_individual_ads(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         function = source[
