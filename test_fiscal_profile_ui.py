@@ -11,17 +11,20 @@ class FiscalProfileUiTests(unittest.TestCase):
 
     def test_account_fiscal_form_exposes_required_scenarios(self):
         for marker in (
-            'data-view="finance"', 'id="view-finance"', 'id="financeFiscalMode"',
-            'value="detailed"', 'id="financeTaxRegime"', 'value="real"',
-            'value="presumed"', 'id="skuFiscalIcmsInput"', 'id="skuFiscalIcmsOutput"',
+            'data-view="finance"', 'id="view-finance"', 'id="skuFiscalTaxRegime"',
+            'value="simple"', 'value="real"', 'value="presumed"',
+            'id="skuFiscalSimpleTax"', 'id="skuFiscalFlexCost"',
+            'id="skuFiscalIcmsInput"', 'id="skuFiscalIcmsOutput"',
             'id="skuFiscalDifal"', 'id="skuFiscalStDecision"', 'id="skuFiscalEvidence"',
             'id="financeSkuRows"', 'data-finance-edit=', 'id="financeSkuModal"',
             'id="skuFiscalOrigin"', 'id="skuFiscalOriginState"',
             'id="skuFiscalCalculationMode"', 'id="skuFiscalDestinationState"',
             'id="skuFiscalSaleType"', 'id="skuFiscalFreightCredit"',
-            'id="skuFiscalFreightIcms"',
+            'id="skuFiscalFreightIcms"', 'id="financeSelectAll"',
+            'id="financeBulkEdit"', 'data-finance-select=',
         ):
             self.assertIn(marker, self.source)
+        self.assertNotIn('Regra geral da conta', self.source)
 
     def test_fiscal_profile_is_in_remote_payload_and_local_backup(self):
         self.assertIn("fetch('/api/finance-profile'", self.source)
@@ -45,11 +48,26 @@ class FiscalProfileUiTests(unittest.TestCase):
         self.assertLess(self.source.index('<nav class="page-nav"'), self.source.index("{f'<section class=\"online-notice\""))
 
     def test_detailed_tax_data_is_saved_per_sku(self):
-        self.assertIn('fiscalBySku:{{...(financeProfile.fiscalBySku || {{}}), [sku]:profile}}', self.source)
+        self.assertIn('skus.forEach(sku =>', self.source)
+        self.assertIn('fiscalBySku[sku] = {{...profile}}', self.source)
+        self.assertIn('taxRegime:', self.source)
+        self.assertIn('simpleTaxRate:', self.source)
+        self.assertIn('flexCarrierCost:', self.source)
         self.assertIn('originState:', self.source)
         self.assertIn('icmsInputRate:', self.source)
         self.assertIn('destinationState:', self.source)
         self.assertIn('freightCreditEnabled:', self.source)
+
+    def test_search_includes_family_and_saved_state_does_not_require_evidence(self):
+        self.assertIn('item.familyId, item.familyName', self.source)
+        self.assertIn("const saved = value !== '' || Object.keys(profile).length > 0", self.source)
+        self.assertNotIn("const hasDetailedProfile = ['user_informed','document_confirmed']", self.source)
+
+    def test_promotions_use_the_tax_regime_saved_on_each_sku(self):
+        self.assertIn("const legacyRegime = ['simple','presumed','real'].includes(financeProfile.taxRegime)", self.source)
+        self.assertIn("profile.taxRegime) ? profile.taxRegime : legacyRegime", self.source)
+        self.assertIn("if (regime === 'simple')", self.source)
+        self.assertIn("const real = regime === 'real'", self.source)
 
     def test_selected_page_survives_reload(self):
         self.assertIn("localStorage.setItem('dashboardAdsActiveView'", self.source)

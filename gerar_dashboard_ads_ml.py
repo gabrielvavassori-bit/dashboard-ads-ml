@@ -2059,22 +2059,12 @@ def render_dashboard(data):
           <h2>Custos e impostos por SKU</h2>
           <p class="note">Cadastre cada produto individualmente. Custo, origem e parâmetros fiscais por SKU ficam na base compartilhada com a Inteligência de Vendas e alimentam a margem líquida estimada das promoções.</p>
         </div>
-        <div class="finance-config">
-          <h3>Regra geral da conta</h3>
-          <p class="note">Define somente o regime de trabalho. No modo detalhado, as características tributárias são informadas individualmente em cada SKU.</p>
-          <div class="finance-grid">
-            <label class="finance-field">Modo de cálculo<select id="financeFiscalMode"><option value="simple">Percentual simples</option><option value="detailed">Fiscal detalhado por SKU</option></select></label>
-            <label class="finance-field finance-detailed">Regime<select id="financeTaxRegime"><option value="real">Lucro Real</option><option value="presumed">Lucro Presumido</option></select></label>
-            <label class="finance-field finance-simple">Imposto simples (%)<input id="financeSimpleTax" type="number" min="0" step="0.01"></label>
-            <label class="finance-field">Flex por pedido (R$)<input id="financeFlexCost" type="number" min="0" step="0.01"></label>
-          </div>
-        </div>
         <div>
           <div class="finance-sku-toolbar">
-            <label class="finance-field">Buscar SKU, anúncio ou título<input class="finance-search" id="financeSkuSearch" placeholder="Ex.: SCH-447 ou MLB..."></label>
-            <button class="primary-action" id="financeSave" type="button">Salvar regra geral</button>
+            <label class="finance-field">Buscar família, SKU, anúncio ou título<input class="finance-search" id="financeSkuSearch" placeholder="Ex.: família, SCH-447 ou MLB..."></label>
+            <button class="primary-action" id="financeBulkEdit" type="button" disabled>Editar selecionados</button>
           </div>
-          <div class="finance-table-wrap"><table class="finance-table"><thead><tr><th>SKU</th><th>Anúncio</th><th>Título</th><th class="num">Preço atual</th><th class="num">Custo</th><th>Fiscal do produto</th><th>Ação</th></tr></thead><tbody id="financeSkuRows"></tbody></table></div>
+          <div class="finance-table-wrap"><table class="finance-table"><thead><tr><th><input id="financeSelectAll" type="checkbox" aria-label="Selecionar todos os produtos exibidos"></th><th>SKU</th><th>Anúncio</th><th>Família</th><th>Título</th><th class="num">Preço atual</th><th class="num">Custo</th><th>Fiscal do produto</th><th>Ação</th></tr></thead><tbody id="financeSkuRows"></tbody></table></div>
           <div class="finance-status" id="financeStatus" aria-live="polite"></div>
         </div>
       </section>
@@ -2084,14 +2074,17 @@ def render_dashboard(data):
     <section class="finance-modal-shell" role="dialog" aria-modal="true" aria-labelledby="financeSkuModalTitle">
       <header class="finance-modal-head"><div><h2 id="financeSkuModalTitle">Editar produto</h2><div class="muted" id="financeSkuModalSubtitle"></div></div><button type="button" id="financeSkuModalClose" aria-label="Fechar">×</button></header>
       <div class="finance-modal-body"><div class="finance-grid">
+        <label class="finance-field">Regime tributário<select id="skuFiscalTaxRegime"><option value="simple">Simples Nacional</option><option value="presumed">Lucro Presumido</option><option value="real">Lucro Real</option></select></label>
         <label class="finance-field">Custo unitário (R$)<input id="skuFiscalCost" type="number" min="0" step="0.01"></label>
-        <label class="finance-field">Origem do produto<select id="skuFiscalOrigin"><option value="unknown">Não informado</option><option value="national">Nacional</option><option value="imported_direct">Importado diretamente</option><option value="imported_domestic">Importado adquirido no Brasil</option></select></label>
-        <label class="finance-field">UF de origem<select id="skuFiscalOriginState"><option value="">Não informado</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select></label>
-        <label class="finance-field">Custo informado<select id="skuFiscalCostBasis"><option value="gross">Bruto, antes dos créditos</option><option value="net">Líquido, créditos já descontados</option></select></label>
+        <label class="finance-field sku-simple">Imposto do Simples (%)<input id="skuFiscalSimpleTax" type="number" min="0" step="0.01"></label>
+        <label class="finance-field">Custo Flex por pedido (R$)<input id="skuFiscalFlexCost" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-detailed">Origem do produto<select id="skuFiscalOrigin"><option value="unknown">Não informado</option><option value="national">Nacional</option><option value="imported_direct">Importado diretamente</option><option value="imported_domestic">Importado adquirido no Brasil</option></select></label>
+        <label class="finance-field sku-detailed">UF de origem<select id="skuFiscalOriginState"><option value="">Não informado</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select></label>
+        <label class="finance-field sku-detailed">Custo informado<select id="skuFiscalCostBasis"><option value="gross">Bruto, antes dos créditos</option><option value="net">Líquido, créditos já descontados</option></select></label>
         <label class="finance-field">Origem dos parâmetros<select id="skuFiscalEvidence"><option value="pending">Pendente de validação</option><option value="user_informed">Informado pelo usuário</option><option value="document_confirmed">Confirmado por documento</option></select></label>
-        <label class="finance-field">Preenchimento fiscal<select id="skuFiscalCalculationMode"><option value="automatic">Automático por origem e destino</option><option value="manual">Manual para regra diferenciada</option></select></label>
-        <label class="finance-field">UF de destino<select id="skuFiscalDestinationState"><option value="">Não informado</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select></label>
-        <label class="finance-field">Tipo de venda<select id="skuFiscalSaleType"><option value="b2c">B2C - consumidor final</option><option value="b2b">B2B - empresa contribuinte</option></select></label>
+        <label class="finance-field sku-detailed">Preenchimento fiscal<select id="skuFiscalCalculationMode"><option value="automatic">Automático por origem e destino</option><option value="manual">Manual para regra diferenciada</option></select></label>
+        <label class="finance-field sku-detailed">UF de destino<select id="skuFiscalDestinationState"><option value="">Não informado</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select></label>
+        <label class="finance-field sku-detailed">Tipo de venda<select id="skuFiscalSaleType"><option value="b2c">B2C - consumidor final</option><option value="b2b">B2B - empresa contribuinte</option></select></label>
         <label class="finance-field sku-real">IPI entrada (%)<input id="skuFiscalIpiInput" type="number" min="0" step="0.01"></label>
         <label class="finance-field sku-real">ICMS entrada (%)<input id="skuFiscalIcmsInput" type="number" min="0" step="0.01"></label>
         <label class="finance-field sku-real">PIS/COFINS entrada (%)<input id="skuFiscalPisInput" type="number" min="0" step="0.01"></label>
@@ -2099,11 +2092,11 @@ def render_dashboard(data):
         <label class="finance-field sku-real">ICMS saída (%)<input id="skuFiscalIcmsOutput" type="number" min="0" step="0.01"></label>
         <label class="finance-field sku-real">PIS/COFINS saída (%)<input id="skuFiscalPisOutput" type="number" min="0" step="0.01"></label>
         <label class="finance-field sku-presumed">Tributos efetivos Presumido (%)<input id="skuFiscalPresumedRate" type="number" min="0" step="0.01"></label>
-        <label class="finance-field">DIFAL<select id="skuFiscalDifal"><option value="pending">Pendente de validação</option><option value="enabled">Aplicar</option><option value="disabled">Não aplicar - cenário validado</option></select></label>
-        <label class="finance-field">ICMS interno destino (%)<input id="skuFiscalDestinationIcms" type="number" min="0" step="0.01"></label>
-        <label class="finance-field">Crédito fiscal sobre frete<select id="skuFiscalFreightCredit"><option value="disabled">Não aproveitar</option><option value="enabled">Aproveitar no Lucro Real</option></select></label>
-        <label class="finance-field">ICMS crédito do frete (%)<input id="skuFiscalFreightIcms" type="number" min="0" step="0.01"></label>
-        <label class="finance-field">ICMS-ST / antecipação<select id="skuFiscalStDecision"><option value="unknown">Desconhecido</option><option value="included_in_cost">Incluído no custo</option><option value="out_of_scope">Fora do escopo</option></select></label>
+        <label class="finance-field sku-detailed">DIFAL<select id="skuFiscalDifal"><option value="pending">Pendente de validação</option><option value="enabled">Aplicar</option><option value="disabled">Não aplicar - cenário validado</option></select></label>
+        <label class="finance-field sku-detailed">ICMS interno destino (%)<input id="skuFiscalDestinationIcms" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">Crédito fiscal sobre frete<select id="skuFiscalFreightCredit"><option value="disabled">Não aproveitar</option><option value="enabled">Aproveitar no Lucro Real</option></select></label>
+        <label class="finance-field sku-real">ICMS crédito do frete (%)<input id="skuFiscalFreightIcms" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-detailed">ICMS-ST / antecipação<select id="skuFiscalStDecision"><option value="unknown">Desconhecido</option><option value="included_in_cost">Incluído no custo</option><option value="out_of_scope">Fora do escopo</option></select></label>
       </div><p class="note">Campos sem comprovação permanecem não informados ou pendentes; zero não será tratado como alíquota comprovada nesta etapa.</p></div>
       <footer class="finance-modal-actions"><button type="button" class="secondary-action" id="financeSkuModalCancel">Cancelar</button><button type="button" class="primary-action" id="financeSkuModalSave">Salvar produto</button></footer>
     </section>
@@ -2181,6 +2174,8 @@ def render_dashboard(data):
     }};
     let financeLoaded = false;
     let activeFinanceSku = '';
+    let activeFinanceSkus = [];
+    const selectedFinanceSkus = new Set();
     let sortState = {{ key:'revenue', direction:1 }};
     let abcMode = 'hybrid';
     let abcMetric = 'totalRevenue';
@@ -2228,35 +2223,42 @@ def render_dashboard(data):
       node.textContent = message;
       node.className = `finance-status ${{kind}}`;
     }}
-    function syncFinanceVisibility() {{
-      const detailed = financeField('financeFiscalMode')?.value === 'detailed';
-      const real = financeField('financeTaxRegime')?.value === 'real';
-      document.querySelectorAll('.finance-detailed').forEach(node => node.hidden = !detailed);
-      document.querySelectorAll('.finance-simple').forEach(node => node.hidden = detailed);
-      document.querySelectorAll('.finance-real').forEach(node => node.hidden = !detailed || !real);
-      document.querySelectorAll('.finance-presumed').forEach(node => node.hidden = !detailed || real);
-    }}
     function fillFinanceForm() {{
-      financeField('financeFiscalMode').value = financeProfile.fiscalMode || 'simple';
-      financeField('financeTaxRegime').value = financeProfile.taxRegime === 'presumed' ? 'presumed' : 'real';
-      financeField('financeSimpleTax').value = Number(financeProfile.profitTaxRate || 0);
-      financeField('financeFlexCost').value = Number(financeProfile.flexCarrierCost || 0);
-      syncFinanceVisibility();
       renderFinanceRows();
+    }}
+    function visibleFinanceItems() {{
+      const query = String(financeField('financeSkuSearch')?.value || '').trim().toLocaleLowerCase('pt-BR');
+      return financeSkuItems().filter(item => !query || [item.sku, item.code, item.title, item.familyId, item.familyName]
+        .some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(query)));
+    }}
+    function syncFinanceBulkControls(rows = visibleFinanceItems()) {{
+      const visibleSkus = rows.map(item => String(item.sku || '').trim()).filter(Boolean);
+      const selectedVisible = visibleSkus.filter(sku => selectedFinanceSkus.has(sku));
+      const selectAll = financeField('financeSelectAll');
+      if (selectAll) {{
+        selectAll.checked = visibleSkus.length > 0 && selectedVisible.length === visibleSkus.length;
+        selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleSkus.length;
+      }}
+      const bulk = financeField('financeBulkEdit');
+      if (bulk) {{
+        bulk.disabled = selectedFinanceSkus.size === 0;
+        bulk.textContent = selectedFinanceSkus.size ? `Editar selecionados (${{selectedFinanceSkus.size}})` : 'Editar selecionados';
+      }}
     }}
     function renderFinanceRows() {{
       const target = financeField('financeSkuRows');
       if (!target) return;
-      const query = String(financeField('financeSkuSearch')?.value || '').trim().toLocaleLowerCase('pt-BR');
-      const rows = financeSkuItems().filter(item => !query || [item.sku, item.code, item.title].some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(query)));
+      const rows = visibleFinanceItems();
       target.innerHTML = rows.map(item => {{
         const sku = String(item.sku || '').trim();
         const value = Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku) ? financeProfile.costBySku[sku] : '';
         const profile = (financeProfile.fiscalBySku || {{}})[sku] || {{}};
-        const configured = profile.evidenceStatus === 'document_confirmed' || profile.evidenceStatus === 'user_informed';
-        const status = configured ? 'Configurado' : 'Pendente';
-        return `<tr><td><b>${{safe(sku)}}</b></td><td>${{safe(item.code || '—')}}</td><td>${{safe(item.title || '—')}}</td><td class="num">${{brl(Number(item.currentPrice || item.lastPrice || 0))}}</td><td class="num">${{value === '' ? 'Não informado' : brl(Number(value))}}</td><td><span class="finance-profile-badge ${{configured ? 'complete' : ''}}">${{status}}</span></td><td><button type="button" class="secondary-action" data-finance-edit="${{safe(sku)}}">Editar</button></td></tr>`;
-      }}).join('') || '<tr><td colspan="7">Nenhum SKU encontrado nesta análise.</td></tr>';
+        const saved = value !== '' || Object.keys(profile).length > 0;
+        const evidencePending = saved && !['user_informed','document_confirmed'].includes(String(profile.evidenceStatus || ''));
+        const status = saved ? (evidencePending ? 'Salvo · validação pendente' : 'Salvo') : 'Não cadastrado';
+        return `<tr><td><input type="checkbox" data-finance-select="${{safe(sku)}}" aria-label="Selecionar ${{safe(sku)}}" ${{selectedFinanceSkus.has(sku) ? 'checked' : ''}}></td><td><b>${{safe(sku)}}</b></td><td>${{safe(item.code || '—')}}</td><td>${{safe(item.familyName || item.familyId || '—')}}</td><td>${{safe(item.title || '—')}}</td><td class="num">${{brl(Number(item.currentPrice || item.lastPrice || 0))}}</td><td class="num">${{value === '' ? 'Não informado' : brl(Number(value))}}</td><td><span class="finance-profile-badge ${{saved ? 'complete' : ''}}">${{status}}</span></td><td><button type="button" class="secondary-action" data-finance-edit="${{safe(sku)}}">Editar</button></td></tr>`;
+      }}).join('') || '<tr><td colspan="9">Nenhum SKU encontrado nesta análise.</td></tr>';
+      syncFinanceBulkControls(rows);
     }}
     const skuFiscalOptionalNumber = id => {{
       const raw = String(financeField(id)?.value || '').trim().replace(',', '.');
@@ -2265,9 +2267,13 @@ def render_dashboard(data):
       return Number.isFinite(value) && value >= 0 ? value : null;
     }};
     function syncSkuFiscalVisibility() {{
-      const real = financeProfile.taxRegime !== 'presumed';
+      const regime = financeField('skuFiscalTaxRegime')?.value || 'simple';
+      const real = regime === 'real';
+      const presumed = regime === 'presumed';
+      document.querySelectorAll('.sku-simple').forEach(node => node.hidden = regime !== 'simple');
+      document.querySelectorAll('.sku-detailed').forEach(node => node.hidden = regime === 'simple');
       document.querySelectorAll('.sku-real').forEach(node => node.hidden = !real);
-      document.querySelectorAll('.sku-presumed').forEach(node => node.hidden = real);
+      document.querySelectorAll('.sku-presumed').forEach(node => node.hidden = !presumed);
     }}
     function setSkuFiscalNumber(id, value) {{ financeField(id).value = value == null ? '' : value; }}
     function financeInterstateRate(origin, destination, productOrigin) {{
@@ -2286,19 +2292,29 @@ def render_dashboard(data):
       if (automatic) {{
         setSkuFiscalNumber('skuFiscalIcmsOutput', output);
         setSkuFiscalNumber('skuFiscalDestinationIcms', destinationRate);
-        setSkuFiscalNumber('skuFiscalPisOutput', financeProfile.taxRegime === 'presumed' ? 3.65 : 9.25);
+        const regime = financeField('skuFiscalTaxRegime')?.value || 'simple';
+        setSkuFiscalNumber('skuFiscalPisOutput', regime === 'presumed' ? 3.65 : regime === 'real' ? 9.25 : null);
       }}
       ['skuFiscalIcmsOutput','skuFiscalDestinationIcms','skuFiscalPisOutput'].forEach(id => {{
         const node = financeField(id); if (node) node.readOnly = automatic;
       }});
     }}
-    function openFinanceSkuModal(sku) {{
+    function openFinanceSkuModal(skuOrSkus) {{
+      const skus = Array.isArray(skuOrSkus) ? skuOrSkus.filter(Boolean) : [skuOrSkus].filter(Boolean);
+      if (!skus.length) return;
+      const sku = skus[0];
       const item = financeSkuItems().find(row => String(row.sku || '').trim() === sku) || {{sku}};
       const profile = (financeProfile.fiscalBySku || {{}})[sku] || {{}};
       activeFinanceSku = sku;
-      financeField('financeSkuModalTitle').textContent = `Editar ${{sku}}`;
-      financeField('financeSkuModalSubtitle').textContent = `${{item.code || 'Sem MLB'}} · ${{item.title || 'Produto sem título'}}`;
+      activeFinanceSkus = skus;
+      const bulk = skus.length > 1;
+      financeField('financeSkuModalTitle').textContent = bulk ? `Editar ${{skus.length}} produtos` : `Editar ${{sku}}`;
+      financeField('financeSkuModalSubtitle').textContent = bulk ? 'Os valores salvos serão aplicados somente aos SKUs selecionados.' : `${{item.code || 'Sem MLB'}} · ${{item.title || 'Produto sem título'}}`;
+      financeField('financeSkuModalSave').textContent = bulk ? `Salvar em ${{skus.length}} produtos` : 'Salvar produto';
+      financeField('skuFiscalTaxRegime').value = ['real','presumed','simple'].includes(profile.taxRegime) ? profile.taxRegime : 'simple';
       setSkuFiscalNumber('skuFiscalCost', Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku) ? financeProfile.costBySku[sku] : null);
+      setSkuFiscalNumber('skuFiscalSimpleTax', profile.simpleTaxRate);
+      setSkuFiscalNumber('skuFiscalFlexCost', profile.flexCarrierCost);
       financeField('skuFiscalOrigin').value = profile.productOrigin || 'unknown';
       financeField('skuFiscalOriginState').value = profile.originState || '';
       financeField('skuFiscalCostBasis').value = profile.costBasis === 'net' ? 'net' : 'gross';
@@ -2325,6 +2341,7 @@ def render_dashboard(data):
     }}
     function closeFinanceSkuModal() {{
       activeFinanceSku = '';
+      activeFinanceSkus = [];
       financeField('financeSkuModal').classList.remove('open');
       financeField('financeSkuModal').setAttribute('aria-hidden', 'true');
     }}
@@ -2338,13 +2355,15 @@ def render_dashboard(data):
       financeSetStatus(successMessage, 'success');
     }}
     async function saveFinanceSku() {{
-      if (!activeFinanceSku) return;
-      const sku = activeFinanceSku;
+      const skus = activeFinanceSkus.length ? [...activeFinanceSkus] : activeFinanceSku ? [activeFinanceSku] : [];
+      if (!skus.length) return;
       const cost = skuFiscalOptionalNumber('skuFiscalCost');
       const costs = {{...(financeProfile.costBySku || {{}})}};
-      if (cost == null) delete costs[sku]; else costs[sku] = cost;
       const difalStatus = financeField('skuFiscalDifal').value;
       const profile = {{
+        taxRegime:financeField('skuFiscalTaxRegime').value,
+        simpleTaxRate:skuFiscalOptionalNumber('skuFiscalSimpleTax'),
+        flexCarrierCost:skuFiscalOptionalNumber('skuFiscalFlexCost'),
         productOrigin:financeField('skuFiscalOrigin').value, originState:financeField('skuFiscalOriginState').value,
         costBasis:financeField('skuFiscalCostBasis').value, evidenceStatus:financeField('skuFiscalEvidence').value,
         calculationMode:financeField('skuFiscalCalculationMode').value, destinationState:financeField('skuFiscalDestinationState').value,
@@ -2356,9 +2375,15 @@ def render_dashboard(data):
         freightCreditEnabled:financeField('skuFiscalFreightCredit').value === 'enabled',
         freightIcmsCreditRate:skuFiscalOptionalNumber('skuFiscalFreightIcms'), icmsStDecision:financeField('skuFiscalStDecision').value
       }};
-      financeProfile = {{...financeProfile, costBySku:costs, fiscalBySku:{{...(financeProfile.fiscalBySku || {{}}), [sku]:profile}}}};
+      const fiscalBySku = {{...(financeProfile.fiscalBySku || {{}})}};
+      skus.forEach(sku => {{ if (cost == null) delete costs[sku]; else costs[sku] = cost; fiscalBySku[sku] = {{...profile}}; }});
+      financeProfile = {{...financeProfile, costBySku:costs, fiscalBySku}};
       financeField('financeSkuModalSave').disabled = true;
-      try {{ await persistFinanceProfile(`Produto ${{sku}} salvo.`); closeFinanceSkuModal(); renderFinanceRows(); }}
+      try {{
+        await persistFinanceProfile(skus.length > 1 ? `${{skus.length}} produtos salvos.` : `Produto ${{skus[0]}} salvo.`);
+        skus.forEach(sku => selectedFinanceSkus.delete(sku));
+        closeFinanceSkuModal(); renderFinanceRows();
+      }}
       catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
       finally {{ financeField('financeSkuModalSave').disabled = false; }}
     }}
@@ -2375,21 +2400,6 @@ def render_dashboard(data):
         fillFinanceForm();
         financeSetStatus('Cadastro carregado.');
       }} catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
-    }}
-    async function saveFinanceProfile() {{
-      financeProfile = {{
-        ...financeProfile,
-        profitTaxRate: financeNumber('financeSimpleTax'),
-        flexCarrierCost: financeNumber('financeFlexCost'),
-        fiscalMode: financeField('financeFiscalMode').value,
-        taxRegime: financeField('financeTaxRegime').value
-      }};
-      financeSetStatus('Salvando...');
-      financeField('financeSave').disabled = true;
-      try {{
-        await persistFinanceProfile('Regra geral da conta salva.');
-      }} catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
-      finally {{ financeField('financeSave').disabled = false; }}
     }}
     function actionClass(action) {{ return (action || '').split(' ')[0].replace('/', ''); }}
     function abcClass(value) {{ return `abc abc${{value || 'C'}}`; }}
@@ -3691,17 +3701,22 @@ def render_dashboard(data):
       const profile = (financeProfile.fiscalBySku || {{}})[sku];
       if (!promotionQuoteMatchesPrice(row, promotionEffectivePrice(row, item)) || ![price,receipt,fee,freight,rebate,cost].every(Number.isFinite) || !profile)
         return {{available:false}};
-      const hasDetailedProfile = ['user_informed','document_confirmed'].includes(String(profile.evidenceStatus || ''));
-      if (!hasDetailedProfile && financeProfile.fiscalMode !== 'detailed') {{
-        const rate = Number(financeProfile.profitTaxRate || 0) / 100;
+      const legacyRegime = ['simple','presumed','real'].includes(financeProfile.taxRegime) ? financeProfile.taxRegime : null;
+      const regime = ['simple','presumed','real'].includes(profile.taxRegime) ? profile.taxRegime : legacyRegime;
+      const flexCarrierCost = Number(profile.flexCarrierCost ?? financeProfile.flexCarrierCost ?? 0);
+      if (!regime || !Number.isFinite(flexCarrierCost)) return {{available:false}};
+      if (regime === 'simple') {{
+        const simpleTaxRate = Number(profile.simpleTaxRate ?? financeProfile.profitTaxRate);
+        if (!Number.isFinite(simpleTaxRate)) return {{available:false}};
+        const rate = simpleTaxRate / 100;
         const tax = price * rate;
-        const profit = receipt - cost - tax - Number(financeProfile.flexCarrierCost || 0);
+        const profit = receipt - cost - tax - flexCarrierCost;
         return {{available:true, price, receipt, cost, tax, difal:0, profit, margin:price > 0 ? profit / price * 100 : 0,
           credits:0, debits:tax, fee, freight, rebate, mode:'simple'}};
       }}
       const rate = key => {{ const value = Number(profile[key]); return Number.isFinite(value) ? value / 100 : 0; }};
       const grossCost = profile.costBasis !== 'net';
-      const real = financeProfile.taxRegime !== 'presumed';
+      const real = regime === 'real';
       const inputIpi = grossCost ? cost * rate('ipiInputRate') : 0;
       const inputIcmsProduct = grossCost ? cost * rate('icmsInputRate') : 0;
       const inputPisCost = real && grossCost ? cost * rate('pisCofinsInputRate') : 0;
@@ -3713,14 +3728,14 @@ def render_dashboard(data):
       const outputIpi = price * rate('ipiOutputRate');
       const outputIcms = price * rate('icmsOutputRate');
       const outputPisBase = Math.max(0, price - outputIpi - outputIcms);
-      const outputPis = (real || financeProfile.taxRegime === 'presumed') ? outputPisBase * rate('pisCofinsOutputRate') : 0;
-      const presumedTax = financeProfile.taxRegime === 'presumed' ? price * rate('presumedTaxRate') : 0;
+      const outputPis = outputPisBase * rate('pisCofinsOutputRate');
+      const presumedTax = regime === 'presumed' ? price * rate('presumedTaxRate') : 0;
       const netIpi = Math.max(0, outputIpi - inputIpi);
       const netIcms = Math.max(0, outputIcms - inputIcmsProduct - inputIcmsFreight);
       const netPis = Math.max(0, outputPis - inputPisCost - inputPisCommission - inputPisFreight);
       const tax = netIpi + netIcms + netPis + presumedTax;
       const difal = promotionDifalValue(price, profile, Number(profile.icmsOutputRate));
-      const profit = receipt - cost - tax - difal - Number(financeProfile.flexCarrierCost || 0);
+      const profit = receipt - cost - tax - difal - flexCarrierCost;
       return {{available:true, price, receipt, cost, tax, difal, profit, margin:price > 0 ? profit / price * 100 : 0,
         credits:inputIpi + inputIcmsProduct + inputIcmsFreight + inputPisCost + inputPisCommission + inputPisFreight,
         debits:outputIpi + outputIcms + outputPis + presumedTax, fee, freight, rebate, mode:'detailed'}};
@@ -4659,9 +4674,21 @@ def render_dashboard(data):
       }});
     }});
     document.getElementById('financeSkuSearch').addEventListener('input', renderFinanceRows);
-    document.getElementById('financeFiscalMode').addEventListener('change', syncFinanceVisibility);
-    document.getElementById('financeTaxRegime').addEventListener('change', syncFinanceVisibility);
-    document.getElementById('financeSave').addEventListener('click', saveFinanceProfile);
+    document.getElementById('financeSelectAll').addEventListener('change', event => {{
+      visibleFinanceItems().forEach(item => {{
+        const sku = String(item.sku || '').trim();
+        if (!sku) return;
+        if (event.target.checked) selectedFinanceSkus.add(sku); else selectedFinanceSkus.delete(sku);
+      }});
+      renderFinanceRows();
+    }});
+    document.getElementById('financeBulkEdit').addEventListener('click', () => openFinanceSkuModal([...selectedFinanceSkus].sort((a, b) => a.localeCompare(b, 'pt-BR'))));
+    document.getElementById('financeSkuRows').addEventListener('change', event => {{
+      const checkbox = event.target.closest('[data-finance-select]');
+      if (!checkbox) return;
+      if (checkbox.checked) selectedFinanceSkus.add(checkbox.dataset.financeSelect); else selectedFinanceSkus.delete(checkbox.dataset.financeSelect);
+      syncFinanceBulkControls();
+    }});
     document.getElementById('financeSkuRows').addEventListener('click', event => {{
       const button = event.target.closest('[data-finance-edit]');
       if (button) openFinanceSkuModal(button.dataset.financeEdit);
@@ -4670,6 +4697,7 @@ def render_dashboard(data):
     document.getElementById('financeSkuModalCancel').addEventListener('click', closeFinanceSkuModal);
     document.getElementById('financeSkuModalSave').addEventListener('click', saveFinanceSku);
     document.getElementById('financeSkuModal').addEventListener('click', event => {{ if (event.target.id === 'financeSkuModal') closeFinanceSkuModal(); }});
+    document.getElementById('skuFiscalTaxRegime').addEventListener('change', () => {{ syncSkuFiscalVisibility(); syncSkuFiscalAutomaticFields(); }});
     ['skuFiscalCalculationMode','skuFiscalOrigin','skuFiscalOriginState','skuFiscalDestinationState'].forEach(id => {{
       document.getElementById(id).addEventListener('change', syncSkuFiscalAutomaticFields);
     }});
