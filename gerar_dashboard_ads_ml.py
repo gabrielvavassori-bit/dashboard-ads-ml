@@ -1822,6 +1822,7 @@ def render_dashboard(data):
     .promotion-margin-value {{ display:inline-block; padding:3px 6px; border-radius:7px; font-weight:800; cursor:help; }}
     .promotion-margin-value.positive {{ background:#ecfdf3; color:#027a48; }}
     .promotion-margin-value.negative {{ background:#fef3f2; color:#b42318; }}
+    .promotion-flex-warning {{ display:block; margin-top:4px; padding:3px 5px; border-radius:5px; background:#fff4e5; color:#b54708; font-size:10px; line-height:1.25; font-weight:800; }}
     .promotion-margin-value:focus-visible {{ outline:2px solid #6941c6; outline-offset:2px; }}
     .promotion-status {{ display:inline-block; margin-top:4px; padding:2px 6px; border-radius:999px; background:#ecfdf3; color:#027a48; font-size:10px; font-weight:800; text-transform:uppercase; }}
     .promotion-status.candidate {{ background:#eff8ff; color:#175cd3; }}
@@ -2073,6 +2074,7 @@ def render_dashboard(data):
         </div>
         <form id="promotionGuideForm" class="promotion-form">
           <label>SKU, MLB, MLBU ou família<input id="promotionGuideMlb" type="text" placeholder="LAZ-2X2, MLB6188463888 ou família" autocomplete="off" required></label>
+          <label>Margem mínima (%)<input id="promotionMarginTarget" type="number" min="0" max="100" step="0.1" value="15"></label>
           <button type="submit">Consultar promoções</button>
         </form>
         <div id="promotionGuideResult" aria-live="polite"></div>
@@ -2193,6 +2195,7 @@ def render_dashboard(data):
     const dailyChartMetric = new Map();
     const promotionState = new Map();
     let promotionGuideItem = null;
+    let promotionMarginTarget = 15;
     let promotionCampaignCatalog = {{loading:false, loaded:false, campaigns:[], error:''}};
     let activePromotionConfigKey = '';
     let financeProfile = {{
@@ -3760,19 +3763,23 @@ def render_dashboard(data):
       const regime = ['simple','presumed','real'].includes(profile.taxRegime) ? profile.taxRegime : legacyRegime;
       const flexCarrierCost = Number(profile.flexCarrierCost ?? financeProfile.flexCarrierCost ?? 0);
       if (!regime || !Number.isFinite(flexCarrierCost)) return {{available:false}};
-      const flexScenario = profit => ({{
-        flexCarrierCost,
-        flexProfit:profit - flexCarrierCost,
-        flexMargin:price > 0 ? (profit - flexCarrierCost) / price * 100 : 0,
-      }});
+      const flexQuote = row.flex_receipt_quote || {{}};
+      const flexAvailable = flexCarrierCost > 0 && flexQuote.available === true
+        && Math.abs(Number(flexQuote.price) - price) <= 0.01
+        && [flexQuote.receipt_before_cost_tax, flexQuote.sale_fee, flexQuote.shipping_cost].every(value => Number.isFinite(Number(value)));
+      const noFlexScenario = {{flexActive:Boolean(row.flex_receipt_quote), flexAvailable:false, flexCarrierCost}};
       if (regime === 'simple') {{
         const simpleTaxRate = Number(profile.simpleTaxRate ?? financeProfile.profitTaxRate);
         if (!Number.isFinite(simpleTaxRate)) return {{available:false}};
         const rate = simpleTaxRate / 100;
         const tax = price * rate;
         const profit = receipt - cost - tax;
+        const flexProfit = flexAvailable ? Number(flexQuote.receipt_before_cost_tax) - cost - tax - flexCarrierCost : NaN;
         return {{available:true, price, receipt, cost, tax, difal:0, profit, margin:price > 0 ? profit / price * 100 : 0,
-          credits:0, debits:tax, fee, freight, rebate, mode:'simple', ...flexScenario(profit)}};
+          credits:0, debits:tax, fee, freight, rebate, mode:'simple', ...noFlexScenario,
+          flexAvailable, flexProfit, flexMargin:flexAvailable && price > 0 ? flexProfit / price * 100 : NaN,
+          flexFee:flexAvailable ? Number(flexQuote.sale_fee) : NaN,
+          flexMlShippingCost:flexAvailable ? Number(flexQuote.shipping_cost) : NaN}};
       }}
       const rate = key => {{ const value = Number(profile[key]); return Number.isFinite(value) ? value / 100 : 0; }};
       const grossCost = profile.costBasis !== 'net';
@@ -3782,23 +3789,33 @@ def render_dashboard(data):
       const inputPisCost = real && grossCost ? cost * rate('pisCofinsInputRate') : 0;
       const commissionFiscalBase = Math.max(0, fee - rebate);
       const inputPisCommission = real ? commissionFiscalBase * rate('pisCofinsInputRate') : 0;
-      const freightCredit = real && profile.freightCreditEnabled === true;
-      const inputPisFreight = freightCredit ? freight * rate('pisCofinsInputRate') : 0;
-      const inputIcmsFreight = freightCredit ? freight * rate('freightIcmsCreditRate') : 0;
       const outputIpi = price * rate('ipiOutputRate');
       const outputIcms = price * rate('icmsOutputRate');
       const outputPisBase = Math.max(0, price - outputIpi - outputIcms);
       const outputPis = outputPisBase * rate('pisCofinsOutputRate');
       const presumedTax = regime === 'presumed' ? price * rate('presumedTaxRate') : 0;
-      const netIpi = Math.max(0, outputIpi - inputIpi);
-      const netIcms = Math.max(0, outputIcms - inputIcmsProduct - inputIcmsFreight);
-      const netPis = Math.max(0, outputPis - inputPisCost - inputPisCommission - inputPisFreight);
-      const tax = netIpi + netIcms + netPis + presumedTax;
       const difal = promotionDifalValue(price, profile, Number(profile.icmsOutputRate));
-      const profit = receipt - cost - tax - difal;
+      const detailedScenario = (scenarioReceipt, scenarioFreight, carrierCost = 0) => {{
+        const freightCredit = real && profile.freightCreditEnabled === true;
+        const inputPisFreight = freightCredit ? scenarioFreight * rate('pisCofinsInputRate') : 0;
+        const inputIcmsFreight = freightCredit ? scenarioFreight * rate('freightIcmsCreditRate') : 0;
+        const netIpi = Math.max(0, outputIpi - inputIpi);
+        const netIcms = Math.max(0, outputIcms - inputIcmsProduct - inputIcmsFreight);
+        const netPis = Math.max(0, outputPis - inputPisCost - inputPisCommission - inputPisFreight);
+        const tax = netIpi + netIcms + netPis + presumedTax;
+        return {{tax, profit:scenarioReceipt - cost - tax - difal - carrierCost,
+          credits:inputIpi + inputIcmsProduct + inputIcmsFreight + inputPisCost + inputPisCommission + inputPisFreight}};
+      }};
+      const traditional = detailedScenario(receipt, freight);
+      const flex = flexAvailable ? detailedScenario(Number(flexQuote.receipt_before_cost_tax), Number(flexQuote.shipping_cost), flexCarrierCost) : null;
+      const tax = traditional.tax;
+      const profit = traditional.profit;
       return {{available:true, price, receipt, cost, tax, difal, profit, margin:price > 0 ? profit / price * 100 : 0,
-        credits:inputIpi + inputIcmsProduct + inputIcmsFreight + inputPisCost + inputPisCommission + inputPisFreight,
-        debits:outputIpi + outputIcms + outputPis + presumedTax, fee, freight, rebate, mode:'detailed', ...flexScenario(profit)}};
+        credits:traditional.credits, debits:outputIpi + outputIcms + outputPis + presumedTax,
+        fee, freight, rebate, mode:'detailed', ...noFlexScenario, flexAvailable,
+        flexProfit:flex ? flex.profit : NaN, flexMargin:flex && price > 0 ? flex.profit / price * 100 : NaN,
+        flexFee:flexAvailable ? Number(flexQuote.sale_fee) : NaN,
+        flexMlShippingCost:flexAvailable ? Number(flexQuote.shipping_cost) : NaN}};
     }}
     function promotionMarginCell(row, item) {{
       const quote = row.receipt_quote || {{}};
@@ -3817,10 +3834,11 @@ def render_dashboard(data):
       const result = promotionFinancialResult(row, item);
       if (result.available) {{
         const margin = result.margin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
-        const flexMargin = result.flexMargin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
-        const flexScenario = result.flexCarrierCost > 0 ? `<div class="promotion-margin-note"><b>Cenário consultivo Flex</b>${{line('Custo manual do Flex', '−' + brl(result.flexCarrierCost))}}${{line('Resultado com Flex', brl(result.flexProfit))}}${{line('Margem com Flex', flexMargin + '%')}}Este cenário não altera a margem usada para avaliar a promoção.</div>` : '';
+        const flexMargin = result.flexAvailable ? result.flexMargin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}}) : '';
+        const flexWarning = result.flexAvailable && result.flexMargin < promotionMarginTarget;
+        const flexScenario = result.flexAvailable ? `<div class="promotion-margin-note"><b>Cenário consultivo Flex</b>${{line('Tarifa de venda Flex', '−' + brl(result.flexFee))}}${{line('Cobrança logística ML no Flex', '−' + brl(result.flexMlShippingCost))}}${{line('Transportador Flex informado', '−' + brl(result.flexCarrierCost))}}${{line('Resultado com Flex', brl(result.flexProfit))}}${{line('Margem com Flex', flexMargin + '%')}}Este cenário substitui o frete tradicional e não altera a margem usada para avaliar a promoção.</div>` : (result.flexActive ? '<div class="promotion-margin-note"><b>Flex ativo</b> Configure o custo do transportador ou atualize a cotação Flex para calcular o cenário consultivo.</div>' : '');
         const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}${{line('Custo do produto', '−' + brl(result.cost))}}${{line('Débitos fiscais', '−' + brl(result.debits))}}${{line('Créditos fiscais aproveitados', '+' + brl(result.credits))}}${{result.difal > 0 ? line('DIFAL', '−' + brl(result.difal)) : line('DIFAL', brl(0))}}<div class="promotion-margin-total">${{line('Lucro líquido estimado', brl(result.profit))}}</div><div class="promotion-margin-note">Margem líquida estimada: ${{margin}}%. Rebate, tarifa e frete vêm da cotação da oportunidade; custo e parâmetros fiscais vêm do SKU. O Flex não compõe esta margem.</div>${{flexScenario}}`;
-        return `<span class="promotion-margin-value ${{result.profit < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small>${{result.flexCarrierCost > 0 ? `<small>Flex consultivo: ${{brl(result.flexProfit)}} · ${{flexMargin}}%</small>` : ''}}</span>`;
+        return `<span class="promotion-margin-value ${{result.profit < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small>${{result.flexAvailable ? `<small>Flex: ${{brl(result.flexProfit)}} · ${{flexMargin}}%</small>${{flexWarning ? `<span class="promotion-flex-warning">⚠ Flex abaixo da meta de ${{promotionMarginTarget.toLocaleString('pt-BR')}}%</span>` : ''}}` : (result.flexActive ? '<small>Flex ativo · cálculo pendente</small>' : '')}}</span>`;
       }}
       const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{line('Custo do produto', 'Não informado')}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line('Saldo antes de custo e imposto', brl(receipt))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. A margem de contribuição real depende do custo e do imposto cadastrados; estes não foram assumidos como zero.</div>`;
       return `<span class="promotion-margin-value ${{receipt < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small></span>`;
@@ -5003,6 +5021,11 @@ def render_dashboard(data):
     document.getElementById('skuFiscalTaxRegime').addEventListener('change', () => {{ syncSkuFiscalVisibility(); syncSkuFiscalAutomaticFields(); }});
     ['skuFiscalCalculationMode','skuFiscalOrigin','skuFiscalOriginState','skuFiscalDestinationState'].forEach(id => {{
       document.getElementById(id).addEventListener('change', syncSkuFiscalAutomaticFields);
+    }});
+    document.getElementById('promotionMarginTarget').addEventListener('input', event => {{
+      const value = Number(event.target.value);
+      promotionMarginTarget = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 15;
+      if (promotionGuideItem) renderPromotionGuide();
     }});
     document.getElementById('promotionGuideForm').addEventListener('submit', event => {{
       event.preventDefault();

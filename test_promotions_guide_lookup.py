@@ -165,16 +165,24 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionEffectivePrice=row=>Number(row.price);
         const promotionQuoteMatchesPrice=(row,price)=>row.receipt_quote.available === true && Math.abs(row.receipt_quote.price-price) <= .01;
         """
-        row = {'price': 100, 'receipt_quote': {'available': True, 'price': 100, 'sale_fee': 12,
-                                               'shipping_cost': 10, 'rebate': 0,
-                                               'receipt_before_cost_tax': 78}}
+        row = {'price': 100,
+               'receipt_quote': {'available': True, 'price': 100, 'sale_fee': 12,
+                                 'shipping_cost': 10, 'rebate': 0,
+                                 'receipt_before_cost_tax': 78},
+               'flex_receipt_quote': {'available': True, 'price': 100, 'sale_fee': 11,
+                                      'shipping_cost': 5, 'rebate': 0,
+                                      'receipt_before_cost_tax': 84}}
         script = stubs + functions + '\nconsole.log(JSON.stringify(promotionFinancialResult(' + json.dumps(row) + ',{sku:"SKU1"})));'
         result = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
         self.assertEqual(result['profit'], 30)
         self.assertEqual(result['margin'], 30)
+        self.assertTrue(result['flexActive'])
+        self.assertTrue(result['flexAvailable'])
         self.assertEqual(result['flexCarrierCost'], 13)
-        self.assertEqual(result['flexProfit'], 17)
-        self.assertEqual(result['flexMargin'], 17)
+        self.assertEqual(result['flexProfit'], 23)
+        self.assertEqual(result['flexMargin'], 23)
+        self.assertEqual(result['flexFee'], 11)
+        self.assertEqual(result['flexMlShippingCost'], 5)
 
     def test_campaign_view_groups_variations_without_losing_individual_prices(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
