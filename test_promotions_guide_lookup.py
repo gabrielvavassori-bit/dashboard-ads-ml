@@ -256,6 +256,11 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertTrue(allocation['sellerDerived'])
         self.assertTrue(allocation['sellerEstimatedFromTotal'])
 
+    def test_total_discount_uses_the_same_effective_offer_price_as_seller_allocation(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        total_cell = source[source.index('    function promotionTotalCell(row)'):source.index('    function promotionFriendlyType(row)')]
+        self.assertIn('const price = promotionEffectivePrice(row);', total_cell)
+
     def test_account_campaign_inventory_loads_without_product_search(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         app_source = Path('app.py').read_text(encoding='utf-8')

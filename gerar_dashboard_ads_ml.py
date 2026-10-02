@@ -3622,7 +3622,7 @@ def render_dashboard(data):
     }}
     function promotionTotalCell(row) {{
       const original = Number(row.original_price);
-      const price = Number(row.price);
+      const price = promotionEffectivePrice(row);
       if (Number.isFinite(original) && Number.isFinite(price) && original > price && price > 0) {{
         const percent = (original - price) / original * 100;
         return `<b>${{percent.toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</b><small>${{brl(original - price)}}</small>`;
