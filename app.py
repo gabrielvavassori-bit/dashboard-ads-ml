@@ -2755,10 +2755,16 @@ class Handler(BaseHTTPRequestHandler):
                     query = parse_qs(url.query or "")
                     promotion_id = str(query.get("promotion_id", [""])[0] or "").strip()
                     promotion_type = str(query.get("promotion_type", [""])[0] or "").strip().upper()
+                    search_after = str(query.get("search_after", [""])[0] or "").strip()
                     if not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", promotion_id) or not re.fullmatch(r"[A-Z_]{2,60}", promotion_type):
                         _send_json(self, {"ok": False, "message": "Selecione uma campanha valida da conta."}, 400)
                         return
+                    if len(search_after) > 300 or any(ord(char) < 32 for char in search_after):
+                        _send_json(self, {"ok": False, "message": "Cursor de campanha invalido."}, 400)
+                        return
                     params.update({"promotion_id": promotion_id, "promotion_type": promotion_type})
+                    if search_after:
+                        params["search_after"] = search_after
                     agent_path = "/internal/dash-ads/promotions/campaign-items"
                 payload = _fetch_dash_ads_json(agent_path, params)
                 _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))

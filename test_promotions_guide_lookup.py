@@ -230,6 +230,29 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('"/api/promotions/campaigns"', app_source)
         self.assertIn('"/internal/dash-ads/promotions/campaign-items"', app_source)
 
+    def test_campaign_inventory_enriches_rows_and_loads_cursor_pages(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        app_source = Path('app.py').read_text(encoding='utf-8')
+        self.assertIn("const remote = entry.item", source)
+        self.assertIn("remote.thumbnail", source)
+        self.assertIn("remote.seller_sku", source)
+        self.assertIn("data-promo-campaign-more", source)
+        self.assertIn("search_after=${{encodeURIComponent(state.nextSearchAfter)}}", source)
+        self.assertIn('params["search_after"] = search_after', app_source)
+
+    def test_campaign_checkboxes_keep_fixed_proportions(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('.promotion-listing-select', source)
+        self.assertIn('flex:0 0 18px', source)
+        self.assertIn('width:18px; min-width:18px; height:18px', source)
+        self.assertIn('<div class="promotion-listing-select">${{selectionControl}}', source)
+
+    def test_missing_subsidy_is_not_rendered_as_zero(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        function = source[source.index('    function promotionValueCell'):source.index('    function promotionTotalCell')]
+        self.assertIn("value == null || value === ''", function)
+        self.assertIn('N/D', function)
+
     def test_bulk_campaign_action_only_generates_individual_previews(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         self.assertIn('data-promo-bulk-select=', source)

@@ -632,7 +632,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("Math.min(3, pending.length)", html)
         self.assertIn("if (activeDetailKey) renderDetailModal();", html)
         self.assertIn('class="promotion-table"', html)
-        self.assertIn("function promotionTableRow(item, entry, allowAction, listing = null)", html)
+        self.assertIn("function promotionTableRow(item, entry, allowAction, listing = null, selection = null)", html)
         self.assertIn("function restorePromotionConfigDialog()", html)
         self.assertIn("activePromotionConfigKey", html)
         self.assertIn("document.querySelectorAll('[data-promo-direct]')", html)

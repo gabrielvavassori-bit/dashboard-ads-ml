@@ -1754,10 +1754,11 @@ def render_dashboard(data):
     button.promotion-campaign-card[aria-pressed="true"] .muted {{ color:#e4e7ec; }}
     .promotion-hybrid-sku {{ margin-top:10px; padding-top:8px; border-top:1px solid var(--line); }}
     .promotion-hybrid-sku h6 {{ margin:0 0 6px; font-size:12px; }}
-    .promotion-bulk-toolbar {{ display:flex; flex-wrap:wrap; align-items:end; gap:8px; margin:10px 0; padding:9px; border:1px solid var(--line); border-radius:8px; background:var(--soft); }}
+    .promotion-bulk-toolbar {{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0; padding:9px; border:1px solid var(--line); border-radius:8px; background:var(--soft); }}
     .promotion-bulk-toolbar label {{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; }}
     .promotion-bulk-toolbar select {{ min-height:34px; }}
-    .promotion-bulk-select {{ width:18px; height:18px; margin:0 7px 0 0; vertical-align:middle; }}
+    .promotion-bulk-toolbar input[type="checkbox"], .promotion-bulk-select {{ appearance:auto; flex:0 0 18px; width:18px; min-width:18px; height:18px; margin:0; padding:0; vertical-align:middle; }}
+    .promotion-listing-select {{ display:flex; align-items:center; gap:8px; min-width:0; }}
     .promotion-bulk-summary {{ margin:10px 0; padding:11px; border:1px solid #84adff; border-radius:9px; background:#f5f8ff; }}
     .promotion-bulk-summary-head {{ display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; margin-bottom:8px; }}
     .promotion-bulk-summary-list {{ display:grid; gap:6px; }}
@@ -3609,6 +3610,7 @@ def render_dashboard(data):
       return '<div class="promotion-success">Esta conta possui autorização de escrita em Ofertas e Promoções.</div>';
     }}
     function promotionValueCell(value, originalPrice) {{
+      if (value == null || value === '') return '<span class="muted">N/D</span>';
       const numeric = Number(value);
       if (!Number.isFinite(numeric) || numeric < 0) return '<span class="muted">—</span>';
       const percent = `${{numeric.toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%`;
@@ -3823,7 +3825,7 @@ def render_dashboard(data):
       const discountBadge = bestDiscount ? '<span class="promotion-rank">Maior desconto</span>' : '';
       const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
       const selectionControl = selection ? `<input class="promotion-bulk-select" type="checkbox" data-promo-bulk-select="${{safe(selection.key)}}" data-promo-scope-key="${{safe(selection.scopeKey)}}"${{selection.checked ? ' checked' : ''}} aria-label="Selecionar ${{safe(item.code)}} para prévia coletiva">` : '';
-      const identity = listing ? `${{selectionControl}}<div class="promotion-listing-identity">${{productImage({{thumbnailUrl:listing.thumbnailUrl, title:listing.title}})}}<div><b>${{safe(listing.code)}}</b><small class="promotion-listing-name">${{safe(listing.title)}}</small>${{listing.sku ? `<small class="promotion-listing-sku">SKU ${{safe(listing.sku)}}</small>` : ''}}${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}</div></div>` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
+      const identity = listing ? `<div class="promotion-listing-select">${{selectionControl}}<div class="promotion-listing-identity">${{productImage({{thumbnailUrl:listing.thumbnailUrl, title:listing.title}})}}<div><b>${{safe(listing.code)}}</b><small class="promotion-listing-name">${{safe(listing.title)}}</small>${{listing.sku ? `<small class="promotion-listing-sku">SKU ${{safe(listing.sku)}}</small>` : ''}}${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}</div></div></div>` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
       return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionValueCell(row.meli_percentage, original)}}${{subsidyBadge}}</td><td class="num">${{promotionValueCell(row.seller_percentage, original)}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b><small>Preço original</small></td><td class="num"><b>${{price > 0 ? brl(price) : '—'}}</b><small>${{active ? 'Preço promocional ativo' : 'Preço da oportunidade retornado pela API'}}</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{promotionMarginCell(row, item)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
     function promotionTableHtml(item, rows, allowAction = false) {{
@@ -3979,7 +3981,12 @@ def render_dashboard(data):
         return feedback ? `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b>${{feedback}}</div>` : '';
       }}).join('');
       const content = view === 'campaign' ? byCampaign : view === 'sku' ? bySku : view === 'hybrid' ? hybrid : results;
-      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{campaignInventory}}${{selector}}${{bulkSummary}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}${{previews}}</div></div>`;
+      const loaded = Number(state.results.length || 0);
+      const total = Number(state.sourceTotal || loaded);
+      const pagination = item.detailScope === 'campaign'
+        ? `<div class="promotion-bulk-toolbar"><span><b>${{num(loaded)}}</b> anúncio(s) carregado(s)${{total > loaded ? ` de ${{num(total)}}` : ''}}.</span>${{state.nextSearchAfter ? `<button type="button" data-promo-campaign-more data-promo-scope-key="${{safe(key)}}"${{state.loadingMore ? ' disabled' : ''}}>${{state.loadingMore ? 'Carregando...' : 'Carregar próximos anúncios'}}</button>` : ''}}</div>`
+        : '';
+      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{campaignInventory}}${{selector}}${{pagination}}${{bulkSummary}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}${{previews}}</div></div>`;
     }}
     function promotionPanelHtml(item) {{
       const code = String(item.code || '').toUpperCase();
@@ -4087,24 +4094,10 @@ def render_dashboard(data):
       button.innerHTML = `<b>${{safe(campaign.name || promotionId)}}</b><span class="muted">Carregando anúncios...</span>`;
       try {{
         const data = await promotionApiRequest(`/api/promotions/campaign-items?promotion_id=${{encodeURIComponent(promotionId)}}&promotion_type=${{encodeURIComponent(promotionType)}}`);
-        const items = Array.isArray(data.items) ? data.items : [];
-        const children = [];
-        const results = [];
-        items.forEach(entry => {{
-          const code = String(entry.item_id || '').toUpperCase();
-          if (!/^MLB[0-9]+$/.test(code) || !entry.promotion) return;
-          const known = allItems.find(item => String(item.code || '').toUpperCase() === code) || {{}};
-          const row = {{...entry.promotion, name:campaign.name || entry.promotion.name || promotionType}};
-          const currentPrice = Number(known.currentPrice || row.original_price || row.price || 0);
-          const source = {{...known, code, title:known.title || code, currentPrice}};
-          children.push(source);
-          const itemData = {{ok:true, item:{{id:code, title:source.title, price:currentPrice, user_product_id:known.userProductId || ''}}, promotions:[row], promotion_write_access:data.promotion_write_access || {{allowed:null, status:'unknown'}}}};
-          promotionState.set(code, {{...(promotionState.get(code) || {{}}), loading:false, data:itemData, error:''}});
-          results.push({{code, data:itemData}});
-        }});
-        promotionGuideItem = {{promotionGuide:true, detailScope:'campaign', detailId:`${{promotionType}}:${{promotionId}}`, code:`CAMPAIGN:${{promotionType}}:${{promotionId}}`, title:campaign.name || promotionId, children}};
+        const page = promotionCampaignPage(data, campaign);
+        promotionGuideItem = {{promotionGuide:true, detailScope:'campaign', detailId:`${{promotionType}}:${{promotionId}}`, campaignId:promotionId, campaignType:promotionType, code:`CAMPAIGN:${{promotionType}}:${{promotionId}}`, title:campaign.name || promotionId, children:page.children}};
         const key = promotionScopeKey(promotionGuideItem);
-        promotionState.set(key, {{loading:false, results, error:'', view:'campaign', campaignKey:''}});
+        promotionState.set(key, {{loading:false, results:page.results, error:'', view:'campaign', campaignKey:'', nextSearchAfter:data.next_search_after || '', sourceTotal:Number(data.source_total || page.results.length), loadingMore:false}});
         renderPromotionGuide();
         document.getElementById('promotionGuideResult')?.scrollIntoView({{behavior:'smooth', block:'start'}});
       }} catch (error) {{
@@ -4114,6 +4107,45 @@ def render_dashboard(data):
         button.disabled = false;
         button.innerHTML = originalLabel;
       }}
+    }}
+    function promotionCampaignPage(data, campaign) {{
+      const children = [];
+      const results = [];
+      (Array.isArray(data.items) ? data.items : []).forEach(entry => {{
+          const code = String(entry.item_id || '').toUpperCase();
+          if (!/^MLB[0-9]+$/.test(code) || !entry.promotion) return;
+          const known = allItems.find(item => String(item.code || '').toUpperCase() === code) || {{}};
+          const remote = entry.item && typeof entry.item === 'object' ? entry.item : {{}};
+          const row = {{...entry.promotion, name:campaign.name || entry.promotion.name || entry.promotion.promotion_type}};
+          const currentPrice = Number(known.currentPrice || remote.price || row.original_price || row.price || 0);
+          const source = {{...known, code, title:known.title || remote.title || code, currentPrice, thumbnailUrl:known.thumbnailUrl || remote.thumbnail || '', sku:known.sku || remote.seller_sku || '', userProductId:known.userProductId || remote.user_product_id || ''}};
+          children.push(source);
+          const itemData = {{ok:true, item:{{id:code, title:source.title, price:currentPrice, thumbnail:source.thumbnailUrl, seller_sku:source.sku, user_product_id:source.userProductId}}, promotions:[row], promotion_write_access:data.promotion_write_access || {{allowed:null, status:'unknown'}}}};
+          promotionState.set(code, {{...(promotionState.get(code) || {{}}), loading:false, data:itemData, error:''}});
+          results.push({{code, data:itemData}});
+      }});
+      return {{children, results}};
+    }}
+    async function loadMorePromotionCampaign(button) {{
+      if (!promotionGuideItem || promotionGuideItem.detailScope !== 'campaign') return;
+      const key = button.dataset.promoScopeKey || promotionScopeKey(promotionGuideItem);
+      const state = promotionState.get(key) || {{}};
+      if (!state.nextSearchAfter || state.loadingMore) return;
+      promotionState.set(key, {{...state, loadingMore:true}});
+      renderPromotionGuide();
+      try {{
+        const campaign = promotionCampaignCatalog.campaigns.find(candidate => String(candidate.promotion_id) === String(promotionGuideItem.campaignId) && String(candidate.promotion_type) === String(promotionGuideItem.campaignType)) || {{name:promotionGuideItem.title}};
+        const data = await promotionApiRequest(`/api/promotions/campaign-items?promotion_id=${{encodeURIComponent(promotionGuideItem.campaignId)}}&promotion_type=${{encodeURIComponent(promotionGuideItem.campaignType)}}&search_after=${{encodeURIComponent(state.nextSearchAfter)}}`);
+        const page = promotionCampaignPage(data, campaign);
+        const existing = new Set((state.results || []).map(result => result.code));
+        const newResults = page.results.filter(result => !existing.has(result.code));
+        const childCodes = new Set((promotionGuideItem.children || []).map(item => String(item.code || '').toUpperCase()));
+        promotionGuideItem.children = [...(promotionGuideItem.children || []), ...page.children.filter(item => !childCodes.has(String(item.code || '').toUpperCase()))];
+        promotionState.set(key, {{...state, results:[...(state.results || []), ...newResults], nextSearchAfter:data.next_search_after || '', sourceTotal:Number(data.source_total || state.sourceTotal || 0), loadingMore:false, error:''}});
+      }} catch (error) {{
+        promotionState.set(key, {{...state, loadingMore:false, error:error.message}});
+      }}
+      renderPromotionGuide();
     }}
     function renderPromotionGuide() {{
       const target = document.getElementById('promotionGuideResult');
@@ -4151,6 +4183,7 @@ def render_dashboard(data):
       document.querySelectorAll('[data-promo-campaign-filter]').forEach(button => button.addEventListener('click', () => {{
         promotionStateUpdate(button.dataset.promoScopeKey, {{campaignKey:button.dataset.promoCampaignFilter || '', view:'campaign'}});
       }}));
+      document.querySelectorAll('[data-promo-campaign-more]').forEach(button => button.addEventListener('click', () => loadMorePromotionCampaign(button)));
       document.querySelectorAll('[data-promo-bulk-select]').forEach(input => input.addEventListener('change', () => {{
         const state = promotionState.get(input.dataset.promoScopeKey) || {{}};
         const selected = new Set(state.selectedListingKeys || []);
