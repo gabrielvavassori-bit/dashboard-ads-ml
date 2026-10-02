@@ -3750,6 +3750,25 @@ def render_dashboard(data):
       }}
       return Math.max(0, price * (internal - interstate));
     }}
+    function promotionFlexPolicy(price, quote) {{
+      const weight = Number(quote?.billable_weight_kg);
+      if (!Number.isFinite(weight) || weight <= 0) return {{available:false, reason:'Peso faturável não informado pelo Mercado Livre.'}};
+      const fullBonus = weight <= .5 ? 9.89 : (weight <= 5 ? 10.89 : 14.89);
+      const weightBand = weight <= .5 ? 'até 0,5 kg' : (weight <= 5 ? '0,5 a 5 kg' : 'mais de 5 kg');
+      let fixedFee = 0;
+      let bonus = 0;
+      let priceBand = '';
+      if (price < 19) {{ fixedFee = 6.25; bonus = fullBonus; priceBand = 'abaixo de R$ 19'; }}
+      else if (price < 49) {{ fixedFee = 6.65; bonus = fullBonus; priceBand = 'R$ 19 a R$ 48,99'; }}
+      else if (price < 79) {{ fixedFee = 7.75; bonus = fullBonus; priceBand = 'R$ 49 a R$ 78,99'; }}
+      else {{
+        if (typeof quote?.seller_reputation_green !== 'boolean')
+          return {{available:false, reason:'Reputação do vendedor não confirmada pelo Mercado Livre.'}};
+        bonus = quote.seller_reputation_green ? fullBonus * .10 : 0;
+        priceBand = quote.seller_reputation_green ? 'a partir de R$ 79 com reputação verde' : 'a partir de R$ 79 sem bônus Flex';
+      }}
+      return {{available:true, distance:'média distância', weight, weightBand, fullBonus, fixedFee, bonus, priceBand}};
+    }}
     function promotionFinancialResult(row, item) {{
       const quote = row.receipt_quote || {{}};
       const price = Number(quote.price);
@@ -3771,24 +3790,23 @@ def render_dashboard(data):
       const flexAvailable = flexCarrierCost > 0 && flexQuote.available === true
         && Math.abs(Number(flexQuote.price) - price) <= 0.01
         && [flexQuote.receipt_before_cost_tax, flexQuote.sale_fee, flexQuote.shipping_cost].every(value => Number.isFinite(Number(value)));
-      // A cotacao Flex ainda desconta o frete tradicional em receipt_before_cost_tax.
-      // No cenario consultivo Flex esse frete deve ser neutralizado; permanecem
-      // a tarifa de venda (incluindo eventual taxa fixa) e o transportador informado.
-      const flexReceipt = flexAvailable
-        ? Number(flexQuote.receipt_before_cost_tax) + Number(flexQuote.shipping_cost)
-        : NaN;
-      const noFlexScenario = {{flexActive:Boolean(row.flex_receipt_quote), flexAvailable:false, flexCarrierCost}};
+      const flexPolicy = flexAvailable ? promotionFlexPolicy(price, flexQuote) : {{available:false, reason:'Cotação Flex indisponível.'}};
+      const flexReady = flexAvailable && flexPolicy.available;
+      const flexNetCost = flexReady ? flexCarrierCost + flexPolicy.fixedFee - flexPolicy.bonus : NaN;
+      const noFlexScenario = {{flexActive:Boolean(row.flex_receipt_quote), flexAvailable:false, flexCarrierCost, flexPendingReason:flexPolicy.reason || ''}};
       if (regime === 'simple') {{
         const simpleTaxRate = Number(profile.simpleTaxRate ?? financeProfile.profitTaxRate);
         if (!Number.isFinite(simpleTaxRate)) return {{available:false}};
         const rate = simpleTaxRate / 100;
         const tax = price * rate;
         const profit = receipt - cost - tax;
-        const flexProfit = flexAvailable ? flexReceipt - cost - tax - flexCarrierCost : NaN;
+        const flexProfit = flexReady ? profit + freight - flexNetCost : NaN;
         return {{available:true, price, receipt, cost, tax, difal:0, profit, margin:price > 0 ? profit / price * 100 : 0,
           credits:0, debits:tax, fee, freight, rebate, mode:'simple', ...noFlexScenario,
-          flexAvailable, flexProfit, flexMargin:flexAvailable && price > 0 ? flexProfit / price * 100 : NaN,
-          flexFee:flexAvailable ? Number(flexQuote.sale_fee) : NaN,
+          flexAvailable:flexReady, flexProfit, flexMargin:flexReady && price > 0 ? flexProfit / price * 100 : NaN,
+          flexFee:fee, flexFixedFee:flexReady ? flexPolicy.fixedFee : NaN, flexBonus:flexReady ? flexPolicy.bonus : NaN,
+          flexWeight:flexReady ? flexPolicy.weight : NaN, flexWeightBand:flexReady ? flexPolicy.weightBand : '',
+          flexPriceBand:flexReady ? flexPolicy.priceBand : '', flexDistance:flexReady ? flexPolicy.distance : '', flexNetCost,
           flexIgnoredShippingCost:flexAvailable ? Number(flexQuote.shipping_cost) : NaN}};
       }}
       const rate = key => {{ const value = Number(profile[key]); return Number.isFinite(value) ? value / 100 : 0; }};
@@ -3817,16 +3835,16 @@ def render_dashboard(data):
           credits:inputIpi + inputIcmsProduct + inputIcmsFreight + inputPisCost + inputPisCommission + inputPisFreight}};
       }};
       const traditional = detailedScenario(receipt, freight);
-      const flex = flexAvailable
-        ? detailedScenario(flexReceipt, 0, flexCarrierCost, Number(flexQuote.sale_fee), Number(flexQuote.rebate || 0))
-        : null;
       const tax = traditional.tax;
       const profit = traditional.profit;
+      const flexProfit = flexReady ? profit + freight - flexNetCost : NaN;
       return {{available:true, price, receipt, cost, tax, difal, profit, margin:price > 0 ? profit / price * 100 : 0,
         credits:traditional.credits, debits:outputIpi + outputIcms + outputPis + presumedTax,
-        fee, freight, rebate, mode:'detailed', ...noFlexScenario, flexAvailable,
-        flexProfit:flex ? flex.profit : NaN, flexMargin:flex && price > 0 ? flex.profit / price * 100 : NaN,
-        flexFee:flexAvailable ? Number(flexQuote.sale_fee) : NaN,
+        fee, freight, rebate, mode:'detailed', ...noFlexScenario, flexAvailable:flexReady,
+        flexProfit, flexMargin:flexReady && price > 0 ? flexProfit / price * 100 : NaN,
+        flexFee:fee, flexFixedFee:flexReady ? flexPolicy.fixedFee : NaN, flexBonus:flexReady ? flexPolicy.bonus : NaN,
+        flexWeight:flexReady ? flexPolicy.weight : NaN, flexWeightBand:flexReady ? flexPolicy.weightBand : '',
+        flexPriceBand:flexReady ? flexPolicy.priceBand : '', flexDistance:flexReady ? flexPolicy.distance : '', flexNetCost,
         flexIgnoredShippingCost:flexAvailable ? Number(flexQuote.shipping_cost) : NaN}};
     }}
     function promotionMarginCell(row, item) {{
@@ -3848,7 +3866,7 @@ def render_dashboard(data):
         const margin = result.margin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
         const flexMargin = result.flexAvailable ? result.flexMargin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}}) : '';
         const flexWarning = result.flexAvailable && result.flexMargin < promotionMarginTarget;
-        const flexScenario = result.flexAvailable ? `<div class="promotion-margin-note"><b>Cenário consultivo Flex</b>${{line('Tarifa de venda Flex (taxa fixa quando aplicável)', '−' + brl(result.flexFee))}}${{line('Frete tradicional', 'Desconsiderado')}}${{line('Transportador Flex informado', '−' + brl(result.flexCarrierCost))}}${{line('Resultado com Flex', brl(result.flexProfit))}}${{line('Margem com Flex', flexMargin + '%')}}No Flex, a cobrança de frete tradicional retornada na cotação é neutralizada. A tarifa ao vender é cotada pelo Mercado Livre para a logística Flex e inclui a taxa fixa da faixa quando aplicável; também permanece o custo manual do transportador. Este cenário é consultivo e não altera a margem usada para avaliar a promoção.</div>` : (result.flexActive ? '<div class="promotion-margin-note"><b>Flex ativo</b> Configure o custo do transportador ou atualize a cotação Flex para calcular o cenário consultivo.</div>' : '');
+        const flexScenario = result.flexAvailable ? `<div class="promotion-margin-note"><b>Cenário consultivo Flex · média distância</b>${{line('Tarifa de venda', '−' + brl(result.flexFee))}}${{line('Frete tradicional', 'Desconsiderado')}}${{line(`Taxa Flex · ${{result.flexPriceBand}}`, '−' + brl(result.flexFixedFee))}}${{line(`Bônus ML · ${{result.flexWeightBand}}`, '+' + brl(result.flexBonus))}}${{line('Transportador Flex informado', '−' + brl(result.flexCarrierCost))}}${{line('Custo líquido Flex', '−' + brl(result.flexNetCost))}}${{line('Resultado com Flex', brl(result.flexProfit))}}${{line('Margem com Flex', flexMargin + '%')}}Cálculo validado pela regra da calculadora: substitui o frete normal por transportador + taxa Flex − bônus do Mercado Livre. O peso faturável é ${{result.flexWeight.toLocaleString('pt-BR',{{maximumFractionDigits:3}})}} kg.</div>` : (result.flexActive ? `<div class="promotion-margin-note"><b>Flex ativo</b> ${{safe(result.flexPendingReason || 'Configure o custo do transportador ou atualize a cotação Flex para calcular o cenário consultivo.')}}</div>` : '');
         const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}${{line('Custo do produto', '−' + brl(result.cost))}}${{line('Débitos fiscais', '−' + brl(result.debits))}}${{line('Créditos fiscais aproveitados', '+' + brl(result.credits))}}${{result.difal > 0 ? line('DIFAL', '−' + brl(result.difal)) : line('DIFAL', brl(0))}}<div class="promotion-margin-total">${{line('Lucro líquido estimado', brl(result.profit))}}</div><div class="promotion-margin-note">Margem líquida estimada: ${{margin}}%. Rebate, tarifa e frete vêm da cotação da oportunidade; custo e parâmetros fiscais vêm do SKU. O Flex não compõe esta margem.</div>${{flexScenario}}`;
         return `<span class="promotion-margin-value ${{result.profit < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small>${{flexWarning ? `<span class="promotion-flex-warning">⚠ Flex ativo: margem ${{flexMargin}}%, abaixo da meta de ${{promotionMarginTarget.toLocaleString('pt-BR')}}%</span>` : (result.flexActive && !result.flexAvailable ? '<small>Flex ativo · cálculo pendente</small>' : '')}}</span>`;
       }}

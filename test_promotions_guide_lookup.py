@@ -171,7 +171,9 @@ class PromotionsGuideLookupTests(unittest.TestCase):
                                  'receipt_before_cost_tax': 78},
                'flex_receipt_quote': {'available': True, 'price': 100, 'sale_fee': 11,
                                       'shipping_cost': 5, 'rebate': 0,
-                                      'receipt_before_cost_tax': 84}}
+                                      'receipt_before_cost_tax': 84,
+                                      'billable_weight_kg': 2,
+                                      'seller_reputation_green': True}}
         script = stubs + functions + '\nconsole.log(JSON.stringify(promotionFinancialResult(' + json.dumps(row) + ',{sku:"SKU1"})));'
         result = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
         self.assertEqual(result['profit'], 30)
@@ -179,9 +181,14 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertTrue(result['flexActive'])
         self.assertTrue(result['flexAvailable'])
         self.assertEqual(result['flexCarrierCost'], 13)
-        self.assertEqual(result['flexProfit'], 28)
-        self.assertAlmostEqual(result['flexMargin'], 28, places=6)
-        self.assertEqual(result['flexFee'], 11)
+        self.assertAlmostEqual(result['flexProfit'], 28.089, places=6)
+        self.assertAlmostEqual(result['flexMargin'], 28.089, places=6)
+        self.assertEqual(result['flexFee'], 12)
+        self.assertEqual(result['flexFixedFee'], 0)
+        self.assertAlmostEqual(result['flexBonus'], 1.089, places=6)
+        self.assertEqual(result['flexWeightBand'], '0,5 a 5 kg')
+        self.assertEqual(result['flexDistance'], 'média distância')
+        self.assertAlmostEqual(result['flexNetCost'], 11.911, places=6)
         self.assertEqual(result['flexIgnoredShippingCost'], 5)
 
     def test_flex_alert_only_appears_below_selected_margin_target(self):
@@ -199,7 +206,9 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         let flexMargin=11;
         const promotionFinancialResult=()=>({available:true,price:100,receipt:78,cost:40,tax:8,difal:0,
           profit:30,margin:30,credits:0,debits:8,fee:12,freight:10,rebate:0,flexActive:true,
-          flexAvailable:true,flexCarrierCost:13,flexProfit:16,flexMargin,flexFee:11,flexIgnoredShippingCost:5});
+          flexAvailable:true,flexCarrierCost:13,flexProfit:16,flexMargin,flexFee:12,flexFixedFee:0,
+          flexBonus:1.089,flexWeight:2,flexWeightBand:'0,5 a 5 kg',flexPriceBand:'a partir de R$ 79 com reputação verde',
+          flexDistance:'média distância',flexNetCost:11.911,flexIgnoredShippingCost:5});
         const row={price:100,receipt_quote:{available:true,price:100,receipt_before_cost_tax:78,sale_fee:12,shipping_cost:10,rebate:0}};
         """
         script = stubs + function + "\nconst low=promotionMarginCell(row,{sku:'SKU1'}); flexMargin=16; const ok=promotionMarginCell(row,{sku:'SKU1'}); console.log(JSON.stringify({low,ok}));"
@@ -207,11 +216,27 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('Flex ativo: margem 11,00%, abaixo da meta de 15%', rendered['low'])
         self.assertNotIn('promotion-flex-warning', rendered['ok'])
         decoded = __import__('urllib.parse', fromlist=['unquote']).unquote(rendered['low'])
-        self.assertIn('Tarifa de venda Flex (taxa fixa quando aplicável)', decoded)
-        self.assertIn('inclui a taxa fixa da faixa quando aplicável', decoded)
+        self.assertIn('Cenário consultivo Flex · média distância', decoded)
+        self.assertIn('Taxa Flex · a partir de R$ 79 com reputação verde', decoded)
+        self.assertIn('Bônus ML · 0,5 a 5 kg', decoded)
+        self.assertIn('transportador + taxa Flex − bônus do Mercado Livre', decoded)
         self.assertIn('Frete tradicional', decoded)
         self.assertIn('Desconsiderado', decoded)
         self.assertNotIn('Cobrança logística ML no Flex', decoded)
+
+    def test_flex_medium_distance_price_and_weight_bands_match_calculator(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        function = source[
+            source.index('    function promotionFlexPolicy'):
+            source.index('    function promotionFinancialResult')
+        ].replace('{{', '{').replace('}}', '}')
+        script = function + "\nconsole.log(JSON.stringify([promotionFlexPolicy(18.99,{billable_weight_kg:.5,seller_reputation_green:true}),promotionFlexPolicy(30,{billable_weight_kg:2,seller_reputation_green:true}),promotionFlexPolicy(60,{billable_weight_kg:6,seller_reputation_green:true}),promotionFlexPolicy(100,{billable_weight_kg:2,seller_reputation_green:true})]));"
+        rows = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
+        self.assertEqual((rows[0]['fixedFee'], rows[0]['bonus']), (6.25, 9.89))
+        self.assertEqual((rows[1]['fixedFee'], rows[1]['bonus']), (6.65, 10.89))
+        self.assertEqual((rows[2]['fixedFee'], rows[2]['bonus']), (7.75, 14.89))
+        self.assertEqual(rows[3]['fixedFee'], 0)
+        self.assertAlmostEqual(rows[3]['bonus'], 1.089, places=6)
 
     def test_campaign_view_groups_variations_without_losing_individual_prices(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
