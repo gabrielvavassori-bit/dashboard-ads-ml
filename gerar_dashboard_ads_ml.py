@@ -4037,10 +4037,12 @@ def render_dashboard(data):
       const flexPending = recommended.filter(candidate => candidate.flexActive && !candidate.flexAvailable).length;
       return {{recommended, qualifying:candidates.length, blocked, belowTarget, unavailable, flexAlerts, flexPending}};
     }}
-    function promotionRecommendationHtml(recommendation, scopeKey, target, campaignKey) {{
+    function promotionRecommendationHtml(recommendation, scopeKey, target, campaignKey, selectedListingKeys = []) {{
       const count = recommendation.recommended.length;
+      const selected = new Set(selectedListingKeys || []);
+      const selectedRecommended = recommendation.recommended.filter(item => selected.has(item.selectionKey)).length;
       const context = campaignKey ? 'na campanha selecionada' : 'entre as campanhas carregadas';
-      return `<div class="promotion-recommendation"><div class="promotion-recommendation-head"><div><b>Seleção consultiva por margem</b><div class="muted">Analisa oportunidades com ação Participar disponível, usa envio tradicional e escolhe, para cada MLB, o maior valor líquido recebido ${{context}}. Flex aparece apenas como alerta e não reprova a promoção.</div></div><button type="button" data-promo-recommend data-promo-scope-key="${{safe(scopeKey)}}"${{count ? '' : ' disabled'}}>Selecionar ${{num(count)}} recomendada(s)</button></div><div class="promotion-recommendation-stats"><span><b>${{num(count)}}</b> recomendada(s)</span><span><b>${{num(recommendation.qualifying)}}</b> acima de ${{target.toLocaleString('pt-BR')}}%</span><span><b>${{num(recommendation.belowTarget)}}</b> abaixo da meta</span><span><b>${{num(recommendation.blocked)}}</b> sem cálculo completo</span><span><b>${{num(recommendation.unavailable)}}</b> sem ação Participar</span><span><b>${{num(recommendation.flexAlerts)}}</b> alerta(s) Flex abaixo da meta</span><span><b>${{num(recommendation.flexPending)}}</b> Flex pendente(s)</span></div><div class="muted" style="margin-top:8px">Este botão apenas marca as linhas. Ainda será necessário gerar as prévias e confirmar cada ação; nenhuma promoção é aplicada agora.</div></div>`;
+      return `<div class="promotion-recommendation"><div class="promotion-recommendation-head"><div><b>Seleção consultiva por margem</b><div class="muted">Analisa oportunidades com ação Participar disponível, usa envio tradicional e escolhe, para cada MLB, o maior valor líquido recebido ${{context}}. Flex aparece apenas como alerta e não reprova a promoção.</div></div><div><button type="button" data-promo-recommend data-promo-scope-key="${{safe(scopeKey)}}"${{count ? '' : ' disabled'}}>Selecionar ${{num(count)}} recomendada(s)</button> <button type="button" data-promo-recommend-preview data-promo-scope-key="${{safe(scopeKey)}}"${{selectedRecommended ? '' : ' disabled'}}>Gerar ${{num(selectedRecommended)}} prévia(s) consultiva(s)</button></div></div><div class="promotion-recommendation-stats"><span><b>${{num(count)}}</b> recomendada(s)</span><span><b>${{num(recommendation.qualifying)}}</b> acima de ${{target.toLocaleString('pt-BR')}}%</span><span><b>${{num(recommendation.belowTarget)}}</b> abaixo da meta</span><span><b>${{num(recommendation.blocked)}}</b> sem cálculo completo</span><span><b>${{num(recommendation.unavailable)}}</b> sem ação Participar</span><span><b>${{num(recommendation.flexAlerts)}}</b> alerta(s) Flex abaixo da meta</span><span><b>${{num(recommendation.flexPending)}}</b> Flex pendente(s)</span></div><div class="muted" style="margin-top:8px">Selecionar apenas marca as linhas. Gerar prévias consulta e assina cada proposta individualmente, mas não confirma nem aplica nenhuma promoção.</div></div>`;
     }}
     function promotionScopePanelHtml(item) {{
       const sources = promotionScopeItems(item);
@@ -4059,7 +4061,7 @@ def render_dashboard(data):
       const selectedListingKeys = new Set(state.selectedListingKeys || []);
       const bulkSummary = promotionBulkSummaryHtml(state);
       const recommendation = promotionMarginRecommendations(state.results, sources, promotionMarginTarget, selectedCampaignKey, searchQuery);
-      const recommendationHtml = promotionRecommendationHtml(recommendation, key, promotionMarginTarget, selectedCampaignKey);
+      const recommendationHtml = promotionRecommendationHtml(recommendation, key, promotionMarginTarget, selectedCampaignKey, state.selectedListingKeys || []);
       const campaignInventory = `<div class="promotion-option"><h5>Campanhas encontradas neste grupo</h5><div class="muted">Selecione uma campanha para ver somente os anúncios vinculados a ela.</div><div class="promotion-card-grid"><button type="button" class="promotion-campaign-card" data-promo-campaign-filter="" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{!selectedCampaignKey}}"><b>Todas as campanhas</b><span class="muted">${{num(allCampaignGroups.length)}} campanha(s)</span></button>${{allCampaignGroups.map(group => `<button type="button" class="promotion-campaign-card" data-promo-campaign-filter="${{safe(group.key)}}" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{selectedCampaignKey === group.key}}"><b>${{safe(group.name)}}</b><span class="muted">${{safe(promotionStatusLabel(group.row))}} · ${{num(group.listings.length)}} anúncio(s) carregado(s)</span><span class="muted">${{safe(promotionPeriod(group.row))}}</span></button>`).join('')}}</div></div>`;
       const results = visibleResults.map(result => {{
         const title = result.data?.item?.title || result.code;
@@ -4323,6 +4325,45 @@ def render_dashboard(data):
         target.innerHTML = promotionAuditHtml(data.entries || []);
       }} catch (error) {{ target.innerHTML = `<p class="promotion-error">${{safe(error.message)}}</p>`; }}
     }}
+    async function promotionRunCollectivePreview(scopeKey, jobs, campaignName, operation = 'join') {{
+      if (!jobs.length) return;
+      const runItems = jobs.map(job => {{
+        const financial = promotionFinancialResult(job.row, job.source);
+        return {{selectionKey:job.selectionKey, code:job.code, title:job.title, sku:job.source.sku || '', action:operation,
+          price:promotionEffectivePrice(job.row, job.source), profit:financial.available ? financial.profit : null,
+          margin:financial.available ? financial.margin : null, status:'pending', error:''}};
+      }});
+      promotionStateUpdate(scopeKey, {{bulkRun:{{groupKey:'collective', campaignName, operation, items:runItems}}}});
+      const pending = [...jobs];
+      const worker = async () => {{
+        while (pending.length) {{
+          const job = pending.shift();
+          const row = job.row || {{}};
+          const active = ['started','active'].includes(String(row.status || '').toLowerCase());
+          const allowed = (operation === 'join' && row.can_join === true && !active)
+            || (operation === 'update' && row.can_update === true && active)
+            || (operation === 'remove' && row.can_leave === true && active);
+          if (!allowed) {{
+            const error = `A ação selecionada (${{operation === 'join' ? 'Participar' : operation === 'update' ? 'Alterar' : 'Sair'}}) não está disponível para este anúncio.`;
+            promotionStateUpdate(job.code, {{loading:false, preview:null, error}});
+            promotionBulkRunUpdate(scopeKey, job.selectionKey, {{status:'error', error}});
+            continue;
+          }}
+          const body = {{item_id:job.code, action:operation, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
+          if (operation !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = promotionEffectivePrice(row, job.source);
+          promotionStateUpdate(job.code, {{loading:true, error:'', preview:null, result:null}});
+          try {{
+            const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
+            promotionStateUpdate(job.code, {{loading:false, preview, error:''}});
+            promotionBulkRunUpdate(scopeKey, job.selectionKey, {{status:'ready', error:''}});
+          }} catch (error) {{
+            promotionStateUpdate(job.code, {{loading:false, preview:null, error:error.message}});
+            promotionBulkRunUpdate(scopeKey, job.selectionKey, {{status:'error', error:error.message}});
+          }}
+        }}
+      }};
+      await Promise.all(Array.from({{length:Math.min(3, pending.length)}}, worker));
+    }}
     function activatePromotionPanels() {{
       document.querySelectorAll('[data-promo-config-open]').forEach(button => button.addEventListener('click', () => {{
         const dialog = button.parentElement.querySelector('dialog');
@@ -4366,6 +4407,25 @@ def render_dashboard(data):
         const recommendation = promotionMarginRecommendations(state.results || [], sources, promotionMarginTarget, String(state.campaignKey || ''), String(state.scopeSearch || ''));
         promotionStateUpdate(key, {{selectedListingKeys:recommendation.recommended.map(item => item.selectionKey)}});
       }}));
+      document.querySelectorAll('[data-promo-recommend-preview]').forEach(button => button.addEventListener('click', async () => {{
+        const key = button.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const sources = promotionGuideItem ? promotionScopeItems(promotionGuideItem) : [];
+        const sourceByCode = new Map(sources.map(source => [String(source.code || '').toUpperCase(), source]));
+        const recommendation = promotionMarginRecommendations(state.results || [], sources, promotionMarginTarget, String(state.campaignKey || ''), String(state.scopeSearch || ''));
+        const selected = new Set(state.selectedListingKeys || []);
+        const listingByKey = new Map();
+        promotionCampaignGroups((state.results || []).filter(result => promotionMatchesScopeSearch(result, state.scopeSearch))).forEach(group => group.listings.forEach(listing => {{
+          const selectionKey = `${{group.key}}|${{listing.code}}|${{listing.index}}`;
+          listingByKey.set(selectionKey, {{...listing, selectionKey, campaignName:group.name}});
+        }}));
+        const jobs = recommendation.recommended.filter(item => selected.has(item.selectionKey)).map(item => {{
+          const listing = listingByKey.get(item.selectionKey);
+          return listing ? {{...listing, source:sourceByCode.get(listing.code) || {{}}}} : null;
+        }}).filter(Boolean);
+        button.disabled = true;
+        await promotionRunCollectivePreview(key, jobs, 'Recomendações por margem', 'join');
+      }}));
       document.querySelectorAll('[data-promo-bulk-preview]').forEach(button => button.addEventListener('click', async () => {{
         const key = button.dataset.promoScopeKey;
         const state = promotionState.get(key) || {{}};
@@ -4375,42 +4435,13 @@ def render_dashboard(data):
         const jobs = (group?.listings || []).filter(listing => selected.has(`${{group.key}}|${{listing.code}}|${{listing.index}}`));
         if (!jobs.length) return;
         const sources = promotionGuideItem ? promotionScopeItems(promotionGuideItem) : [];
-        const runItems = jobs.map(listing => {{
+        const previewJobs = jobs.map(listing => {{
           const source = sources.find(candidate => String(candidate.code || '').toUpperCase() === listing.code) || {{}};
           const row = (promotionState.get(listing.code)?.data?.promotions || [])[listing.index] || listing.row || {{}};
-          const financial = promotionFinancialResult(row, source);
-          return {{selectionKey:`${{group.key}}|${{listing.code}}|${{listing.index}}`, code:listing.code, title:listing.title, sku:source.sku || '', action:operation, price:promotionEffectivePrice(row, source), profit:financial.available ? financial.profit : null, margin:financial.available ? financial.margin : null, status:'pending', error:''}};
+          return {{...listing, row, source, selectionKey:`${{group.key}}|${{listing.code}}|${{listing.index}}`}};
         }});
-        promotionStateUpdate(key, {{bulkRun:{{groupKey:group.key, campaignName:group.name, operation, items:runItems}}}});
         button.disabled = true;
-        const pending = [...jobs];
-        const worker = async () => {{
-          while (pending.length) {{
-            const listing = pending.shift();
-            const individualState = promotionState.get(listing.code) || {{}};
-            const row = (individualState.data?.promotions || [])[listing.index];
-            const active = ['started','active'].includes(String(row?.status || '').toLowerCase());
-            const allowed = row && ((operation === 'join' && row.can_join === true && !active) || (operation === 'update' && row.can_update === true && active) || (operation === 'remove' && row.can_leave === true && active));
-            if (!allowed) {{
-              const error = `A ação selecionada (${{operation === 'join' ? 'Participar' : operation === 'update' ? 'Alterar' : 'Sair'}}) não está disponível para este anúncio.`;
-              promotionStateUpdate(listing.code, {{loading:false, preview:null, error}});
-              promotionBulkRunUpdate(key, `${{group.key}}|${{listing.code}}|${{listing.index}}`, {{status:'error', error}});
-              continue;
-            }}
-            const body = {{item_id:listing.code, action:operation, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
-            if (operation !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = promotionEffectivePrice(row);
-            promotionStateUpdate(listing.code, {{loading:true, error:'', preview:null, result:null}});
-            try {{
-              const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
-              promotionStateUpdate(listing.code, {{loading:false, preview, error:''}});
-              promotionBulkRunUpdate(key, `${{group.key}}|${{listing.code}}|${{listing.index}}`, {{status:'ready', error:''}});
-            }} catch (error) {{
-              promotionStateUpdate(listing.code, {{loading:false, preview:null, error:error.message}});
-              promotionBulkRunUpdate(key, `${{group.key}}|${{listing.code}}|${{listing.index}}`, {{status:'error', error:error.message}});
-            }}
-          }}
-        }};
-        await Promise.all(Array.from({{length:Math.min(3, pending.length)}}, worker));
+        await promotionRunCollectivePreview(key, previewJobs, group.name, operation);
       }}));
       document.querySelectorAll('[data-promo-load]').forEach(button => button.addEventListener('click', async () => {{
         const code = button.dataset.promoLoad;

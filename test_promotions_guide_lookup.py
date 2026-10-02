@@ -371,10 +371,10 @@ class PromotionsGuideLookupTests(unittest.TestCase):
     def test_margin_recommendation_ui_is_explicitly_non_mutating(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         self.assertIn('Seleção consultiva por margem', source)
-        self.assertIn('Este botão apenas marca as linhas', source)
-        self.assertIn('nenhuma promoção é aplicada agora', source)
+        self.assertIn('Selecionar apenas marca as linhas', source)
+        self.assertIn('não confirma nem aplica nenhuma promoção', source)
         self.assertIn("data-promo-recommend", source)
-        handler = source[source.index("document.querySelectorAll('[data-promo-recommend]')"):source.index("document.querySelectorAll('[data-promo-bulk-preview]')")]
+        handler = source[source.index("document.querySelectorAll('[data-promo-recommend]')"):source.index("document.querySelectorAll('[data-promo-recommend-preview]')")]
         self.assertNotIn('/api/promotions/preview', handler)
         self.assertNotIn('/api/promotions/confirm', handler)
 
@@ -508,10 +508,26 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('data-promo-bulk-operation', source)
         self.assertIn('data-promo-bulk-preview=', source)
         self.assertIn('Somente prepara as prévias; nenhuma alteração é aplicada.', source)
+        runner = source[source.index('    async function promotionRunCollectivePreview'):source.index('    function activatePromotionPanels')]
         handler = source[source.index("document.querySelectorAll('[data-promo-bulk-preview]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
-        self.assertIn("promotionApiRequest('/api/promotions/preview'", handler)
-        self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", handler)
+        self.assertIn("promotionApiRequest('/api/promotions/preview'", runner)
+        self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", runner)
         self.assertIn('selectedListingKeys', handler)
+        self.assertIn('promotionRunCollectivePreview', handler)
+
+    def test_recommended_candidates_generate_one_collective_preview_queue_without_confirmation(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('data-promo-recommend-preview', source)
+        self.assertIn('Gerar ${{num(selectedRecommended)}} prévia(s) consultiva(s)', source)
+        handler = source[source.index("document.querySelectorAll('[data-promo-recommend-preview]'"):source.index("document.querySelectorAll('[data-promo-bulk-preview]'")]
+        self.assertIn('recommendation.recommended.filter', handler)
+        self.assertIn("'Recomendações por margem', 'join'", handler)
+        self.assertIn('promotionRunCollectivePreview', handler)
+        self.assertNotIn("/api/promotions/confirm", handler)
+        runner = source[source.index('    async function promotionRunCollectivePreview'):source.index('    function activatePromotionPanels')]
+        self.assertIn('Math.min(3, pending.length)', runner)
+        self.assertIn("'/api/promotions/preview'", runner)
+        self.assertNotIn("'/api/promotions/confirm'", runner)
 
     def test_bulk_preview_summary_keeps_confirmation_per_mlb(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
