@@ -529,16 +529,31 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn("'/api/promotions/preview'", runner)
         self.assertNotIn("'/api/promotions/confirm'", runner)
 
-    def test_bulk_preview_summary_keeps_confirmation_per_mlb(self):
+    def test_bulk_preview_summary_stages_reviewed_batch_without_execution(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
-        self.assertIn('function promotionBulkSummaryHtml(state)', source)
+        self.assertIn('function promotionBulkSummaryHtml(state, scopeKey)', source)
         self.assertIn('Resumo das prévias coletivas', source)
-        self.assertIn('Confirmar individualmente', source)
+        self.assertIn('Aprovar para execução', source)
+        self.assertIn('Aprovar todas as prévias válidas', source)
+        self.assertIn('para próxima etapa', source)
+        self.assertIn('Nenhuma promoção foi aplicada.', source)
         self.assertIn('promotionBulkRunUpdate(scopeKey, selectionKey, patch)', source)
         summary = source[source.index('    function promotionBulkSummaryHtml'):source.index('    function promotionScopePanelHtml')]
-        self.assertIn('data-promo-confirm=', summary)
+        self.assertNotIn('data-promo-confirm=', summary)
         self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", summary)
         self.assertIn("item.status === 'error'", summary)
+
+    def test_collective_approval_handlers_only_create_local_confirmation(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        handler = source[source.index("document.querySelectorAll('[data-promo-bulk-approve]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
+        self.assertIn('approvedSelectionKeys', handler)
+        self.assertIn('confirmation:null', handler)
+        self.assertIn('confirmedAt:Date.now()', handler)
+        self.assertNotIn('/api/promotions/preview', handler)
+        self.assertNotIn('/api/promotions/confirm', handler)
+        runner = source[source.index('    async function promotionRunCollectivePreview'):source.index('    function activatePromotionPanels')]
+        self.assertIn('approvedSelectionKeys:[]', runner)
+        self.assertIn('confirmation:null', runner)
 
 
 if __name__ == '__main__':

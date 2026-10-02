@@ -3985,23 +3985,28 @@ def render_dashboard(data):
       const items = (bulkRun.items || []).map(item => item.selectionKey === selectionKey ? {{...item, ...patch}} : item);
       promotionStateUpdate(scopeKey, {{bulkRun:{{...bulkRun, items}}}});
     }}
-    function promotionBulkSummaryHtml(state) {{
+    function promotionBulkSummaryHtml(state, scopeKey) {{
       const run = state.bulkRun;
       if (!run?.items?.length) return '';
       const ready = run.items.filter(item => item.status === 'ready').length;
       const errors = run.items.filter(item => item.status === 'error').length;
       const pending = run.items.length - ready - errors;
+      const readyKeys = new Set(run.items.filter(item => item.status === 'ready').map(item => item.selectionKey));
+      const approvedKeys = new Set((run.approvedSelectionKeys || []).filter(key => readyKeys.has(key)));
+      const stagedKeys = new Set((run.confirmation?.selectionKeys || []).filter(key => readyKeys.has(key)));
       const actionLabel = run.operation === 'join' ? 'Participar' : run.operation === 'update' ? 'Alterar' : 'Sair';
       const rows = run.items.map(item => {{
-        const individualState = promotionState.get(item.code) || {{}};
         const status = item.status === 'ready' ? 'Prévia pronta' : item.status === 'error' ? 'Impedido' : 'Preparando';
         const margin = Number.isFinite(item.margin) ? `${{brl(item.profit)}} · ${{item.margin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}%` : 'Margem N/D';
-        const confirm = item.status === 'ready' && individualState.preview?.preview_token
-          ? `<button class="promotion-confirm" type="button" data-promo-confirm="${{safe(item.code)}}">Confirmar individualmente</button>`
+        const approval = item.status === 'ready'
+          ? `<label><input type="checkbox" data-promo-bulk-approve="${{safe(item.selectionKey)}}" data-promo-scope-key="${{safe(scopeKey)}}"${{approvedKeys.has(item.selectionKey) ? ' checked' : ''}}> Aprovar para execução</label>`
           : `<span class="muted">${{safe(item.error || '')}}</span>`;
-        return `<div class="promotion-bulk-summary-row"><div><b>${{safe(item.code)}}</b><small>${{safe(item.sku || 'SKU não informado')}} · ${{safe(item.title || '')}}</small></div><div><span class="muted">Ação</span><b>${{safe(actionLabel)}}</b></div><div><span class="muted">Preço</span><b>${{item.price > 0 ? brl(item.price) : '—'}}</b></div><div><span class="muted">Resultado estimado</span><b>${{margin}}</b></div><div><span class="promotion-bulk-status ${{item.status}}">${{status}}</span>${{confirm}}</div></div>`;
+        return `<div class="promotion-bulk-summary-row"><div><b>${{safe(item.code)}}</b><small>${{safe(item.sku || 'SKU não informado')}} · ${{safe(item.title || '')}}</small></div><div><span class="muted">Ação</span><b>${{safe(actionLabel)}}</b></div><div><span class="muted">Preço</span><b>${{item.price > 0 ? brl(item.price) : '—'}}</b></div><div><span class="muted">Resultado estimado</span><b>${{margin}}</b></div><div><span class="promotion-bulk-status ${{item.status}}">${{status}}</span>${{approval}}</div></div>`;
       }}).join('');
-      return `<div class="promotion-bulk-summary"><div class="promotion-bulk-summary-head"><div><b>Resumo das prévias coletivas</b><div class="muted">${{safe(run.campaignName || 'Campanha')}} · cada confirmação continua individual.</div></div><div><b>${{ready}} pronta(s)</b> · ${{errors}} impedida(s) · ${{pending}} em processamento</div></div><div class="promotion-bulk-summary-list">${{rows}}</div></div>`;
+      const allReadyApproved = ready > 0 && approvedKeys.size === ready;
+      const staged = stagedKeys.size ? `<div class="promotion-success"><b>Lote revisado:</b> ${{stagedKeys.size}} promoção(ões) autorizada(s) para a etapa de execução. Nenhuma promoção foi aplicada.</div>` : '';
+      const controls = `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-approve-all data-promo-scope-key="${{safe(scopeKey)}}"${{allReadyApproved ? ' checked' : ''}}${{ready ? '' : ' disabled'}}> Aprovar todas as prévias válidas</label><button type="button" data-promo-bulk-stage-confirm data-promo-scope-key="${{safe(scopeKey)}}"${{approvedKeys.size ? '' : ' disabled'}}>Confirmar ${{approvedKeys.size}} para próxima etapa</button><span class="muted">Esta confirmação apenas forma o lote; ainda não envia nada ao Mercado Livre.</span></div>`;
+      return `<div class="promotion-bulk-summary"><div class="promotion-bulk-summary-head"><div><b>Resumo das prévias coletivas</b><div class="muted">${{safe(run.campaignName || 'Campanha')}} · revise cada MLB antes de formar o lote.</div></div><div><b>${{ready}} pronta(s)</b> · ${{errors}} impedida(s) · ${{pending}} em processamento</div></div>${{controls}}${{staged}}<div class="promotion-bulk-summary-list">${{rows}}</div></div>`;
     }}
     function promotionMarginRecommendations(results, sources, target, campaignKey = '', query = '') {{
       const sourceByCode = new Map(sources.map(source => [String(source.code || '').toUpperCase(), source]));
@@ -4059,7 +4064,7 @@ def render_dashboard(data):
       const campaignGroups = promotionCampaignGroups(visibleResults);
       const selectedCampaignKey = String(state.campaignKey || '');
       const selectedListingKeys = new Set(state.selectedListingKeys || []);
-      const bulkSummary = promotionBulkSummaryHtml(state);
+      const bulkSummary = promotionBulkSummaryHtml(state, key);
       const recommendation = promotionMarginRecommendations(state.results, sources, promotionMarginTarget, selectedCampaignKey, searchQuery);
       const recommendationHtml = promotionRecommendationHtml(recommendation, key, promotionMarginTarget, selectedCampaignKey, state.selectedListingKeys || []);
       const campaignInventory = `<div class="promotion-option"><h5>Campanhas encontradas neste grupo</h5><div class="muted">Selecione uma campanha para ver somente os anúncios vinculados a ela.</div><div class="promotion-card-grid"><button type="button" class="promotion-campaign-card" data-promo-campaign-filter="" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{!selectedCampaignKey}}"><b>Todas as campanhas</b><span class="muted">${{num(allCampaignGroups.length)}} campanha(s)</span></button>${{allCampaignGroups.map(group => `<button type="button" class="promotion-campaign-card" data-promo-campaign-filter="${{safe(group.key)}}" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{selectedCampaignKey === group.key}}"><b>${{safe(group.name)}}</b><span class="muted">${{safe(promotionStatusLabel(group.row))}} · ${{num(group.listings.length)}} anúncio(s) carregado(s)</span><span class="muted">${{safe(promotionPeriod(group.row))}}</span></button>`).join('')}}</div></div>`;
@@ -4333,7 +4338,7 @@ def render_dashboard(data):
           price:promotionEffectivePrice(job.row, job.source), profit:financial.available ? financial.profit : null,
           margin:financial.available ? financial.margin : null, status:'pending', error:''}};
       }});
-      promotionStateUpdate(scopeKey, {{bulkRun:{{groupKey:'collective', campaignName, operation, items:runItems}}}});
+      promotionStateUpdate(scopeKey, {{bulkRun:{{groupKey:'collective', campaignName, operation, items:runItems, approvedSelectionKeys:[], confirmation:null}}}});
       const pending = [...jobs];
       const worker = async () => {{
         while (pending.length) {{
@@ -4442,6 +4447,30 @@ def render_dashboard(data):
         }});
         button.disabled = true;
         await promotionRunCollectivePreview(key, previewJobs, group.name, operation);
+      }}));
+      document.querySelectorAll('[data-promo-bulk-approve]').forEach(input => input.addEventListener('change', () => {{
+        const key = input.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const bulkRun = state.bulkRun || {{items:[]}};
+        const approved = new Set(bulkRun.approvedSelectionKeys || []);
+        if (input.checked) approved.add(input.dataset.promoBulkApprove); else approved.delete(input.dataset.promoBulkApprove);
+        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, approvedSelectionKeys:[...approved], confirmation:null}}}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-approve-all]').forEach(input => input.addEventListener('change', () => {{
+        const key = input.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const bulkRun = state.bulkRun || {{items:[]}};
+        const readyKeys = (bulkRun.items || []).filter(item => item.status === 'ready').map(item => item.selectionKey);
+        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, approvedSelectionKeys:input.checked ? readyKeys : [], confirmation:null}}}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-stage-confirm]').forEach(button => button.addEventListener('click', () => {{
+        const key = button.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const bulkRun = state.bulkRun || {{items:[]}};
+        const readyKeys = new Set((bulkRun.items || []).filter(item => item.status === 'ready').map(item => item.selectionKey));
+        const selectionKeys = (bulkRun.approvedSelectionKeys || []).filter(selectionKey => readyKeys.has(selectionKey));
+        if (!selectionKeys.length) return;
+        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, approvedSelectionKeys:selectionKeys, confirmation:{{selectionKeys, confirmedAt:Date.now()}}}}}});
       }}));
       document.querySelectorAll('[data-promo-load]').forEach(button => button.addEventListener('click', async () => {{
         const code = button.dataset.promoLoad;
