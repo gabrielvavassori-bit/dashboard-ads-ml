@@ -3752,7 +3752,8 @@ def render_dashboard(data):
     }}
     function promotionFlexPolicy(price, quote) {{
       const apiWeight = Number(quote?.billable_weight_kg);
-      const weightEstimated = !Number.isFinite(apiWeight) || apiWeight <= 0;
+      const weightTrusted = quote?.billable_weight_unit === 'kg' && Number.isFinite(apiWeight) && apiWeight > 0;
+      const weightEstimated = !weightTrusted;
       const weight = weightEstimated ? 2 : apiWeight;
       const fullBonus = weight <= .5 ? 9.89 : (weight <= 5 ? 10.89 : 14.89);
       const weightBand = weight <= .5 ? 'até 0,5 kg' : (weight <= 5 ? '0,5 a 5 kg' : 'mais de 5 kg');
@@ -3769,7 +3770,7 @@ def render_dashboard(data):
         priceBand = quote.seller_reputation_green ? 'a partir de R$ 79 com reputação verde' : 'a partir de R$ 79 sem bônus Flex';
       }}
       const apiWeightSource = quote?.billable_weight_source === 'item_package'
-        ? 'peso da embalagem do anúncio na API' : 'peso faturável da cotação na API';
+        ? 'peso da embalagem do anúncio na API' : 'peso faturável da cotação na API (normalizado para kg)';
       return {{available:true, distance:'média distância', weight, weightBand, weightEstimated,
         weightSource:weightEstimated ? 'faixa intermediária estimada' : apiWeightSource,
         fullBonus, fixedFee, bonus, priceBand}};

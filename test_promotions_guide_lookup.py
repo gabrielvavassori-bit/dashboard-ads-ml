@@ -173,6 +173,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
                                       'shipping_cost': 5, 'rebate': 0,
                                       'receipt_before_cost_tax': 84,
                                       'billable_weight_kg': 2,
+                                      'billable_weight_unit': 'kg',
+                                      'billable_weight_source': 'shipping_options_quote',
                                       'seller_reputation_green': True}}
         script = stubs + functions + '\nconsole.log(JSON.stringify(promotionFinancialResult(' + json.dumps(row) + ',{sku:"SKU1"})));'
         result = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
@@ -231,13 +233,27 @@ class PromotionsGuideLookupTests(unittest.TestCase):
             source.index('    function promotionFlexPolicy'):
             source.index('    function promotionFinancialResult')
         ].replace('{{', '{').replace('}}', '}')
-        script = function + "\nconsole.log(JSON.stringify([promotionFlexPolicy(18.99,{billable_weight_kg:.5,seller_reputation_green:true}),promotionFlexPolicy(30,{billable_weight_kg:2,seller_reputation_green:true}),promotionFlexPolicy(60,{billable_weight_kg:6,seller_reputation_green:true}),promotionFlexPolicy(100,{billable_weight_kg:2,seller_reputation_green:true})]));"
+        script = function + "\nconsole.log(JSON.stringify([promotionFlexPolicy(18.99,{billable_weight_kg:.5,billable_weight_unit:'kg',seller_reputation_green:true}),promotionFlexPolicy(30,{billable_weight_kg:2,billable_weight_unit:'kg',seller_reputation_green:true}),promotionFlexPolicy(60,{billable_weight_kg:6,billable_weight_unit:'kg',seller_reputation_green:true}),promotionFlexPolicy(100,{billable_weight_kg:2,billable_weight_unit:'kg',seller_reputation_green:true})]));"
         rows = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
         self.assertEqual((rows[0]['fixedFee'], rows[0]['bonus']), (6.25, 9.89))
         self.assertEqual((rows[1]['fixedFee'], rows[1]['bonus']), (6.65, 10.89))
         self.assertEqual((rows[2]['fixedFee'], rows[2]['bonus']), (7.75, 14.89))
         self.assertEqual(rows[3]['fixedFee'], 0)
         self.assertAlmostEqual(rows[3]['bonus'], 1.089, places=6)
+
+    def test_flex_uses_normalized_300_grams_and_rejects_legacy_untyped_weight(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        function = source[
+            source.index('    function promotionFlexPolicy'):
+            source.index('    function promotionFinancialResult')
+        ].replace('{{', '{').replace('}}', '}')
+        script = function + "\nconsole.log(JSON.stringify([promotionFlexPolicy(30,{billable_weight_kg:.3,billable_weight_unit:'kg',seller_reputation_green:true}),promotionFlexPolicy(30,{billable_weight_kg:300,seller_reputation_green:true})]));"
+        rows = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
+        self.assertEqual(rows[0]['weightBand'], 'até 0,5 kg')
+        self.assertFalse(rows[0]['weightEstimated'])
+        self.assertEqual(rows[1]['weightBand'], '0,5 a 5 kg')
+        self.assertTrue(rows[1]['weightEstimated'])
+        self.assertEqual(rows[1]['weight'], 2)
 
     def test_flex_uses_medium_weight_band_when_api_weight_and_flex_quote_are_unavailable(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
