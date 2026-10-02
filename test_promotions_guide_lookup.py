@@ -41,7 +41,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('data-promo-config-open', html)
         self.assertIn('data-promo-direct="2"', html)
         self.assertIn('>Participar</button>', html)
-        self.assertLess(html.index('<dialog'), html.index('data-promo-campaign-price="2"'))
+        self.assertLess(html.index('data-promo-campaign-price="2"'), html.index('<dialog'))
         self.assertIn('data-promo-campaign="2"', html)
         self.assertNotIn('Gerar prévia para participar', html)
         self.assertIn('data-promo-item="MLB111"', html)
@@ -481,6 +481,28 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         total_cell = source[source.index('    function promotionTotalCell(row)'):source.index('    function promotionFriendlyType(row)')]
         self.assertIn('const price = promotionEffectivePrice(row);', total_cell)
+
+    def test_editable_price_lives_in_price_column_and_requotes_before_confirmation(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
+        self.assertIn('const priceCell = editablePrice', row)
+        self.assertIn('data-promo-campaign-price=', row)
+        self.assertIn('Preço sugerido; edite para recalcular antes de aprovar', row)
+        self.assertIn('min_discounted_price', row)
+        self.assertIn('max_discounted_price', row)
+        self.assertIn('<td class="num">${{priceCell}}</td><td class="num">${{promotionReceiptCell(row)}}</td>', row)
+        self.assertNotIn('<label>Preço promocional<input', row[row.index('const actionControls'):row.index('const quote =')])
+        self.assertIn('function promotionRequoteEditedPrice(input)', source)
+        requote = source[source.index('    async function promotionRequoteEditedPrice'):source.index('    function activatePromotionPanels')]
+        self.assertIn("promotionApiRequest('/api/promotions/preview'", requote)
+        self.assertIn('receipt_quote:preview.summary?.receipt_quote', requote)
+        self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", requote)
+
+    def test_individual_campaign_button_generates_preview_without_immediate_confirmation(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        handler = source[source.index("document.querySelectorAll('[data-promo-campaign]')"):source.index("document.querySelectorAll('[data-promo-create-campaign]')")]
+        self.assertIn("promotionApiRequest('/api/promotions/preview'", handler)
+        self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", handler)
 
     def test_account_campaign_inventory_loads_without_product_search(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
