@@ -207,6 +207,14 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('data-promo-scope-view="sku"', source)
         self.assertIn('data-promo-scope-view="hybrid"', source)
         self.assertIn('data-promo-scope-view="listing"', source)
+
+    def test_campaign_inventory_cards_filter_the_loaded_scope(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('Campanhas encontradas neste grupo', source)
+        self.assertIn('data-promo-campaign-filter=', source)
+        self.assertIn("campaignKey:button.dataset.promoCampaignFilter || '', view:'campaign'", source)
+        self.assertIn('group.key === selectedCampaignKey', source)
+        self.assertIn('Todas as campanhas', source)
         self.assertIn("const view = state.view || 'hybrid';", source)
 
 

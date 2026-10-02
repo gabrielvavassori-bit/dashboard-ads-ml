@@ -1749,6 +1749,9 @@ def render_dashboard(data):
     .promotion-scope-view button[aria-pressed="true"] {{ background:var(--ink); color:#fff; }}
     .promotion-card-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:8px; margin-top:8px; }}
     .promotion-campaign-card {{ display:flex; flex-direction:column; gap:3px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--soft); }}
+    button.promotion-campaign-card {{ width:100%; color:var(--ink); text-align:left; cursor:pointer; }}
+    button.promotion-campaign-card[aria-pressed="true"] {{ border-color:#344054; background:#344054; color:#fff; }}
+    button.promotion-campaign-card[aria-pressed="true"] .muted {{ color:#e4e7ec; }}
     .promotion-hybrid-sku {{ margin-top:10px; padding-top:8px; border-top:1px solid var(--line); }}
     .promotion-hybrid-sku h6 {{ margin:0 0 6px; font-size:12px; }}
     .promotion-scope-list h5 {{ margin:0 0 3px; font-size:14px; }}
@@ -3861,6 +3864,9 @@ def render_dashboard(data):
       if (!state.results) return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta em lote de ${{num(sources.length)}} MLB(s). Cada ação fica vinculada ao MLB exibido na própria linha e é enviada ao clicar no botão correspondente.</div><button type="button" data-promo-load-scope="${{safe(key)}}" data-promo-scope-codes="${{safe(sources.map(source => String(source.code || '').toUpperCase()).join(','))}}">Consultar promoções da ${{safe(label)}}</button>${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
       const view = state.view || 'hybrid';
       const selector = `<div class="promotion-scope-view" aria-label="Visualizar promoções por"><button type="button" data-promo-scope-view="campaign" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'campaign'}}">Campanha</button><button type="button" data-promo-scope-view="sku" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'sku'}}">SKU</button><button type="button" data-promo-scope-view="hybrid" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'hybrid'}}">Híbrida</button><button type="button" data-promo-scope-view="listing" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'listing'}}">Anúncio/variação</button></div>`;
+      const campaignGroups = promotionCampaignGroups(state.results);
+      const selectedCampaignKey = String(state.campaignKey || '');
+      const campaignInventory = `<div class="promotion-option"><h5>Campanhas encontradas neste grupo</h5><div class="muted">Selecione uma campanha para ver somente os anúncios vinculados a ela.</div><div class="promotion-card-grid"><button type="button" class="promotion-campaign-card" data-promo-campaign-filter="" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{!selectedCampaignKey}}"><b>Todas as campanhas</b><span class="muted">${{num(campaignGroups.length)}} campanha(s)</span></button>${{campaignGroups.map(group => `<button type="button" class="promotion-campaign-card" data-promo-campaign-filter="${{safe(group.key)}}" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{selectedCampaignKey === group.key}}"><b>${{safe(group.name)}}</b><span class="muted">${{safe(promotionStatusLabel(group.row))}} · ${{num(group.listings.length)}} anúncio(s)</span><span class="muted">${{safe(promotionPeriod(group.row))}}</span></button>`).join('')}}</div></div>`;
       const results = state.results.map(result => {{
         const title = result.data?.item?.title || result.code;
         if (result.error) return `<div class="promotion-option"><b>${{safe(result.code)}}</b><p class="muted">${{safe(title)}}</p><div class="promotion-error">${{safe(result.error)}}</div></div>`;
@@ -3868,7 +3874,7 @@ def render_dashboard(data):
         const individualState = promotionState.get(result.code) || {{}};
         return `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b><p class="muted">Ação sempre será aplicada somente neste MLB: ${{safe(title)}}</p>${{promotionWriteAccessHtml(result.data)}}${{promotionTableHtml(source, result.data?.promotions || [], true)}}${{promotionPreviewHtml(source, individualState)}}${{individualState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{individualState.error ? `<div class="promotion-error">${{safe(individualState.error)}}</div>` : ''}}</div>`;
       }}).join('');
-      const byCampaign = promotionCampaignGroups(state.results).map(group => {{
+      const byCampaign = campaignGroups.filter(group => !selectedCampaignKey || group.key === selectedCampaignKey).map(group => {{
         const listings = group.listings.sort((a, b) => (a.mlbu || '').localeCompare(b.mlbu || '', 'pt-BR') || a.code.localeCompare(b.code, 'pt-BR'));
         const body = listings.map(listing => {{
           const sourceItem = sources.find(source => String(source.code).toUpperCase() === listing.code) || {{}};
@@ -3891,7 +3897,7 @@ def render_dashboard(data):
         const errors = group.results.filter(result => result.error).map(result => `<div class="promotion-error">${{safe(result.code)}}: ${{safe(result.error)}}</div>`).join('');
         return `<div class="promotion-option"><h5>SKU ${{safe(group.sku)}}</h5><div class="promotion-card-grid">${{campaignCards || '<span class="muted">Nenhuma campanha encontrada.</span>'}}</div>${{listingPanels}}${{errors}}</div>`;
       }}).join('');
-      const hybrid = promotionCampaignGroups(state.results).map(group => {{
+      const hybrid = campaignGroups.filter(group => !selectedCampaignKey || group.key === selectedCampaignKey).map(group => {{
         const skuMap = new Map();
         group.listings.forEach(listing => {{
           const source = sources.find(candidate => String(candidate.code || '').toUpperCase() === listing.code) || {{}};
@@ -3923,7 +3929,7 @@ def render_dashboard(data):
         return feedback ? `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b>${{feedback}}</div>` : '';
       }}).join('');
       const content = view === 'campaign' ? byCampaign : view === 'sku' ? bySku : view === 'hybrid' ? hybrid : results;
-      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{selector}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}${{previews}}</div></div>`;
+      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{campaignInventory}}${{selector}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}${{previews}}</div></div>`;
     }}
     function promotionPanelHtml(item) {{
       const code = String(item.code || '').toUpperCase();
@@ -4008,6 +4014,9 @@ def render_dashboard(data):
       document.querySelectorAll('[data-promo-config-close]').forEach(button => button.addEventListener('click', () => {{ activePromotionConfigKey = ''; button.closest('dialog')?.close(); }}));
       document.querySelectorAll('[data-promo-scope-view]').forEach(button => button.addEventListener('click', () => {{
         promotionStateUpdate(button.dataset.promoScopeKey, {{view:button.dataset.promoScopeView}});
+      }}));
+      document.querySelectorAll('[data-promo-campaign-filter]').forEach(button => button.addEventListener('click', () => {{
+        promotionStateUpdate(button.dataset.promoScopeKey, {{campaignKey:button.dataset.promoCampaignFilter || '', view:'campaign'}});
       }}));
       document.querySelectorAll('[data-promo-load]').forEach(button => button.addEventListener('click', async () => {{
         const code = button.dataset.promoLoad;
