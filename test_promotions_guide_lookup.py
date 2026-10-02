@@ -217,6 +217,19 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('Todas as campanhas', source)
         self.assertIn("const view = state.view || 'hybrid';", source)
 
+    def test_account_campaign_inventory_loads_without_product_search(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        app_source = Path('app.py').read_text(encoding='utf-8')
+        self.assertIn('id="promotionAccountCampaigns"', source)
+        self.assertIn("promotionApiRequest('/api/promotions/campaigns')", source)
+        self.assertIn('/api/promotions/campaign-items?promotion_id=', source)
+        self.assertIn("button.dataset.view === 'promotions'", source)
+        self.assertIn('loadPromotionCampaignCatalog()', source)
+        self.assertIn("detailScope:'campaign'", source)
+        self.assertIn('promotionState.set(code', source)
+        self.assertIn('"/api/promotions/campaigns"', app_source)
+        self.assertIn('"/internal/dash-ads/promotions/campaign-items"', app_source)
+
     def test_bulk_campaign_action_only_generates_individual_previews(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         self.assertIn('data-promo-bulk-select=', source)

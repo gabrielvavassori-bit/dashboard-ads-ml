@@ -2061,7 +2061,12 @@ def render_dashboard(data):
     <section class="view" id="view-promotions">
       <section class="card">
         <h2>Central de promoções</h2>
-        <p class="note">Busque um SKU, MLB, MLBU ou família presente nesta análise. Para grupos, as oportunidades são consultadas por MLB e cada ação fica vinculada ao anúncio individual. Escolha depois a visão por campanha, SKU ou híbrida.</p>
+        <p class="note">As campanhas da conta aparecem automaticamente. Abra uma campanha para ver os anúncios participantes ou elegíveis; a busca abaixo continua disponível para filtrar por SKU, MLB, MLBU ou família.</p>
+        <div class="promotion-option">
+          <h3>Campanhas da conta</h3>
+          <div class="muted">Selecione uma campanha para listar seus anúncios. Nenhuma alteração é aplicada ao abrir ou consultar.</div>
+          <div id="promotionAccountCampaigns" aria-live="polite"><span class="muted">Abra a guia Promoções para carregar as campanhas.</span></div>
+        </div>
         <form id="promotionGuideForm" class="promotion-form">
           <label>SKU, MLB, MLBU ou família<input id="promotionGuideMlb" type="text" placeholder="LAZ-2X2, MLB6188463888 ou família" autocomplete="off" required></label>
           <button type="submit">Consultar promoções</button>
@@ -2184,6 +2189,7 @@ def render_dashboard(data):
     const dailyChartMetric = new Map();
     const promotionState = new Map();
     let promotionGuideItem = null;
+    let promotionCampaignCatalog = {{loading:false, loaded:false, campaigns:[], error:''}};
     let activePromotionConfigKey = '';
     let financeProfile = {{
       costBySku: {{}}, costByKey: {{}}, profitTaxRate: 0, flexCarrierCost: 0,
@@ -3827,7 +3833,7 @@ def render_dashboard(data):
       return `<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Promoção e período</th><th>Mercado Livre</th><th>Vendedor</th><th>Total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div>`;
     }}
     function promotionScopeLabel(item) {{
-      return item.detailScope === 'family' ? 'família' : item.detailScope === 'mlbu' ? 'variação/MLBU' : item.detailScope === 'sku' ? 'SKU' : 'grupo';
+      return item.detailScope === 'family' ? 'família' : item.detailScope === 'mlbu' ? 'variação/MLBU' : item.detailScope === 'sku' ? 'SKU' : item.detailScope === 'campaign' ? 'campanha' : 'grupo';
     }}
     function promotionScopeItems(item) {{
       const sources = (item.children && item.children.length) ? item.children : [item];
@@ -4037,6 +4043,77 @@ def render_dashboard(data):
       const code = `MLB${{digits}}`;
       const direct = items.find(item => String(item.code || '').trim().toUpperCase() === code);
       return {{item:direct ? {{...direct}} : {{code}}}};
+    }}
+    function renderPromotionCampaignCatalog() {{
+      const target = document.getElementById('promotionAccountCampaigns');
+      if (!target) return;
+      if (promotionCampaignCatalog.loading) {{
+        target.innerHTML = '<div class="muted">Carregando campanhas diretamente do Mercado Livre...</div>';
+        return;
+      }}
+      if (promotionCampaignCatalog.error) {{
+        target.innerHTML = `<div class="promotion-error">${{safe(promotionCampaignCatalog.error)}}</div><button type="button" data-promo-catalog-retry>Tentar novamente</button>`;
+        return;
+      }}
+      if (!promotionCampaignCatalog.loaded) {{
+        target.innerHTML = '<span class="muted">Abra a guia Promoções para carregar as campanhas.</span>';
+        return;
+      }}
+      if (!promotionCampaignCatalog.campaigns.length) {{
+        target.innerHTML = '<div class="detail-modal-empty">O Mercado Livre não retornou campanhas para esta conta.</div>';
+        return;
+      }}
+      target.innerHTML = `<div class="promotion-card-grid">${{promotionCampaignCatalog.campaigns.map(campaign => `<button type="button" class="promotion-campaign-card" data-account-promotion-id="${{safe(campaign.promotion_id)}}" data-account-promotion-type="${{safe(campaign.promotion_type)}}" aria-pressed="false"><b>${{safe(campaign.name || promotionFriendlyType(campaign))}}</b><span class="promotion-status ${{promotionStatusClass(campaign)}}">${{safe(promotionStatusLabel(campaign))}}</span><span class="muted">${{safe(promotionPeriod(campaign))}}</span></button>`).join('')}}</div>`;
+    }}
+    async function loadPromotionCampaignCatalog(force = false) {{
+      if (promotionCampaignCatalog.loading || (promotionCampaignCatalog.loaded && !force)) return;
+      promotionCampaignCatalog = {{...promotionCampaignCatalog, loading:true, error:''}};
+      renderPromotionCampaignCatalog();
+      try {{
+        const data = await promotionApiRequest('/api/promotions/campaigns');
+        promotionCampaignCatalog = {{loading:false, loaded:true, campaigns:Array.isArray(data.campaigns) ? data.campaigns : [], error:''}};
+      }} catch (error) {{
+        promotionCampaignCatalog = {{loading:false, loaded:true, campaigns:[], error:error.message}};
+      }}
+      renderPromotionCampaignCatalog();
+    }}
+    async function openPromotionAccountCampaign(button) {{
+      const promotionId = String(button.dataset.accountPromotionId || '');
+      const promotionType = String(button.dataset.accountPromotionType || '');
+      const campaign = promotionCampaignCatalog.campaigns.find(candidate => String(candidate.promotion_id) === promotionId && String(candidate.promotion_type) === promotionType);
+      if (!campaign) return;
+      button.disabled = true;
+      const originalLabel = button.innerHTML;
+      button.innerHTML = `<b>${{safe(campaign.name || promotionId)}}</b><span class="muted">Carregando anúncios...</span>`;
+      try {{
+        const data = await promotionApiRequest(`/api/promotions/campaign-items?promotion_id=${{encodeURIComponent(promotionId)}}&promotion_type=${{encodeURIComponent(promotionType)}}`);
+        const items = Array.isArray(data.items) ? data.items : [];
+        const children = [];
+        const results = [];
+        items.forEach(entry => {{
+          const code = String(entry.item_id || '').toUpperCase();
+          if (!/^MLB[0-9]+$/.test(code) || !entry.promotion) return;
+          const known = allItems.find(item => String(item.code || '').toUpperCase() === code) || {{}};
+          const row = {{...entry.promotion, name:campaign.name || entry.promotion.name || promotionType}};
+          const currentPrice = Number(known.currentPrice || row.original_price || row.price || 0);
+          const source = {{...known, code, title:known.title || code, currentPrice}};
+          children.push(source);
+          const itemData = {{ok:true, item:{{id:code, title:source.title, price:currentPrice, user_product_id:known.userProductId || ''}}, promotions:[row], promotion_write_access:data.promotion_write_access || {{allowed:null, status:'unknown'}}}};
+          promotionState.set(code, {{...(promotionState.get(code) || {{}}), loading:false, data:itemData, error:''}});
+          results.push({{code, data:itemData}});
+        }});
+        promotionGuideItem = {{promotionGuide:true, detailScope:'campaign', detailId:`${{promotionType}}:${{promotionId}}`, code:`CAMPAIGN:${{promotionType}}:${{promotionId}}`, title:campaign.name || promotionId, children}};
+        const key = promotionScopeKey(promotionGuideItem);
+        promotionState.set(key, {{loading:false, results, error:'', view:'campaign', campaignKey:''}});
+        renderPromotionGuide();
+        document.getElementById('promotionGuideResult')?.scrollIntoView({{behavior:'smooth', block:'start'}});
+      }} catch (error) {{
+        const target = document.getElementById('promotionGuideResult');
+        if (target) target.innerHTML = `<div class="promotion-error">${{safe(error.message)}}</div>`;
+      }} finally {{
+        button.disabled = false;
+        button.innerHTML = originalLabel;
+      }}
     }}
     function renderPromotionGuide() {{
       const target = document.getElementById('promotionGuideResult');
@@ -4803,6 +4880,7 @@ def render_dashboard(data):
         document.getElementById(`view-${{button.dataset.view}}`).classList.add('active');
         try {{ localStorage.setItem('dashboardAdsActiveView', button.dataset.view); }} catch (error) {{}}
         if (button.dataset.view === 'finance') loadFinanceProfile();
+        if (button.dataset.view === 'promotions') loadPromotionCampaignCatalog();
       }});
     }});
     document.getElementById('financeSkuSearch').addEventListener('input', renderFinanceRows);
@@ -4847,6 +4925,12 @@ def render_dashboard(data):
       promotionState.set(key, {{}});
       renderPromotionGuide();
       target.querySelector('[data-promo-load-scope], [data-promo-load]')?.click();
+    }});
+    document.getElementById('promotionAccountCampaigns').addEventListener('click', event => {{
+      const retry = event.target.closest('[data-promo-catalog-retry]');
+      if (retry) {{ loadPromotionCampaignCatalog(true); return; }}
+      const campaign = event.target.closest('[data-account-promotion-id]');
+      if (campaign) openPromotionAccountCampaign(campaign);
     }});
     document.getElementById('promotionAuditLoad').addEventListener('click', loadPromotionAudit);
     document.getElementById('contextSelect').addEventListener('change', event => {{

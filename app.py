@@ -2737,6 +2737,32 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
                 return
+            if path in ("/api/promotions/campaigns", "/api/promotions/campaign-items"):
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if not beta_config.BETA_MODE or not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Inventario de campanhas disponivel somente no beta autorizado."}, 403)
+                    return
+                link, _, _ = _current_ml_account(user, token)
+                if not link:
+                    _send_json(self, {"ok": False, "message": "Selecione uma conta Mercado Livre."}, 400)
+                    return
+                params = {"client": (link["client_id"] or "").strip()}
+                agent_path = "/internal/dash-ads/promotions/campaigns"
+                if path.endswith("/campaign-items"):
+                    query = parse_qs(url.query or "")
+                    promotion_id = str(query.get("promotion_id", [""])[0] or "").strip()
+                    promotion_type = str(query.get("promotion_type", [""])[0] or "").strip().upper()
+                    if not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", promotion_id) or not re.fullmatch(r"[A-Z_]{2,60}", promotion_type):
+                        _send_json(self, {"ok": False, "message": "Selecione uma campanha valida da conta."}, 400)
+                        return
+                    params.update({"promotion_id": promotion_id, "promotion_type": promotion_type})
+                    agent_path = "/internal/dash-ads/promotions/campaign-items"
+                payload = _fetch_dash_ads_json(agent_path, params)
+                _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
+                return
             if path == "/api/promotions/audit":
                 user, token = _current_user(self)
                 if not user:
