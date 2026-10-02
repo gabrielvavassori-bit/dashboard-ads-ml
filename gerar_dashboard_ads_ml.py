@@ -4229,7 +4229,7 @@ def render_dashboard(data):
       document.querySelectorAll('[data-promo-scope-view]').forEach(button => button.addEventListener('click', () => {{
         promotionStateUpdate(button.dataset.promoScopeKey, {{view:button.dataset.promoScopeView}});
       }}));
-      document.querySelectorAll('[data-promo-scope-search]').forEach(input => input.addEventListener('change', () => {{
+      document.querySelectorAll('[data-promo-scope-search]').forEach(input => input.addEventListener('input', () => {{
         promotionStateUpdate(input.dataset.promoScopeKey, {{scopeSearch:input.value || ''}});
       }}));
       document.querySelectorAll('[data-promo-campaign-filter]').forEach(button => button.addEventListener('click', () => {{

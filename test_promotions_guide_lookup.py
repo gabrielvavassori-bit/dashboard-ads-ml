@@ -227,6 +227,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('SKU, MLB, MLBU ou título', source)
         self.assertIn('item.seller_sku, item.user_product_id, item.title', source)
         self.assertIn('anúncios carregados', source)
+        self.assertIn("input.addEventListener('input'", source)
 
     def test_campaign_catalog_percentages_are_preserved_and_seller_remainder_is_derived(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
