@@ -134,6 +134,17 @@
       "invariant": "O beta mostra valor e contagem de pedidos devolvidos quando a ponte comprova a janela exata; a taxa por pedidos continua N/D sem universo de pedidos comprovado, sem ocultar a contagem nem inventar denominador.",
       "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "test_operational_availability.py"],
       "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_operational_availability.py"], "blocking": true}]
+    },
+    {
+      "id": "REGRESSION-007",
+      "title": "Peso faturavel do Flex preserva unidade e fallback intermediario",
+      "severity": "ALTA",
+      "components": ["seller_promotions", "promotion_flex_scenario"],
+      "domains": ["financial_reporting", "mercado_livre_promotions", "shipping"],
+      "tags": ["flex", "billable_weight", "weight_unit", "medium_band_fallback", "no_false_heavy_weight"],
+      "invariant": "O peso faturavel recebido da cotacao do Mercado Livre deve ser normalizado de gramas para quilogramas e acompanhado de unidade explicita. Peso ausente, legado ou sem unidade comprovada usa consultivamente 2 kg, na faixa de 0,5 a 5 kg; nunca pode ser inferido como acima de 5 kg pelo valor bruto ou pelo frete.",
+      "file_globs": ["gerar_dashboard_ads_ml.py", "test_promotions_guide_lookup.py", "regressions/manifest.json"],
+      "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_promotions_guide_lookup.py"], "blocking": true}]
     }
   ]
 }
