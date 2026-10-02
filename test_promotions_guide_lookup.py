@@ -169,7 +169,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
                          [('MLB111', 0, 71.9, 5), ('MLB222', 0, 69.8, 10)])
         self.assertEqual(len(groups), 2)
 
-    def test_family_mlbu_and_mlb_route_to_individual_ads(self):
+    def test_sku_family_mlbu_and_mlb_route_to_individual_ads(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         function = source[
             source.index('    function resolvePromotionGuideItem'):
@@ -181,13 +181,16 @@ class PromotionsGuideLookupTests(unittest.TestCase):
             {'code': 'MLB333', 'familyId': '5064438396869903', 'userProductId': '999'},
         ]
         script = function + '\nconst items=' + json.dumps(items) + ';\n' + (
-            "for (const query of ['5064438396869903','MLBU765','MLB111','111','MLBU404']) "
+            "for (const query of ['LAZ-2X2','5064438396869903','MLBU765','MLB111','111','MLBU404']) "
             "console.log(JSON.stringify(resolvePromotionGuideItem(query, items)));"
         )
         output = subprocess.run(
             ['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True
         ).stdout.splitlines()
-        family, mlbu, mlb, numeric_mlb, missing = map(json.loads, output)
+        sku, family, mlbu, mlb, numeric_mlb, missing = map(json.loads, output)
+        self.assertEqual(sku['item']['detailScope'], 'sku')
+        self.assertEqual(sku['item']['detailId'], 'LAZ-2X2')
+        self.assertEqual([row['code'] for row in sku['item']['children']], ['MLB111'])
         self.assertEqual(family['item']['detailScope'], 'family')
         self.assertEqual([row['code'] for row in family['item']['children']], ['MLB111', 'MLB222', 'MLB333'])
         self.assertEqual(mlbu['item']['detailScope'], 'mlbu')
@@ -197,6 +200,14 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertEqual(numeric_mlb['item']['code'], 'MLB111')
         self.assertEqual(numeric_mlb['item']['sku'], 'LAZ-2X2')
         self.assertIn('não foi encontrado', missing['error'])
+
+    def test_scope_selector_offers_campaign_sku_hybrid_and_listing_views(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('data-promo-scope-view="campaign"', source)
+        self.assertIn('data-promo-scope-view="sku"', source)
+        self.assertIn('data-promo-scope-view="hybrid"', source)
+        self.assertIn('data-promo-scope-view="listing"', source)
+        self.assertIn("const view = state.view || 'hybrid';", source)
 
 
 if __name__ == '__main__':

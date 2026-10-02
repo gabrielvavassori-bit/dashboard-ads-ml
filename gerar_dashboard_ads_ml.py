@@ -1746,6 +1746,10 @@ def render_dashboard(data):
     .promotion-scope-view {{ display:flex; gap:6px; margin:12px 0; }}
     .promotion-scope-view button {{ width:auto; padding:6px 10px; background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:6px; font-size:12px; }}
     .promotion-scope-view button[aria-pressed="true"] {{ background:var(--ink); color:#fff; }}
+    .promotion-card-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:8px; margin-top:8px; }}
+    .promotion-campaign-card {{ display:flex; flex-direction:column; gap:3px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--soft); }}
+    .promotion-hybrid-sku {{ margin-top:10px; padding-top:8px; border-top:1px solid var(--line); }}
+    .promotion-hybrid-sku h6 {{ margin:0 0 6px; font-size:12px; }}
     .promotion-scope-list h5 {{ margin:0 0 3px; font-size:14px; }}
     .promotion-listing-identity {{ display:flex; align-items:center; gap:8px; min-width:220px; }}
     .promotion-listing-identity .product-thumbnail {{ flex:0 0 42px; width:42px; height:42px; }}
@@ -2041,9 +2045,9 @@ def render_dashboard(data):
     <section class="view" id="view-promotions">
       <section class="card">
         <h2>Central de promoções</h2>
-        <p class="note">Busque um MLB, MLBU ou família presente nesta análise. Para grupos, as oportunidades são consultadas por MLB e cada ação fica vinculada ao anúncio individual. A lista de todas as campanhas da conta ainda depende de uma consulta própria na ponte.</p>
+        <p class="note">Busque um SKU, MLB, MLBU ou família presente nesta análise. Para grupos, as oportunidades são consultadas por MLB e cada ação fica vinculada ao anúncio individual. Escolha depois a visão por campanha, SKU ou híbrida.</p>
         <form id="promotionGuideForm" class="promotion-form">
-          <label>MLB, MLBU ou família<input id="promotionGuideMlb" type="text" placeholder="MLB6188463888 ou 5064438396869903" autocomplete="off" required></label>
+          <label>SKU, MLB, MLBU ou família<input id="promotionGuideMlb" type="text" placeholder="LAZ-2X2, MLB6188463888 ou família" autocomplete="off" required></label>
           <button type="submit">Consultar promoções</button>
         </form>
         <div id="promotionGuideResult" aria-live="polite"></div>
@@ -3821,6 +3825,17 @@ def render_dashboard(data):
       }});
       return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
     }}
+    function promotionSkuGroups(results, sources) {{
+      const sourceByCode = new Map(sources.map(source => [String(source.code || '').toUpperCase(), source]));
+      const groups = new Map();
+      results.forEach(result => {{
+        const source = sourceByCode.get(String(result.code || '').toUpperCase()) || {{}};
+        const sku = String(source.sku || result.data?.item?.seller_sku || 'SKU não informado').trim() || 'SKU não informado';
+        if (!groups.has(sku)) groups.set(sku, {{sku, results:[]}});
+        groups.get(sku).results.push(result);
+      }});
+      return [...groups.values()].sort((a, b) => a.sku.localeCompare(b.sku, 'pt-BR'));
+    }}
     function promotionScopePanelHtml(item) {{
       const sources = promotionScopeItems(item);
       const key = promotionScopeKey(item);
@@ -3828,8 +3843,8 @@ def render_dashboard(data):
       const label = promotionScopeLabel(item);
       if (state.loading) return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consultando ${{num(sources.length)}} anúncio(s) individualmente...</div></div>`;
       if (!state.results) return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta em lote de ${{num(sources.length)}} MLB(s). Cada ação fica vinculada ao MLB exibido na própria linha e é enviada ao clicar no botão correspondente.</div><button type="button" data-promo-load-scope="${{safe(key)}}" data-promo-scope-codes="${{safe(sources.map(source => String(source.code || '').toUpperCase()).join(','))}}">Consultar promoções da ${{safe(label)}}</button>${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
-      const view = state.view || 'campaign';
-      const selector = `<div class="promotion-scope-view"><button type="button" data-promo-scope-view="campaign" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'campaign'}}">Por campanha</button><button type="button" data-promo-scope-view="listing" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'listing'}}">Por anúncio/variação</button></div>`;
+      const view = state.view || 'hybrid';
+      const selector = `<div class="promotion-scope-view" aria-label="Visualizar promoções por"><button type="button" data-promo-scope-view="campaign" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'campaign'}}">Campanha</button><button type="button" data-promo-scope-view="sku" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'sku'}}">SKU</button><button type="button" data-promo-scope-view="hybrid" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'hybrid'}}">Híbrida</button><button type="button" data-promo-scope-view="listing" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'listing'}}">Anúncio/variação</button></div>`;
       const results = state.results.map(result => {{
         const title = result.data?.item?.title || result.code;
         if (result.error) return `<div class="promotion-option"><b>${{safe(result.code)}}</b><p class="muted">${{safe(title)}}</p><div class="promotion-error">${{safe(result.error)}}</div></div>`;
@@ -3849,6 +3864,35 @@ def render_dashboard(data):
         }}).join('');
         return `<div class="promotion-option"><h5>${{safe(group.name)}}</h5><div class="muted">${{safe(promotionPeriod(group.row))}} · ${{num(listings.length)}} anúncio(s)</div><div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Anúncio/variação</th><th>Mercado Livre</th><th>Vendedor</th><th>Total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div></div>`;
       }}).join('') || '<div class="detail-modal-empty">Nenhuma campanha retornada para os anúncios consultados.</div>';
+      const bySku = promotionSkuGroups(state.results, sources).map(group => {{
+        const skuResults = group.results.filter(result => result.data);
+        const campaignCards = promotionCampaignGroups(skuResults).map(campaign => `<div class="promotion-campaign-card"><b>${{safe(campaign.name)}}</b><span class="muted">${{num(campaign.listings.length)}} anúncio(s)</span></div>`).join('');
+        const listingPanels = skuResults.map(result => {{
+          const sourceItem = sources.find(source => String(source.code || '').toUpperCase() === result.code) || {{}};
+          const source = {{...item, ...sourceItem, code:result.code, currentPrice:result.data?.item?.price || item.currentPrice}};
+          return `<div class="promotion-hybrid-sku"><h6>${{safe(result.code)}} · ${{safe(result.data?.item?.title || '')}}</h6>${{promotionTableHtml(source, result.data?.promotions || [], true)}}</div>`;
+        }}).join('');
+        const errors = group.results.filter(result => result.error).map(result => `<div class="promotion-error">${{safe(result.code)}}: ${{safe(result.error)}}</div>`).join('');
+        return `<div class="promotion-option"><h5>SKU ${{safe(group.sku)}}</h5><div class="promotion-card-grid">${{campaignCards || '<span class="muted">Nenhuma campanha encontrada.</span>'}}</div>${{listingPanels}}${{errors}}</div>`;
+      }}).join('');
+      const hybrid = promotionCampaignGroups(state.results).map(group => {{
+        const skuMap = new Map();
+        group.listings.forEach(listing => {{
+          const source = sources.find(candidate => String(candidate.code || '').toUpperCase() === listing.code) || {{}};
+          const sku = String(source.sku || 'SKU não informado');
+          if (!skuMap.has(sku)) skuMap.set(sku, []);
+          skuMap.get(sku).push({{...listing, source}});
+        }});
+        const skuBlocks = [...skuMap.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')).map(([sku, listings]) => {{
+          const rows = listings.map(listing => {{
+            const source = {{...item, ...listing.source, code:listing.code, currentPrice:state.results.find(result => result.code === listing.code)?.data?.item?.price || item.currentPrice}};
+            const entry = {{row:listing.row, index:listing.index, payout:promotionReceiptValue(listing.row), bestPayout:false, bestDiscount:false, bestSubsidy:false}};
+            return promotionTableRow(source, entry, true, {{...listing, sku, thumbnailUrl:listing.source.thumbnailUrl || ''}});
+          }}).join('');
+          return `<div class="promotion-hybrid-sku"><h6>SKU ${{safe(sku)}} · ${{num(listings.length)}} anúncio(s)</h6><div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Anúncio/variação</th><th>Mercado Livre</th><th>Vendedor</th><th>Total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{rows}}</tbody></table></div></div>`;
+        }}).join('');
+        return `<div class="promotion-option"><h5>${{safe(group.name)}}</h5><div class="muted">${{safe(promotionPeriod(group.row))}} · campanha → SKU → MLB</div>${{skuBlocks}}</div>`;
+      }}).join('') || '<div class="detail-modal-empty">Nenhuma campanha retornada para os anúncios consultados.</div>';
       const failures = state.results.filter(result => result.error).map(result => `<div class="promotion-error">${{safe(result.code)}}: ${{safe(result.error)}}</div>`).join('');
       const accessNotices = state.results.filter(result => result.data).map(result => {{
         const access = result.data?.promotion_write_access || {{}};
@@ -3862,7 +3906,8 @@ def render_dashboard(data):
         const feedback = `${{promotionPreviewHtml(source, individualState)}}${{individualState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{individualState.error ? `<div class="promotion-error">${{safe(individualState.error)}}</div>` : ''}}`;
         return feedback ? `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b>${{feedback}}</div>` : '';
       }}).join('');
-      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{selector}}<div class="promotion-panel-grid promotion-scope-list">${{view === 'campaign' ? accessNotices + byCampaign + failures + previews : results}}</div></div>`;
+      const content = view === 'campaign' ? byCampaign : view === 'sku' ? bySku : view === 'hybrid' ? hybrid : results;
+      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{selector}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}${{previews}}</div></div>`;
     }}
     function promotionPanelHtml(item) {{
       const code = String(item.code || '').toUpperCase();
@@ -3912,8 +3957,11 @@ def render_dashboard(data):
     }}
     function resolvePromotionGuideItem(raw, items) {{
       const query = String(raw || '').trim().toUpperCase();
+      if (!query) return {{error:'Informe um SKU, MLB, MLBU ou código de família.'}};
+      const exactSku = items.filter(item => String(item.sku || '').trim().toUpperCase() === query);
+      if (exactSku.length) return {{item:{{promotionGuide:true, detailScope:'sku', detailId:query, code:`SKU:${{query}}`, sku:query, children:exactSku}}}};
       const digits = query.replace(/^(?:MLBU|MLB|FAM[IÍ]LIA|FAMILY)\\s*[-:#]?\\s*/i, '');
-      if (!/^[0-9]+$/.test(digits)) return {{error:'Informe um MLB, MLBU ou código de família válido.'}};
+      if (!/^[0-9]+$/.test(digits)) return {{error:'SKU não encontrado na análise atual. Confira o código exato ou informe MLB, MLBU ou família.'}};
       const family = query.startsWith('MLB') ? [] : items.filter(item => String(item.familyId || '') === digits);
       const mlbu = query.startsWith('MLB') && !query.startsWith('MLBU') ? [] : items.filter(item => String(item.userProductId || '') === digits);
       if (query.startsWith('MLBU') && !mlbu.length || /^(?:FAM[IÍ]LIA|FAMILY)/.test(query) && !family.length)
