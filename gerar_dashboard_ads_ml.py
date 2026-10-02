@@ -1758,6 +1758,14 @@ def render_dashboard(data):
     .promotion-bulk-toolbar label {{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; }}
     .promotion-bulk-toolbar select {{ min-height:34px; }}
     .promotion-bulk-select {{ width:18px; height:18px; margin:0 7px 0 0; vertical-align:middle; }}
+    .promotion-bulk-summary {{ margin:10px 0; padding:11px; border:1px solid #84adff; border-radius:9px; background:#f5f8ff; }}
+    .promotion-bulk-summary-head {{ display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; margin-bottom:8px; }}
+    .promotion-bulk-summary-list {{ display:grid; gap:6px; }}
+    .promotion-bulk-summary-row {{ display:grid; grid-template-columns:minmax(150px,1.5fr) minmax(90px,.7fr) minmax(90px,.7fr) minmax(110px,.8fr) auto; align-items:center; gap:8px; padding:8px; border:1px solid var(--line); border-radius:7px; background:#fff; }}
+    .promotion-bulk-status {{ font-weight:800; }}
+    .promotion-bulk-status.ready {{ color:#067647; }}
+    .promotion-bulk-status.error {{ color:#b42318; }}
+    @media (max-width:800px) {{ .promotion-bulk-summary-row {{ grid-template-columns:1fr 1fr; }} }}
     .promotion-scope-list h5 {{ margin:0 0 3px; font-size:14px; }}
     .promotion-listing-identity {{ display:flex; align-items:center; gap:8px; min-width:220px; }}
     .promotion-listing-identity .product-thumbnail {{ flex:0 0 42px; width:42px; height:42px; }}
@@ -3860,6 +3868,30 @@ def render_dashboard(data):
       }});
       return [...groups.values()].sort((a, b) => a.sku.localeCompare(b.sku, 'pt-BR'));
     }}
+    function promotionBulkRunUpdate(scopeKey, selectionKey, patch) {{
+      const state = promotionState.get(scopeKey) || {{}};
+      const bulkRun = state.bulkRun || {{items:[]}};
+      const items = (bulkRun.items || []).map(item => item.selectionKey === selectionKey ? {{...item, ...patch}} : item);
+      promotionStateUpdate(scopeKey, {{bulkRun:{{...bulkRun, items}}}});
+    }}
+    function promotionBulkSummaryHtml(state) {{
+      const run = state.bulkRun;
+      if (!run?.items?.length) return '';
+      const ready = run.items.filter(item => item.status === 'ready').length;
+      const errors = run.items.filter(item => item.status === 'error').length;
+      const pending = run.items.length - ready - errors;
+      const actionLabel = run.operation === 'join' ? 'Participar' : run.operation === 'update' ? 'Alterar' : 'Sair';
+      const rows = run.items.map(item => {{
+        const individualState = promotionState.get(item.code) || {{}};
+        const status = item.status === 'ready' ? 'Prévia pronta' : item.status === 'error' ? 'Impedido' : 'Preparando';
+        const margin = Number.isFinite(item.margin) ? `${{brl(item.profit)}} · ${{item.margin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}%` : 'Margem N/D';
+        const confirm = item.status === 'ready' && individualState.preview?.preview_token
+          ? `<button class="promotion-confirm" type="button" data-promo-confirm="${{safe(item.code)}}">Confirmar individualmente</button>`
+          : `<span class="muted">${{safe(item.error || '')}}</span>`;
+        return `<div class="promotion-bulk-summary-row"><div><b>${{safe(item.code)}}</b><small>${{safe(item.sku || 'SKU não informado')}} · ${{safe(item.title || '')}}</small></div><div><span class="muted">Ação</span><b>${{safe(actionLabel)}}</b></div><div><span class="muted">Preço</span><b>${{item.price > 0 ? brl(item.price) : '—'}}</b></div><div><span class="muted">Resultado estimado</span><b>${{margin}}</b></div><div><span class="promotion-bulk-status ${{item.status}}">${{status}}</span>${{confirm}}</div></div>`;
+      }}).join('');
+      return `<div class="promotion-bulk-summary"><div class="promotion-bulk-summary-head"><div><b>Resumo das prévias coletivas</b><div class="muted">${{safe(run.campaignName || 'Campanha')}} · cada confirmação continua individual.</div></div><div><b>${{ready}} pronta(s)</b> · ${{errors}} impedida(s) · ${{pending}} em processamento</div></div><div class="promotion-bulk-summary-list">${{rows}}</div></div>`;
+    }}
     function promotionScopePanelHtml(item) {{
       const sources = promotionScopeItems(item);
       const key = promotionScopeKey(item);
@@ -3872,6 +3904,7 @@ def render_dashboard(data):
       const campaignGroups = promotionCampaignGroups(state.results);
       const selectedCampaignKey = String(state.campaignKey || '');
       const selectedListingKeys = new Set(state.selectedListingKeys || []);
+      const bulkSummary = promotionBulkSummaryHtml(state);
       const campaignInventory = `<div class="promotion-option"><h5>Campanhas encontradas neste grupo</h5><div class="muted">Selecione uma campanha para ver somente os anúncios vinculados a ela.</div><div class="promotion-card-grid"><button type="button" class="promotion-campaign-card" data-promo-campaign-filter="" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{!selectedCampaignKey}}"><b>Todas as campanhas</b><span class="muted">${{num(campaignGroups.length)}} campanha(s)</span></button>${{campaignGroups.map(group => `<button type="button" class="promotion-campaign-card" data-promo-campaign-filter="${{safe(group.key)}}" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{selectedCampaignKey === group.key}}"><b>${{safe(group.name)}}</b><span class="muted">${{safe(promotionStatusLabel(group.row))}} · ${{num(group.listings.length)}} anúncio(s)</span><span class="muted">${{safe(promotionPeriod(group.row))}}</span></button>`).join('')}}</div></div>`;
       const results = state.results.map(result => {{
         const title = result.data?.item?.title || result.code;
@@ -3939,7 +3972,7 @@ def render_dashboard(data):
         return feedback ? `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b>${{feedback}}</div>` : '';
       }}).join('');
       const content = view === 'campaign' ? byCampaign : view === 'sku' ? bySku : view === 'hybrid' ? hybrid : results;
-      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{campaignInventory}}${{selector}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}${{previews}}</div></div>`;
+      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{campaignInventory}}${{selector}}${{bulkSummary}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}${{previews}}</div></div>`;
     }}
     function promotionPanelHtml(item) {{
       const code = String(item.code || '').toUpperCase();
@@ -4053,6 +4086,14 @@ def render_dashboard(data):
         const operation = button.closest('[data-promo-bulk-group]')?.querySelector('[data-promo-bulk-operation]')?.value || 'join';
         const jobs = (group?.listings || []).filter(listing => selected.has(`${{group.key}}|${{listing.code}}|${{listing.index}}`));
         if (!jobs.length) return;
+        const sources = promotionGuideItem ? promotionScopeItems(promotionGuideItem) : [];
+        const runItems = jobs.map(listing => {{
+          const source = sources.find(candidate => String(candidate.code || '').toUpperCase() === listing.code) || {{}};
+          const row = (promotionState.get(listing.code)?.data?.promotions || [])[listing.index] || listing.row || {{}};
+          const financial = promotionFinancialResult(row, source);
+          return {{selectionKey:`${{group.key}}|${{listing.code}}|${{listing.index}}`, code:listing.code, title:listing.title, sku:source.sku || '', action:operation, price:promotionEffectivePrice(row, source), profit:financial.available ? financial.profit : null, margin:financial.available ? financial.margin : null, status:'pending', error:''}};
+        }});
+        promotionStateUpdate(key, {{bulkRun:{{groupKey:group.key, campaignName:group.name, operation, items:runItems}}}});
         button.disabled = true;
         const pending = [...jobs];
         const worker = async () => {{
@@ -4062,12 +4103,23 @@ def render_dashboard(data):
             const row = (individualState.data?.promotions || [])[listing.index];
             const active = ['started','active'].includes(String(row?.status || '').toLowerCase());
             const allowed = row && ((operation === 'join' && row.can_join === true && !active) || (operation === 'update' && row.can_update === true && active) || (operation === 'remove' && row.can_leave === true && active));
-            if (!allowed) {{ promotionStateUpdate(listing.code, {{loading:false, preview:null, error:`A ação selecionada (${{operation === 'join' ? 'Participar' : operation === 'update' ? 'Alterar' : 'Sair'}}) não está disponível para este anúncio.`}}); continue; }}
+            if (!allowed) {{
+              const error = `A ação selecionada (${{operation === 'join' ? 'Participar' : operation === 'update' ? 'Alterar' : 'Sair'}}) não está disponível para este anúncio.`;
+              promotionStateUpdate(listing.code, {{loading:false, preview:null, error}});
+              promotionBulkRunUpdate(key, `${{group.key}}|${{listing.code}}|${{listing.index}}`, {{status:'error', error}});
+              continue;
+            }}
             const body = {{item_id:listing.code, action:operation, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
             if (operation !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = promotionEffectivePrice(row);
             promotionStateUpdate(listing.code, {{loading:true, error:'', preview:null, result:null}});
-            try {{ const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body); promotionStateUpdate(listing.code, {{loading:false, preview, error:''}}); }}
-            catch (error) {{ promotionStateUpdate(listing.code, {{loading:false, preview:null, error:error.message}}); }}
+            try {{
+              const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
+              promotionStateUpdate(listing.code, {{loading:false, preview, error:''}});
+              promotionBulkRunUpdate(key, `${{group.key}}|${{listing.code}}|${{listing.index}}`, {{status:'ready', error:''}});
+            }} catch (error) {{
+              promotionStateUpdate(listing.code, {{loading:false, preview:null, error:error.message}});
+              promotionBulkRunUpdate(key, `${{group.key}}|${{listing.code}}|${{listing.index}}`, {{status:'error', error:error.message}});
+            }}
           }}
         }};
         await Promise.all(Array.from({{length:Math.min(3, pending.length)}}, worker));

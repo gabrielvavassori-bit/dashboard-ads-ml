@@ -228,6 +228,17 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", handler)
         self.assertIn('selectedListingKeys', handler)
 
+    def test_bulk_preview_summary_keeps_confirmation_per_mlb(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('function promotionBulkSummaryHtml(state)', source)
+        self.assertIn('Resumo das prévias coletivas', source)
+        self.assertIn('Confirmar individualmente', source)
+        self.assertIn('promotionBulkRunUpdate(scopeKey, selectionKey, patch)', source)
+        summary = source[source.index('    function promotionBulkSummaryHtml'):source.index('    function promotionScopePanelHtml')]
+        self.assertIn('data-promo-confirm=', summary)
+        self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", summary)
+        self.assertIn("item.status === 'error'", summary)
+
 
 if __name__ == '__main__':
     unittest.main()
