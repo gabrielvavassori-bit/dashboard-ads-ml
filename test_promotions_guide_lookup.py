@@ -20,6 +20,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionStatusClass = () => '';
         const promotionStatusLabel = () => 'Elegível';
         const promotionValueCell = () => '0%';
+        const promotionDiscountAllocation = () => ({meli:null,seller:null,meliDerived:false,sellerDerived:false});
+        const promotionAllocationCell = () => 'N/D';
         const promotionTotalCell = () => '10%';
         const promotionLimits = () => '';
         const promotionReceiptCell = () => 'Não calculado';
@@ -101,6 +103,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionStatusClass = () => '';
         const promotionStatusLabel = () => 'Elegível';
         const promotionValueCell = () => '0%';
+        const promotionDiscountAllocation = () => ({meli:null,seller:null,meliDerived:false,sellerDerived:false});
+        const promotionAllocationCell = () => 'N/D';
         const promotionTotalCell = () => '10%';
         const promotionLimits = () => '';
         const promotionReceiptCell = () => 'R$ 57.54';
@@ -216,6 +220,27 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('group.key === selectedCampaignKey', source)
         self.assertIn('Todas as campanhas', source)
         self.assertIn("const view = state.view || 'hybrid';", source)
+
+    def test_campaign_scope_can_filter_loaded_rows_by_sku_mlb_mlbu_or_title(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('data-promo-scope-search', source)
+        self.assertIn('SKU, MLB, MLBU ou título', source)
+        self.assertIn('item.seller_sku, item.user_product_id, item.title', source)
+        self.assertIn('anúncios carregados', source)
+
+    def test_campaign_catalog_percentages_are_preserved_and_seller_remainder_is_derived(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('meli_percentage:entry.promotion.meli_percentage ?? campaignMeli', source)
+        self.assertIn('seller_percentage:entry.promotion.seller_percentage ?? campaignSeller', source)
+        functions = source[
+            source.index('    function promotionTotalCellValue'):
+            source.index('    function promotionReceiptValue')
+        ].replace('{{', '{').replace('}}', '}')
+        script = "const promotionEffectivePrice=row=>Number(row.price); const promotionValueCell=(value)=>String(value);\n" + functions + "\nconsole.log(JSON.stringify(promotionDiscountAllocation({original_price:259.8,price:123.9,meli_percentage:0})));"
+        allocation = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
+        self.assertEqual(allocation['meli'], 0)
+        self.assertAlmostEqual(allocation['seller'], 52.31, places=2)
+        self.assertTrue(allocation['sellerDerived'])
 
     def test_account_campaign_inventory_loads_without_product_search(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
