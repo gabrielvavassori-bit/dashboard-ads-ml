@@ -4020,7 +4020,10 @@ def render_dashboard(data):
         candidates.push({{
           code:listing.code, campaignKey:group.key, campaignName:group.name, index:listing.index,
           selectionKey:`${{group.key}}|${{listing.code}}|${{listing.index}}`,
-          receipt:financial.receipt, profit:financial.profit, margin:financial.margin
+          receipt:financial.receipt, profit:financial.profit, margin:financial.margin,
+          flexActive:financial.flexActive === true,
+          flexAvailable:financial.flexAvailable === true,
+          flexMargin:financial.flexAvailable ? financial.flexMargin : null
         }});
       }}));
       const bestByListing = new Map();
@@ -4030,12 +4033,14 @@ def render_dashboard(data):
           bestByListing.set(candidate.code, candidate);
       }});
       const recommended = [...bestByListing.values()].sort((a, b) => b.receipt - a.receipt || b.profit - a.profit || a.code.localeCompare(b.code));
-      return {{recommended, qualifying:candidates.length, blocked, belowTarget, unavailable}};
+      const flexAlerts = recommended.filter(candidate => candidate.flexActive && candidate.flexAvailable && candidate.flexMargin < target).length;
+      const flexPending = recommended.filter(candidate => candidate.flexActive && !candidate.flexAvailable).length;
+      return {{recommended, qualifying:candidates.length, blocked, belowTarget, unavailable, flexAlerts, flexPending}};
     }}
     function promotionRecommendationHtml(recommendation, scopeKey, target, campaignKey) {{
       const count = recommendation.recommended.length;
       const context = campaignKey ? 'na campanha selecionada' : 'entre as campanhas carregadas';
-      return `<div class="promotion-recommendation"><div class="promotion-recommendation-head"><div><b>Seleção consultiva por margem</b><div class="muted">Usa envio tradicional e escolhe, para cada MLB, a oportunidade com maior valor líquido recebido ${{context}}. Flex aparece apenas como alerta e não reprova a promoção.</div></div><button type="button" data-promo-recommend data-promo-scope-key="${{safe(scopeKey)}}"${{count ? '' : ' disabled'}}>Selecionar ${{num(count)}} recomendada(s)</button></div><div class="promotion-recommendation-stats"><span><b>${{num(count)}}</b> recomendada(s)</span><span><b>${{num(recommendation.qualifying)}}</b> acima de ${{target.toLocaleString('pt-BR')}}%</span><span><b>${{num(recommendation.belowTarget)}}</b> abaixo da meta</span><span><b>${{num(recommendation.blocked)}}</b> sem cálculo completo</span><span><b>${{num(recommendation.unavailable)}}</b> sem ação Participar</span></div><div class="muted" style="margin-top:8px">Este botão apenas marca as linhas. Ainda será necessário gerar as prévias e confirmar cada ação; nenhuma promoção é aplicada agora.</div></div>`;
+      return `<div class="promotion-recommendation"><div class="promotion-recommendation-head"><div><b>Seleção consultiva por margem</b><div class="muted">Analisa oportunidades com ação Participar disponível, usa envio tradicional e escolhe, para cada MLB, o maior valor líquido recebido ${{context}}. Flex aparece apenas como alerta e não reprova a promoção.</div></div><button type="button" data-promo-recommend data-promo-scope-key="${{safe(scopeKey)}}"${{count ? '' : ' disabled'}}>Selecionar ${{num(count)}} recomendada(s)</button></div><div class="promotion-recommendation-stats"><span><b>${{num(count)}}</b> recomendada(s)</span><span><b>${{num(recommendation.qualifying)}}</b> acima de ${{target.toLocaleString('pt-BR')}}%</span><span><b>${{num(recommendation.belowTarget)}}</b> abaixo da meta</span><span><b>${{num(recommendation.blocked)}}</b> sem cálculo completo</span><span><b>${{num(recommendation.unavailable)}}</b> sem ação Participar</span><span><b>${{num(recommendation.flexAlerts)}}</b> alerta(s) Flex abaixo da meta</span><span><b>${{num(recommendation.flexPending)}}</b> Flex pendente(s)</span></div><div class="muted" style="margin-top:8px">Este botão apenas marca as linhas. Ainda será necessário gerar as prévias e confirmar cada ação; nenhuma promoção é aplicada agora.</div></div>`;
     }}
     function promotionScopePanelHtml(item) {{
       const sources = promotionScopeItems(item);

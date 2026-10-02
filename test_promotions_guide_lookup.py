@@ -313,8 +313,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         """
         results = [
             {'code': 'MLB1', 'data': {'promotions': [
-                {'name': 'A', 'promotion_id': 'A', 'can_join': True, 'financial': {'available': True, 'margin': 18, 'receipt': 80, 'profit': 18}},
-                {'name': 'B', 'promotion_id': 'B', 'can_join': True, 'financial': {'available': True, 'margin': 20, 'receipt': 85, 'profit': 20}},
+                {'name': 'A', 'promotion_id': 'A', 'can_join': True, 'financial': {'available': True, 'margin': 18, 'receipt': 80, 'profit': 18, 'flexActive': True, 'flexAvailable': True, 'flexMargin': 11}},
+                {'name': 'B', 'promotion_id': 'B', 'can_join': True, 'financial': {'available': True, 'margin': 20, 'receipt': 85, 'profit': 20, 'flexActive': True, 'flexAvailable': True, 'flexMargin': 10}},
             ]}},
             {'code': 'MLB2', 'data': {'promotions': [
                 {'name': 'A', 'promotion_id': 'A', 'can_join': True, 'financial': {'available': True, 'margin': 12, 'receipt': 70, 'profit': 12}},
@@ -331,6 +331,42 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertEqual(result['belowTarget'], 1)
         self.assertEqual(result['blocked'], 1)
         self.assertEqual(result['unavailable'], 1)
+        self.assertEqual(result['flexAlerts'], 1)
+        self.assertEqual(result['flexPending'], 0)
+
+    def test_margin_recommendation_respects_campaign_and_loaded_scope_filter(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        functions = source[
+            source.index('    function promotionMarginRecommendations'):
+            source.index('    function promotionScopePanelHtml')
+        ].replace('{{', '{').replace('}}', '}')
+        stubs = """
+        function promotionDisplayName(row){return row.name;}
+        function promotionMatchesScopeSearch(result,query){return !query || result.data.item.seller_sku.includes(query);}
+        function promotionCampaignGroups(results){
+          const groups=new Map();
+          results.forEach(result=>(result.data.promotions||[]).forEach((row,index)=>{
+            const key='DEAL:id:'+row.promotion_id;
+            if(!groups.has(key)) groups.set(key,{key,name:row.name,row,listings:[]});
+            groups.get(key).listings.push({code:result.code,row,index});
+          }));
+          return [...groups.values()];
+        }
+        function promotionFinancialResult(row){return row.financial || {available:false};}
+        """
+        results = [
+            {'code': 'MLB1', 'data': {'item': {'seller_sku': 'LAZ-2X2'}, 'promotions': [
+                {'name': 'A', 'promotion_id': 'A', 'can_join': True, 'financial': {'available': True, 'margin': 18, 'receipt': 90, 'profit': 18}},
+                {'name': 'B', 'promotion_id': 'B', 'can_join': True, 'financial': {'available': True, 'margin': 20, 'receipt': 95, 'profit': 20}},
+            ]}},
+            {'code': 'MLB2', 'data': {'item': {'seller_sku': 'OUTRO'}, 'promotions': [
+                {'name': 'A', 'promotion_id': 'A', 'can_join': True, 'financial': {'available': True, 'margin': 30, 'receipt': 120, 'profit': 30}},
+            ]}},
+        ]
+        script = stubs + functions + '\nconsole.log(JSON.stringify(promotionMarginRecommendations(' + json.dumps(results) + ',[{code:"MLB1"},{code:"MLB2"}],15,"DEAL:id:A","LAZ")));'
+        result = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
+        self.assertEqual([row['selectionKey'] for row in result['recommended']], ['DEAL:id:A|MLB1|0'])
+        self.assertEqual(result['qualifying'], 1)
 
     def test_margin_recommendation_ui_is_explicitly_non_mutating(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
