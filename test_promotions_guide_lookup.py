@@ -189,7 +189,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertEqual(result['flexWeightBand'], '0,5 a 5 kg')
         self.assertEqual(result['flexDistance'], 'média distância')
         self.assertAlmostEqual(result['flexNetCost'], 11.911, places=6)
-        self.assertEqual(result['flexIgnoredShippingCost'], 5)
+        self.assertEqual(result['flexIgnoredShippingCost'], 10)
 
     def test_flex_alert_only_appears_below_selected_margin_target(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
@@ -207,7 +207,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionFinancialResult=()=>({available:true,price:100,receipt:78,cost:40,tax:8,difal:0,
           profit:30,margin:30,credits:0,debits:8,fee:12,freight:10,rebate:0,flexActive:true,
           flexAvailable:true,flexCarrierCost:13,flexProfit:16,flexMargin,flexFee:12,flexFixedFee:0,
-          flexBonus:1.089,flexWeight:2,flexWeightBand:'0,5 a 5 kg',flexPriceBand:'a partir de R$ 79 com reputação verde',
+          flexBonus:1.089,flexWeight:2,flexWeightBand:'0,5 a 5 kg',flexWeightEstimated:false,
+          flexWeightSource:'peso faturável da cotação na API',flexPriceBand:'a partir de R$ 79 com reputação verde',
           flexDistance:'média distância',flexNetCost:11.911,flexIgnoredShippingCost:5});
         const row={price:100,receipt_quote:{available:true,price:100,receipt_before_cost_tax:78,sale_fee:12,shipping_cost:10,rebate:0}};
         """
@@ -237,6 +238,38 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertEqual((rows[2]['fixedFee'], rows[2]['bonus']), (7.75, 14.89))
         self.assertEqual(rows[3]['fixedFee'], 0)
         self.assertAlmostEqual(rows[3]['bonus'], 1.089, places=6)
+
+    def test_flex_uses_medium_weight_band_when_api_weight_and_flex_quote_are_unavailable(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        functions = source[
+            source.index('    function promotionFlexPolicy'):
+            source.index('    function promotionMarginCell')
+        ].replace('{{', '{').replace('}}', '}')
+        stubs = """
+        const financeDifalDoubleBaseStates=new Set();
+        const financeProfile={taxRegime:'simple', flexCarrierCost:13, costBySku:{SKU1:140},
+          fiscalBySku:{SKU1:{taxRegime:'simple', simpleTaxRate:8}}};
+        const promotionEffectivePrice=row=>Number(row.price);
+        const promotionQuoteMatchesPrice=(row,price)=>row.receipt_quote.available === true
+          && Math.abs(row.receipt_quote.price-price) <= .01;
+        """
+        row = {'price': 234.9,
+               'receipt_quote': {'available': True, 'price': 234.9, 'sale_fee': 44.63,
+                                 'shipping_cost': 25.45, 'rebate': 0,
+                                 'receipt_before_cost_tax': 164.82,
+                                 'seller_reputation_green': True},
+               'flex_receipt_quote': {'available': False, 'reason': 'Cotação indisponível'}}
+        script = stubs + functions + '\nconsole.log(JSON.stringify(promotionFinancialResult(' + json.dumps(row) + ',{sku:"SKU1"})));'
+        result = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
+        self.assertTrue(result['flexAvailable'])
+        self.assertTrue(result['flexWeightEstimated'])
+        self.assertEqual(result['flexWeight'], 2)
+        self.assertEqual(result['flexWeightBand'], '0,5 a 5 kg')
+        self.assertEqual(result['flexWeightSource'], 'faixa intermediária estimada')
+        self.assertAlmostEqual(result['flexBonus'], 1.089, places=6)
+        self.assertAlmostEqual(result['flexNetCost'], 11.911, places=6)
+        self.assertAlmostEqual(result['flexProfit'], 19.567, places=6)
+        self.assertAlmostEqual(result['flexMargin'], 8.329928, places=5)
 
     def test_campaign_view_groups_variations_without_losing_individual_prices(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
