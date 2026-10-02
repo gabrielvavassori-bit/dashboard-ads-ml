@@ -545,7 +545,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
 
     def test_collective_approval_handlers_only_create_local_confirmation(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
-        handler = source[source.index("document.querySelectorAll('[data-promo-bulk-approve]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
+        handler = source[source.index("document.querySelectorAll('[data-promo-bulk-approve]'"):source.index("document.querySelectorAll('[data-promo-bulk-execution-ack]'")]
         self.assertIn('approvedSelectionKeys', handler)
         self.assertIn('confirmation:null', handler)
         self.assertIn('confirmedAt:Date.now()', handler)
@@ -554,6 +554,28 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         runner = source[source.index('    async function promotionRunCollectivePreview'):source.index('    function activatePromotionPanels')]
         self.assertIn('approvedSelectionKeys:[]', runner)
         self.assertIn('confirmation:null', runner)
+
+    def test_collective_execution_requires_explicit_ack_and_runs_sequentially(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        summary = source[source.index('    function promotionBulkSummaryHtml'):source.index('    function promotionScopePanelHtml')]
+        self.assertIn('Confirmo a aplicação destas promoções no Mercado Livre', summary)
+        self.assertIn('data-promo-bulk-execute', summary)
+        self.assertIn('Execução sequencial por MLB', summary)
+        handler = source[source.index("document.querySelectorAll('[data-promo-bulk-execute]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
+        self.assertIn('if (!bulkRun.executionAcknowledged', handler)
+        self.assertIn('for (const item of candidates)', handler)
+        self.assertNotIn('Promise.all', handler)
+        self.assertEqual(handler.count("promotionApiRequest('/api/promotions/confirm'"), 1)
+        self.assertIn('executionStatus:\'success\'', handler)
+        self.assertIn('executionStatus:\'error\'', handler)
+        self.assertIn('loadPromotionAudit()', handler)
+
+    def test_collective_retry_targets_only_failed_items_and_skips_successes(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        handler = source[source.index("document.querySelectorAll('[data-promo-bulk-execute]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
+        self.assertIn("hasFailures ? item.executionStatus === 'error' : item.executionStatus !== 'success'", handler)
+        self.assertIn('Prévia ausente ou expirada. Gere uma nova prévia antes de executar.', handler)
+        self.assertIn('Repetir ${{executionCandidates}} falha(s)', source)
 
 
 if __name__ == '__main__':

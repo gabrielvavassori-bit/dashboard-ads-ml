@@ -3994,19 +3994,31 @@ def render_dashboard(data):
       const readyKeys = new Set(run.items.filter(item => item.status === 'ready').map(item => item.selectionKey));
       const approvedKeys = new Set((run.approvedSelectionKeys || []).filter(key => readyKeys.has(key)));
       const stagedKeys = new Set((run.confirmation?.selectionKeys || []).filter(key => readyKeys.has(key)));
+      const executionSuccess = run.items.filter(item => item.executionStatus === 'success').length;
+      const executionErrors = run.items.filter(item => item.executionStatus === 'error').length;
+      const executionRunning = run.items.filter(item => item.executionStatus === 'running').length;
       const actionLabel = run.operation === 'join' ? 'Participar' : run.operation === 'update' ? 'Alterar' : 'Sair';
       const rows = run.items.map(item => {{
-        const status = item.status === 'ready' ? 'Prévia pronta' : item.status === 'error' ? 'Impedido' : 'Preparando';
+        const status = item.executionStatus === 'success' ? 'Aplicada' : item.executionStatus === 'error' ? 'Falhou' : item.executionStatus === 'running' ? 'Executando' : item.status === 'ready' ? 'Prévia pronta' : item.status === 'error' ? 'Impedido' : 'Preparando';
+        const statusClass = item.executionStatus === 'success' ? 'ready' : item.executionStatus === 'error' ? 'error' : item.status;
         const margin = Number.isFinite(item.margin) ? `${{brl(item.profit)}} · ${{item.margin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}%` : 'Margem N/D';
-        const approval = item.status === 'ready'
+        const approval = item.executionStatus === 'success'
+          ? `<span class="muted">Confirmada no Mercado Livre</span>`
+          : item.status === 'ready'
           ? `<label><input type="checkbox" data-promo-bulk-approve="${{safe(item.selectionKey)}}" data-promo-scope-key="${{safe(scopeKey)}}"${{approvedKeys.has(item.selectionKey) ? ' checked' : ''}}> Aprovar para execução</label>`
           : `<span class="muted">${{safe(item.error || '')}}</span>`;
-        return `<div class="promotion-bulk-summary-row"><div><b>${{safe(item.code)}}</b><small>${{safe(item.sku || 'SKU não informado')}} · ${{safe(item.title || '')}}</small></div><div><span class="muted">Ação</span><b>${{safe(actionLabel)}}</b></div><div><span class="muted">Preço</span><b>${{item.price > 0 ? brl(item.price) : '—'}}</b></div><div><span class="muted">Resultado estimado</span><b>${{margin}}</b></div><div><span class="promotion-bulk-status ${{item.status}}">${{status}}</span>${{approval}}</div></div>`;
+        const error = item.executionStatus === 'error' ? `<span class="muted">${{safe(item.executionError || 'Falha não informada')}}</span>` : '';
+        return `<div class="promotion-bulk-summary-row"><div><b>${{safe(item.code)}}</b><small>${{safe(item.sku || 'SKU não informado')}} · ${{safe(item.title || '')}}</small></div><div><span class="muted">Ação</span><b>${{safe(actionLabel)}}</b></div><div><span class="muted">Preço</span><b>${{item.price > 0 ? brl(item.price) : '—'}}</b></div><div><span class="muted">Resultado estimado</span><b>${{margin}}</b></div><div><span class="promotion-bulk-status ${{statusClass}}">${{status}}</span>${{error}}${{approval}}</div></div>`;
       }}).join('');
       const allReadyApproved = ready > 0 && approvedKeys.size === ready;
-      const staged = stagedKeys.size ? `<div class="promotion-success"><b>Lote revisado:</b> ${{stagedKeys.size}} promoção(ões) autorizada(s) para a etapa de execução. Nenhuma promoção foi aplicada.</div>` : '';
-      const controls = `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-approve-all data-promo-scope-key="${{safe(scopeKey)}}"${{allReadyApproved ? ' checked' : ''}}${{ready ? '' : ' disabled'}}> Aprovar todas as prévias válidas</label><button type="button" data-promo-bulk-stage-confirm data-promo-scope-key="${{safe(scopeKey)}}"${{approvedKeys.size ? '' : ' disabled'}}>Confirmar ${{approvedKeys.size}} para próxima etapa</button><span class="muted">Esta confirmação apenas forma o lote; ainda não envia nada ao Mercado Livre.</span></div>`;
-      return `<div class="promotion-bulk-summary"><div class="promotion-bulk-summary-head"><div><b>Resumo das prévias coletivas</b><div class="muted">${{safe(run.campaignName || 'Campanha')}} · revise cada MLB antes de formar o lote.</div></div><div><b>${{ready}} pronta(s)</b> · ${{errors}} impedida(s) · ${{pending}} em processamento</div></div>${{controls}}${{staged}}<div class="promotion-bulk-summary-list">${{rows}}</div></div>`;
+      const executionCandidates = executionErrors > 0
+        ? run.items.filter(item => stagedKeys.has(item.selectionKey) && item.executionStatus === 'error').length
+        : run.items.filter(item => stagedKeys.has(item.selectionKey) && item.executionStatus !== 'success').length;
+      const executionLabel = executionErrors > 0 ? `Repetir ${{executionCandidates}} falha(s)` : `Executar ${{executionCandidates}} promoção(ões)`;
+      const executionSummary = executionSuccess || executionErrors || executionRunning ? `${{executionSuccess}} aplicada(s), ${{executionErrors}} falha(s) e ${{executionRunning}} em execução.` : 'Nenhuma promoção foi aplicada.';
+      const execution = stagedKeys.size ? `<div class="promotion-success"><b>Lote revisado:</b> ${{stagedKeys.size}} promoção(ões) autorizada(s). ${{executionSummary}}</div>${{executionCandidates && !executionRunning ? `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-execution-ack data-promo-scope-key="${{safe(scopeKey)}}"${{run.executionAcknowledged ? ' checked' : ''}}> Confirmo a aplicação destas promoções no Mercado Livre</label><button class="promotion-confirm" type="button" data-promo-bulk-execute data-promo-scope-key="${{safe(scopeKey)}}"${{run.executionAcknowledged ? '' : ' disabled'}}>${{executionLabel}}</button><span class="muted">Execução sequencial por MLB; falhas não interrompem nem repetem os itens já confirmados.</span></div>` : ''}}` : '';
+      const controls = executionSuccess || executionErrors || executionRunning ? '' : `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-approve-all data-promo-scope-key="${{safe(scopeKey)}}"${{allReadyApproved ? ' checked' : ''}}${{ready ? '' : ' disabled'}}> Aprovar todas as prévias válidas</label><button type="button" data-promo-bulk-stage-confirm data-promo-scope-key="${{safe(scopeKey)}}"${{approvedKeys.size ? '' : ' disabled'}}>Confirmar ${{approvedKeys.size}} para próxima etapa</button><span class="muted">Esta confirmação apenas forma o lote; ainda não envia nada ao Mercado Livre.</span></div>`;
+      return `<div class="promotion-bulk-summary"><div class="promotion-bulk-summary-head"><div><b>Resumo das prévias coletivas</b><div class="muted">${{safe(run.campaignName || 'Campanha')}} · revise cada MLB antes de formar o lote.</div></div><div><b>${{ready}} pronta(s)</b> · ${{errors}} impedida(s) · ${{pending}} em processamento</div></div>${{controls}}${{execution}}<div class="promotion-bulk-summary-list">${{rows}}</div></div>`;
     }}
     function promotionMarginRecommendations(results, sources, target, campaignKey = '', query = '') {{
       const sourceByCode = new Map(sources.map(source => [String(source.code || '').toUpperCase(), source]));
@@ -4470,7 +4482,39 @@ def render_dashboard(data):
         const readyKeys = new Set((bulkRun.items || []).filter(item => item.status === 'ready').map(item => item.selectionKey));
         const selectionKeys = (bulkRun.approvedSelectionKeys || []).filter(selectionKey => readyKeys.has(selectionKey));
         if (!selectionKeys.length) return;
-        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, approvedSelectionKeys:selectionKeys, confirmation:{{selectionKeys, confirmedAt:Date.now()}}}}}});
+        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, approvedSelectionKeys:selectionKeys, confirmation:{{selectionKeys, confirmedAt:Date.now()}}, executionAcknowledged:false}}}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-execution-ack]').forEach(input => input.addEventListener('change', () => {{
+        const key = input.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const bulkRun = state.bulkRun || {{items:[]}};
+        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, executionAcknowledged:input.checked}}}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-execute]').forEach(button => button.addEventListener('click', async () => {{
+        const key = button.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const bulkRun = state.bulkRun || {{items:[]}};
+        if (!bulkRun.executionAcknowledged || !bulkRun.confirmation?.selectionKeys?.length) return;
+        const stagedKeys = new Set(bulkRun.confirmation.selectionKeys);
+        const hasFailures = (bulkRun.items || []).some(item => stagedKeys.has(item.selectionKey) && item.executionStatus === 'error');
+        const candidates = (bulkRun.items || []).filter(item => stagedKeys.has(item.selectionKey) && (hasFailures ? item.executionStatus === 'error' : item.executionStatus !== 'success'));
+        button.disabled = true;
+        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, executionAcknowledged:false}}}});
+        for (const item of candidates) {{
+          const itemState = promotionState.get(item.code) || {{}};
+          const previewToken = itemState.preview?.preview_token;
+          if (!previewToken) {{ promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'error', executionError:'Prévia ausente ou expirada. Gere uma nova prévia antes de executar.'}}); continue; }}
+          promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionError:''}});
+          try {{
+            const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:item.code, preview_token:previewToken}});
+            const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(item.code)}}`);
+            promotionStateUpdate(item.code, {{loading:false, data, preview:null, result, error:''}});
+            promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'success', executionError:''}});
+          }} catch (error) {{
+            promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'error', executionError:error.message}});
+          }}
+        }}
+        loadPromotionAudit();
       }}));
       document.querySelectorAll('[data-promo-load]').forEach(button => button.addEventListener('click', async () => {{
         const code = button.dataset.promoLoad;
