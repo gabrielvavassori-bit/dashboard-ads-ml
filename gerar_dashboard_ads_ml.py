@@ -1590,6 +1590,7 @@ def render_dashboard(data):
     .finance-config h3 {{ margin:0 0 5px; }}
     .finance-grid {{ display:grid; grid-template-columns:repeat(4,minmax(170px,1fr)); gap:10px; margin-top:12px; }}
     .finance-field {{ display:flex; flex-direction:column; gap:5px; font-size:12px; font-weight:800; color:#475467; }}
+    .finance-field[hidden] {{ display:none !important; }}
     .finance-field input, .finance-field select, .finance-search {{ min-width:0; width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:#101828; }}
     .finance-sku-toolbar {{ display:flex; justify-content:space-between; align-items:end; gap:12px; flex-wrap:wrap; margin:14px 0 10px; }}
     .finance-sku-toolbar .finance-field {{ flex:1 1 320px; }}

@@ -25,6 +25,7 @@ class FiscalProfileUiTests(unittest.TestCase):
         ):
             self.assertIn(marker, self.source)
         self.assertNotIn('Regra geral da conta', self.source)
+        self.assertIn('.finance-field[hidden] {{ display:none !important; }}', self.source)
 
     def test_fiscal_profile_is_in_remote_payload_and_local_backup(self):
         self.assertIn("fetch('/api/finance-profile'", self.source)
