@@ -552,6 +552,15 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('"/api/promotions/campaigns"', app_source)
         self.assertIn('"/internal/dash-ads/promotions/campaign-items"', app_source)
 
+    def test_campaign_cards_show_eligible_and_participating_totals(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        catalog = source[source.index('    function renderPromotionCampaignCatalog'):source.index('    async function loadPromotionCampaignCatalog')]
+        self.assertIn('campaign.eligible_count', catalog)
+        self.assertIn('campaign.participating_count', catalog)
+        self.assertIn('Elegíveis:', catalog)
+        self.assertIn('Participando:', catalog)
+        self.assertIn("? 'N/D'", catalog)
+
     def test_campaign_inventory_enriches_rows_and_loads_cursor_pages(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         app_source = Path('app.py').read_text(encoding='utf-8')
@@ -649,6 +658,27 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn("hasFailures ? item.executionStatus === 'error' : item.executionStatus !== 'success'", handler)
         self.assertIn('Prévia ausente ou expirada. Gere uma nova prévia antes de executar.', handler)
         self.assertIn('Repetir ${{executionCandidates}} falha(s)', source)
+
+    def test_individual_confirmation_polls_without_resending_mutation(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        poller = source[source.index('    async function pollPromotionConfirmation'):source.index('    function restorePromotionConfigDialog')]
+        self.assertIn('maxAttempts = 30', poller)
+        self.assertIn('setTimeout(resolve, 2000)', poller)
+        self.assertIn('/api/promotions?item_id=', poller)
+        self.assertNotIn("'/api/promotions/confirm'", poller)
+        self.assertIn("status:'approved'", poller)
+        self.assertIn("status:'pending'", poller)
+        handler = source[source.index("document.querySelectorAll('[data-promo-confirm]'"):source.index('    function pricingPreviewBlock')]
+        self.assertEqual(handler.count("promotionApiRequest('/api/promotions/confirm'"), 1)
+        self.assertIn('promotion_confirmation_unverified', handler)
+        self.assertIn("status:'rejected'", handler)
+
+    def test_individual_confirmation_shows_processing_spinner(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        preview = source[source.index('    function promotionPreviewHtml'):source.index('    function promotionWriteAccessHtml')]
+        self.assertIn("state.confirmation?.status === 'processing'", preview)
+        self.assertIn('promotion-spinner', preview)
+        self.assertIn('Consultando a confirmação no Mercado Livre', preview)
 
 
 if __name__ == '__main__':

@@ -1853,6 +1853,11 @@ def render_dashboard(data):
     .promotion-form button[disabled], .promotion-panel > button[disabled] {{ opacity:.55; cursor:wait; }}
     .promotion-preview {{ margin-top:10px; padding:11px; border:1px solid #fdb022; border-radius:9px; background:#fffaeb; }}
     .promotion-confirm {{ margin-top:9px; background:#b42318 !important; }}
+    .promotion-processing {{ display:flex; align-items:center; gap:9px; padding:10px 12px; border-radius:10px; background:#eef6ff; color:#174a7c; font-weight:700; }}
+    .promotion-spinner {{ width:17px; height:17px; border:3px solid #bdd7f0; border-top-color:#174a7c; border-radius:50%; animation:promotion-spin .8s linear infinite; flex:0 0 auto; }}
+    @keyframes promotion-spin {{ to {{ transform:rotate(360deg); }} }}
+    .promotion-campaign-counts {{ display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }}
+    .promotion-campaign-counts span {{ padding:3px 7px; border-radius:999px; background:#eef3f8; color:#34495e; font-size:11px; font-weight:700; }}
     .promotion-success {{ margin-top:10px; padding:10px; border-radius:8px; background:#ecfdf3; color:#027a48; font-weight:800; }}
     .promotion-error {{ margin-top:10px; padding:10px; border-radius:8px; background:#fef3f2; color:#b42318; font-weight:800; }}
     .daily-chart-card {{ position:relative; overflow:hidden; padding:16px; background:linear-gradient(180deg,#fff 0%,#fbfdff 100%); }}
@@ -3610,9 +3615,10 @@ def render_dashboard(data):
       const campaign = summary.promotion_name || summary.promotion_id ? `<div>Promocao: <b>${{safe(summary.promotion_name || summary.promotion_id)}}</b></div>` : '';
       const price = Number(summary.deal_price || 0) > 0 ? `<div>Preço atual: ${{promotionMoney(summary.current_price)}} | preço promocional: <b>${{promotionMoney(summary.deal_price)}}</b> | desconto: ${{Number(summary.discount_percent || 0).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</div>` : '';
       const labels = {{remove:'Confirmar saída da promoção', update:'Confirmar alteração no Mercado Livre', replace:'Confirmar substituição do desconto', create_campaign:'Confirmar criação da campanha', create:'Confirmar criação do desconto', join:'Confirmar participação no Mercado Livre'}};
+      const processing = state.confirmation?.status === 'processing';
       return `<div class="promotion-preview"><b>Prévia pronta; nenhuma alteração foi aplicada.</b>
         <div>Operação: <b>${{safe(summary.operation_label || action)}}</b></div>${{price}}${{campaign}}${{period}}
-        <button class="promotion-confirm" type="button" data-promo-confirm="${{safe(item.code)}}">${{safe(labels[action] || 'Confirmar operação no Mercado Livre')}}</button>
+        ${{processing ? `<div class="promotion-processing" role="status"><span class="promotion-spinner" aria-hidden="true"></span><span>Solicitação enviada. Consultando a confirmação no Mercado Livre… tentativa ${{num(state.confirmation.attempt || 1)}}.</span></div>` : `<button class="promotion-confirm" type="button" data-promo-confirm="${{safe(item.code)}}">${{safe(labels[action] || 'Confirmar operação no Mercado Livre')}}</button>`}}
       </div>`;
     }}
     function promotionWriteAccessHtml(data) {{
@@ -4198,9 +4204,51 @@ def render_dashboard(data):
         const contractDetail = payload.error === 'agent_response_not_json'
           ? ` Código: ${{payload.error}}; agente HTTP ${{payload.upstream_status || response.status}}; tipo ${{payload.upstream_content_type || 'indisponível'}}.`
           : '';
-        throw new Error(`${{payload.message || payload.error || `Falha HTTP ${{response.status}}`}}${{contractDetail}}`);
+        const error = new Error(`${{payload.message || payload.error || `Falha HTTP ${{response.status}}`}}${{contractDetail}}`);
+        error.code = payload.error || '';
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
       }}
       return payload;
+    }}
+    function promotionConfirmationMatches(data, preview) {{
+      const summary = preview?.summary || {{}};
+      const action = String(summary.action || 'join').toLowerCase();
+      const promotionId = String(summary.promotion_id || '');
+      const promotionType = String(summary.promotion_type || '').toUpperCase();
+      const expectedPrice = Number(summary.deal_price || 0);
+      const rows = Array.isArray(data?.promotions) ? data.promotions : [];
+      const matchesIdentity = row => (!promotionId || String(row.promotion_id || '') === promotionId)
+        && (!promotionType || String(row.promotion_type || '').toUpperCase() === promotionType);
+      if (action === 'remove') return !rows.some(row => matchesIdentity(row) && ['started','active','pending','programmed','scheduled'].includes(String(row.status || '').toLowerCase()));
+      return rows.some(row => {{
+        if (!matchesIdentity(row) || !['started','active','pending','programmed','scheduled'].includes(String(row.status || '').toLowerCase())) return false;
+        const observedPrice = Number(row.price || row.deal_price || 0);
+        return !(expectedPrice > 0 && observedPrice > 0) || Math.abs(expectedPrice - observedPrice) <= 0.01;
+      }});
+    }}
+    async function pollPromotionConfirmation(code, preview, firstResult = null) {{
+      const maxAttempts = 30;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {{
+        promotionStateUpdate(code, {{loading:false, confirmation:{{status:'processing', attempt, maxAttempts}}, error:'', result:null}});
+        if (attempt > 1) await new Promise(resolve => setTimeout(resolve, 2000));
+        try {{
+          const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
+          if (promotionConfirmationMatches(data, preview)) {{
+            activePromotionConfigKey = null;
+            promotionStateUpdate(code, {{loading:false, data, preview:null, result:firstResult || {{ok:true}}, confirmation:{{status:'approved', attempt}}, error:''}});
+            loadPromotionAudit();
+            return;
+          }}
+        }} catch (error) {{
+          if (attempt === maxAttempts) {{
+            promotionStateUpdate(code, {{loading:false, confirmation:{{status:'pending', attempt}}, error:'A solicitação foi enviada, mas o Mercado Livre ainda não publicou o estado final. Não envie novamente; use Consultar promoções para acompanhar.'}});
+            return;
+          }}
+        }}
+      }}
+      promotionStateUpdate(code, {{loading:false, confirmation:{{status:'pending', attempt:maxAttempts}}, error:'A solicitação continua aguardando confirmação do Mercado Livre. Não envie novamente; consulte o estado mais tarde.'}});
     }}
     function restorePromotionConfigDialog() {{
       if (!activePromotionConfigKey) return;
@@ -4250,7 +4298,11 @@ def render_dashboard(data):
         target.innerHTML = '<div class="detail-modal-empty">O Mercado Livre não retornou campanhas para esta conta.</div>';
         return;
       }}
-      target.innerHTML = `<div class="promotion-card-grid">${{promotionCampaignCatalog.campaigns.map(campaign => `<button type="button" class="promotion-campaign-card" data-account-promotion-id="${{safe(campaign.promotion_id)}}" data-account-promotion-type="${{safe(campaign.promotion_type)}}" aria-pressed="false"><b>${{safe(campaign.name || promotionFriendlyType(campaign))}}</b><span class="promotion-status ${{promotionStatusClass(campaign)}}">${{safe(promotionStatusLabel(campaign))}}</span><span class="muted">${{safe(promotionPeriod(campaign))}}</span></button>`).join('')}}</div>`;
+      target.innerHTML = `<div class="promotion-card-grid">${{promotionCampaignCatalog.campaigns.map(campaign => {{
+        const eligible = campaign.eligible_count == null ? 'N/D' : num(campaign.eligible_count);
+        const participating = campaign.participating_count == null ? 'N/D' : num(campaign.participating_count);
+        return `<button type="button" class="promotion-campaign-card" data-account-promotion-id="${{safe(campaign.promotion_id)}}" data-account-promotion-type="${{safe(campaign.promotion_type)}}" aria-pressed="false"><b>${{safe(campaign.name || promotionFriendlyType(campaign))}}</b><span class="promotion-status ${{promotionStatusClass(campaign)}}">${{safe(promotionStatusLabel(campaign))}}</span><span class="promotion-campaign-counts"><span>Elegíveis: ${{eligible}}</span><span>Participando: ${{participating}}</span></span><span class="muted">${{safe(promotionPeriod(campaign))}}</span></button>`;
+      }}).join('')}}</div>`;
     }}
     async function loadPromotionCampaignCatalog(force = false) {{
       if (promotionCampaignCatalog.loading || (promotionCampaignCatalog.loaded && !force)) return;
@@ -4662,13 +4714,18 @@ def render_dashboard(data):
         const code = button.dataset.promoConfirm;
         const state = promotionState.get(code) || {{}};
         if (!state.preview?.preview_token) return;
-        promotionStateUpdate(code, {{loading:true, error:'', result:null}});
+        const preview = state.preview;
+        promotionStateUpdate(code, {{loading:true, confirmation:{{status:'processing', attempt:1, maxAttempts:30}}, error:'', result:null}});
         try {{
-          const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:code, preview_token:state.preview.preview_token}});
-          loadPromotionAudit();
-          const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
-          promotionStateUpdate(code, {{loading:false, data, preview:null, result, error:''}});
-        }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
+          const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:code, preview_token:preview.preview_token}});
+          await pollPromotionConfirmation(code, preview, result);
+        }} catch (error) {{
+          if (['promotion_confirmation_unverified','promotion_removal_unverified','campaign_confirmation_unverified','confirmation_in_progress','confirmation_state_unknown'].includes(String(error.code || ''))) {{
+            await pollPromotionConfirmation(code, preview);
+          }} else {{
+            promotionStateUpdate(code, {{loading:false, confirmation:{{status:'rejected', reason:error.message}}, error:`Promoção recusada: ${{error.message}}`}});
+          }}
+        }}
       }}));
     }}
     function pricingPreviewBlock(item) {{
