@@ -127,6 +127,32 @@ class FinanceProfilePersistenceTests(unittest.TestCase):
             }])
         self.assertEqual(db.get_intelligence_finance_cache(1, "client-guard")["profile"]["costBySku"]["LAZ-3X3"], 31)
 
+    def test_bulk_patch_changes_only_filled_fields_for_each_selected_sku(self):
+        db.upsert_intelligence_finance_cache(1, "client-bulk", {
+            "costBySku": {"A": 10, "B": 20},
+            "fiscalBySku": {
+                "A": {"simpleTaxRate": 4, "flexCarrierCost": 7, "evidenceStatus": "pending"},
+                "B": {"simpleTaxRate": 6, "flexCarrierCost": 9, "evidenceStatus": "user_informed"},
+            },
+        }, [])
+        changes = [{"sku": sku, "fiscalPatch": {"simpleTaxRate": 5},
+                    "expectedFiscal": fiscal} for sku, fiscal in {
+                        "A": {"simpleTaxRate": 4, "flexCarrierCost": 7, "evidenceStatus": "pending"},
+                        "B": {"simpleTaxRate": 6, "flexCarrierCost": 9, "evidenceStatus": "user_informed"},
+                    }.items()]
+        saved = db.update_finance_skus(2, "client-bulk", changes)
+        self.assertEqual(saved["costBySku"], {"A": 10, "B": 20})
+        self.assertEqual(saved["fiscalBySku"]["A"], {"simpleTaxRate": 5, "flexCarrierCost": 7, "evidenceStatus": "pending"})
+        self.assertEqual(saved["fiscalBySku"]["B"], {"simpleTaxRate": 5, "flexCarrierCost": 9, "evidenceStatus": "user_informed"})
+        with self.assertRaisesRegex(ValueError, "outra aba"):
+            db.update_finance_skus(1, "client-bulk", changes)
+        costs = db.update_finance_skus(1, "client-bulk", [
+            {"sku": sku, "cost": 15, "expectedCost": old, "fiscalPatch": {}, "expectedFiscal": None}
+            for sku, old in (("A", 10), ("B", 20))
+        ])
+        self.assertEqual(costs["costBySku"], {"A": 15, "B": 15})
+        self.assertEqual(costs["fiscalBySku"], saved["fiscalBySku"])
+
     def test_legacy_snapshot_cannot_erase_skus_it_did_not_load(self):
         db.upsert_intelligence_finance_cache(1, "client-tabs", {
             "costBySku": {"LAZ-2X2": 10, "LAZ-3X2": 20},
