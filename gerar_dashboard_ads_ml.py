@@ -2424,7 +2424,7 @@ def render_dashboard(data):
           node.value = '__unchanged__';
         }} else if (placeholder) placeholder.remove();
       }});
-      if (bulk) document.querySelectorAll('#financeSkuModal input[id^="skuFiscal"]').forEach(node => {{ node.value = ''; }});
+      if (bulk) document.querySelectorAll('#financeSkuModal input[id^="skuFiscal"],#skuPromotionMinimumMargin').forEach(node => {{ node.value = ''; }});
       syncSkuFiscalVisibility();
       syncSkuFiscalAutomaticFields();
       financeField('financeSkuModal').classList.add('open');
@@ -2469,7 +2469,7 @@ def render_dashboard(data):
         freightCreditEnabled:financeField('skuFiscalFreightCredit').value === 'enabled',
         freightIcmsCreditRate:skuFiscalOptionalNumber('skuFiscalFreightIcms'), icmsStDecision:financeField('skuFiscalStDecision').value
       }};
-      const fieldMap = {{skuFiscalTaxRegime:'taxRegime',skuFiscalSimpleTax:'simpleTaxRate',skuFiscalFlexCost:'flexCarrierCost',
+      const fieldMap = {{skuPromotionMinimumMargin:'promotionMinimumMargin',skuFiscalTaxRegime:'taxRegime',skuFiscalSimpleTax:'simpleTaxRate',skuFiscalFlexCost:'flexCarrierCost',
         skuFiscalOrigin:'productOrigin',skuFiscalOriginState:'originState',skuFiscalCostBasis:'costBasis',skuFiscalEvidence:'evidenceStatus',
         skuFiscalCalculationMode:'calculationMode',skuFiscalDestinationState:'destinationState',skuFiscalSaleType:'saleType',
         skuFiscalIpiInput:'ipiInputRate',skuFiscalIcmsInput:'icmsInputRate',skuFiscalPisInput:'pisCofinsInputRate',
@@ -5769,7 +5769,7 @@ def render_dashboard(data):
     document.getElementById('financeSkuModalSave').addEventListener('click', saveFinanceSku);
     ['input','change'].forEach(type => document.getElementById('financeSkuModal').addEventListener(type, event => {{
       const node = event.target;
-      if (!activeFinanceBulk || !node.id?.startsWith('skuFiscal')) return;
+      if (!activeFinanceBulk || !(node.id?.startsWith('skuFiscal') || node.id === 'skuPromotionMinimumMargin')) return;
       if (String(node.value).trim() && node.value !== '__unchanged__') activeFinanceDirty.add(node.id);
       else activeFinanceDirty.delete(node.id);
     }}));
