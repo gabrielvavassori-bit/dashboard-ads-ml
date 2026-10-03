@@ -492,16 +492,28 @@ def update_finance_skus(user_id, client_id, changes):
                 sku = change["sku"]
                 actual_cost = costs.get(sku)
                 actual_fiscal = fiscal.get(sku)
-                if actual_cost != change["expectedCost"] or actual_fiscal != change["expectedFiscal"]:
+                patch = change.get("fiscalPatch")
+                expected_fiscal = change["expectedFiscal"] or {}
+                conflict = ("cost" in change and actual_cost != change["expectedCost"])
+                if patch is None:
+                    conflict = conflict or actual_fiscal != change["expectedFiscal"]
+                else:
+                    conflict = conflict or any((actual_fiscal or {}).get(field) != expected_fiscal.get(field) for field in patch)
+                if conflict:
                     conn.execute("ROLLBACK")
                     raise ValueError("Cadastro alterado em outra aba. Atualize a pagina antes de salvar.")
             for change in changes:
                 sku = change["sku"]
-                if change["cost"] is None:
-                    costs.pop(sku, None)
-                else:
-                    costs[sku] = change["cost"]
-                fiscal[sku] = change["fiscal"]
+                if "cost" in change:
+                    if change["cost"] is None:
+                        costs.pop(sku, None)
+                    else:
+                        costs[sku] = change["cost"]
+                patch = change.get("fiscalPatch")
+                if patch is None:
+                    fiscal[sku] = change["fiscal"]
+                elif patch:
+                    fiscal[sku] = {**(fiscal.get(sku) or {}), **patch}
             ts = now()
             conn.execute(
                 """INSERT INTO ml_account_financial_profiles
