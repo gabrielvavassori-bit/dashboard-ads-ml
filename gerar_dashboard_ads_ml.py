@@ -3938,7 +3938,11 @@ def render_dashboard(data):
       const primaryAction = canJoin || canUpdate ? `<button type="button" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Alterar' : 'Participar'}}</button>` : '';
       const leaveAction = canRemove ? `<button type="button" class="secondary-action" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>` : '';
       const directState = listing ? (promotionState.get(item.code) || {{}}) : {{}};
-      const directAction = canJoin ? `<button type="button" data-promo-direct="${{index}}" data-promo-operation="join" data-promo-item="${{safe(item.code)}}"${{directState.loading ? ' disabled' : ''}}>${{directState.loading ? 'Participando...' : 'Participar'}}</button>` : (canRemove ? `<button type="button" class="secondary-action" data-promo-direct="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}"${{directState.loading ? ' disabled' : ''}}>${{directState.loading ? 'Saindo...' : 'Sair'}}</button>` : '');
+      const directAction = canJoin
+        ? `<button type="button" data-promo-direct="${{index}}" data-promo-operation="join" data-promo-item="${{safe(item.code)}}"${{directState.loading ? ' disabled' : ''}}>${{directState.loading ? 'Participando...' : 'Participar'}}</button>`
+        : (canUpdate
+          ? `<button type="button" data-promo-direct="${{index}}" data-promo-operation="update" data-promo-item="${{safe(item.code)}}"${{directState.loading ? ' disabled' : ''}}>${{directState.loading ? 'Alterando...' : 'Alterar'}}</button>`
+          : (canRemove ? `<button type="button" class="secondary-action" data-promo-direct="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}"${{directState.loading ? ' disabled' : ''}}>${{directState.loading ? 'Saindo...' : 'Sair'}}</button>` : ''));
       const directFeedback = directState.loading
         ? '<span class="promotion-action-status">Processando no Mercado Livre...</span>'
         : (directState.error
