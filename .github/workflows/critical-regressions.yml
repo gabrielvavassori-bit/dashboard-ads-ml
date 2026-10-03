@@ -22,6 +22,8 @@ jobs:
           test_operational_availability.py
           test_tacos_status_consistency.py
           test_account_period_comparison.py
+          test_promotions_guide_lookup.py
+          test_promotion_price_reference.py
           test_online_periods.OnlinePeriodTests.test_sales_intelligence_blocks_daily_partial_coverage_before_recommendations
           test_online_periods.OnlinePeriodTests.test_never_sold_listing_requires_active_status_and_creation_coverage
           test_integrations.HTTPRouteTests.test_sales_intelligence_integrity_block_hides_online_recommendations
