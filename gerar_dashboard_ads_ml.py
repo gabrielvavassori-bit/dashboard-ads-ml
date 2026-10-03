@@ -3945,7 +3945,11 @@ def render_dashboard(data):
     }}
     function promotionTableHtml(item, rows, allowAction = false) {{
       const ranked = promotionRankRows(item, rows);
-      const body = ranked.map(entry => promotionTableRow(item, entry, allowAction)).join('');
+      const listing = allowAction ? {{
+        code:item.code, title:item.title || item.name || item.code,
+        sku:item.sku || '', mlbu:item.userProductId || '', thumbnailUrl:item.thumbnailUrl || ''
+      }} : null;
+      const body = ranked.map(entry => promotionTableRow(item, entry, allowAction, listing)).join('');
       if (!body) return '<div class="detail-modal-empty">Nenhuma campanha elegível retornada.</div>';
       return `<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Promoção e período</th><th>Subsídio ML</th><th>Desconto vendedor</th><th>Desconto total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div>`;
     }}
@@ -4159,19 +4163,13 @@ def render_dashboard(data):
           ? `<div class="promotion-option"><b>${{safe(result.code)}}</b>${{promotionWriteAccessHtml(result.data)}}</div>`
           : '';
       }}).join('');
-      const previews = state.results.filter(result => result.data).map(result => {{
-        const individualState = promotionState.get(result.code) || {{}};
-        const source = {{...item, code:result.code}};
-        const feedback = `${{promotionPreviewHtml(source, individualState)}}${{individualState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{individualState.error ? `<div class="promotion-error">${{safe(individualState.error)}}</div>` : ''}}`;
-        return feedback ? `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b>${{feedback}}</div>` : '';
-      }}).join('');
       const content = view === 'campaign' ? byCampaign : view === 'sku' ? bySku : view === 'hybrid' ? hybrid : results;
       const loaded = Number(state.results.length || 0);
       const total = Number(state.sourceTotal || loaded);
       const pagination = item.detailScope === 'campaign'
         ? `<div class="promotion-bulk-toolbar"><span><b>${{num(loaded)}}</b> anúncio(s) carregado(s)${{total > loaded ? ` de ${{num(total)}}` : ''}}.</span>${{state.nextSearchAfter ? `<button type="button" data-promo-campaign-more data-promo-scope-key="${{safe(key)}}"${{state.loadingMore ? ' disabled' : ''}}>${{state.loadingMore ? 'Carregando...' : 'Carregar próximos anúncios'}}</button>` : ''}}</div>`
         : '';
-      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{campaignInventory}}${{selector}}${{pagination}}${{recommendationHtml}}${{bulkSummary}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}${{previews}}</div></div>`;
+      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{campaignInventory}}${{selector}}${{pagination}}${{recommendationHtml}}${{bulkSummary}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}</div></div>`;
     }}
     function promotionPanelHtml(item) {{
       const code = String(item.code || '').toUpperCase();
@@ -4185,7 +4183,7 @@ def render_dashboard(data):
         ? `<div class="promotion-form"><label>Preco promocional<input type="number" min="0.01" step="0.01" value="${{Number(item.suggestedTestPrice || 0) || ''}}" data-promo-custom-price></label><label>Inicio<input type="date" value="${{promotionDate(0)}}" data-promo-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-finish></label><button type="button" data-promo-custom="${{safe(code)}}">Criar desconto</button></div>`
         : `<div class="muted">Indisponivel: ${{safe(data.price_discount_read_only_reason || 'o anuncio nao atende aos requisitos atuais')}}.</div>`}}</div>`;
       const sellerCampaign = `<div class="promotion-option"><b>Criar campanha do vendedor</b><p class="muted">Cria uma campanha flexível de até 14 dias. Após confirmá-la, atualize as oportunidades e escolha o preço para incluir este anúncio.</p><div class="promotion-form"><label>Nome<input type="text" maxlength="80" data-promo-campaign-name></label><label>Início<input type="date" value="${{promotionDate(0)}}" data-promo-campaign-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-campaign-finish></label><button type="button" data-promo-create-campaign="${{safe(code)}}">Gerar prévia da campanha</button></div></div>`;
-      return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promoções do Mercado Livre</h4><div class="muted">Conta e anúncio validados: ${{safe(data.item?.title || code)}}; preço atual ${{promotionMoney(data.item?.price)}}. Clique em Participar, Alterar ou Sair para aplicar a ação diretamente no Mercado Livre.</div>${{promotionWriteAccessHtml(data)}}${{campaigns}}<div class="promotion-panel-grid">${{custom}}${{sellerCampaign}}</div>${{promotionPreviewHtml(item, state)}}${{state.result ? '<div class="promotion-success">Promoção aplicada e confirmada pelo Mercado Livre.</div>' : ''}}${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
+      return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promoções do Mercado Livre</h4><div class="muted">Conta e anúncio validados: ${{safe(data.item?.title || code)}}; preço atual ${{promotionMoney(data.item?.price)}}. Clique em Participar, Alterar ou Sair para abrir a revisão local antes da aplicação no Mercado Livre.</div>${{promotionWriteAccessHtml(data)}}${{campaigns}}<div class="promotion-panel-grid">${{custom}}${{sellerCampaign}}</div></div>`;
     }}
     async function promotionApiRequest(path, method = 'GET', body = null) {{
       const options = {{ method, headers: {{'Accept':'application/json'}} }};

@@ -517,6 +517,15 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('body.deal_price = editedPrice;', handler)
         self.assertIn('activePromotionConfigKey = `${{code}}:${{index}}`;', handler)
 
+    def test_direct_mlb_preview_is_local_modal_and_not_appended_below_the_page(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        table = source[source.index('    function promotionTableHtml'):source.index('    function promotionScopeLabel')]
+        panel = source[source.index('    function promotionPanelHtml'):source.index('    async function promotionApiRequest')]
+        self.assertIn('const listing = allowAction ?', table)
+        self.assertIn('promotionTableRow(item, entry, allowAction, listing)', table)
+        self.assertNotIn('${{promotionPreviewHtml(item, state)}}', panel)
+        self.assertIn('abrir a revisão local antes da aplicação', panel)
+
     def test_campaign_catalog_retries_read_only_request_once_on_transient_failure(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         loader = source[source.index('    async function loadPromotionCampaignCatalog'):source.index('    async function openPromotionAccountCampaign')]
