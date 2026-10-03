@@ -2115,6 +2115,7 @@ def render_dashboard(data):
       <section class="card finance-layout">
         <div>
           <h2>Custos e impostos por SKU</h2>
+          <p class="note" role="status">Ambiente beta: os custos cadastrados aqui ficam somente no beta. Para usar custos novos no painel principal, cadastre-os no principal.</p>
           <p class="note">Cadastre cada produto individualmente. Custo, origem e parâmetros fiscais por SKU ficam na base compartilhada com a Inteligência de Vendas e alimentam a margem líquida estimada das promoções.</p>
         </div>
         <div>
