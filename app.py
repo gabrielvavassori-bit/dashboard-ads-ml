@@ -2687,18 +2687,28 @@ class Handler(BaseHTTPRequestHandler):
                     sku = str(change.get("sku") or "").strip()[:300]
                     cost, expected_cost = change.get("cost"), change.get("expectedCost")
                     fiscal, expected_fiscal = change.get("fiscal"), change.get("expectedFiscal")
-                    if not sku or fiscal is None or not isinstance(fiscal, dict) or (expected_fiscal is not None and not isinstance(expected_fiscal, dict)):
+                    partial = "fiscalPatch" in change
+                    fiscal_patch = change.get("fiscalPatch") if partial else None
+                    if not sku or (expected_fiscal is not None and not isinstance(expected_fiscal, dict)) or (partial and not isinstance(fiscal_patch, dict)) or (not partial and not isinstance(fiscal, dict)):
                         raise ValueError("Dados fiscais do SKU invalidos.")
+                    if partial and not fiscal_patch and "cost" not in change:
+                        raise ValueError("Nenhum campo alterado.")
                     if sku in seen_skus:
                         raise ValueError("SKU duplicado na alteracao.")
                     seen_skus.add(sku)
-                    if len(json.dumps(fiscal, ensure_ascii=True).encode("utf-8")) > 50_000:
+                    if len(json.dumps(fiscal_patch if partial else fiscal, ensure_ascii=True).encode("utf-8")) > 50_000:
                         raise ValueError("Dados fiscais do SKU excedem o limite permitido.")
                     for value in (cost, expected_cost):
                         if value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0 or value > 1e15):
                             raise ValueError("Custo do SKU invalido.")
-                    clean_changes.append({"sku": sku, "cost": cost, "expectedCost": expected_cost,
-                                          "fiscal": fiscal, "expectedFiscal": expected_fiscal})
+                    cleaned = {"sku": sku, "expectedFiscal": expected_fiscal}
+                    if "cost" in change:
+                        cleaned.update(cost=cost, expectedCost=expected_cost)
+                    if partial:
+                        cleaned["fiscalPatch"] = fiscal_patch
+                    else:
+                        cleaned["fiscal"] = fiscal
+                    clean_changes.append(cleaned)
                 saved_profile = db.update_finance_skus(user["id"], link["client_id"], clean_changes)
                 _send_json(self, {"ok": True, "clientId": link["client_id"], "profile": saved_profile})
                 return
