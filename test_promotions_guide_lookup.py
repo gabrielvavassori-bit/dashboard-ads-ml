@@ -27,6 +27,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionReceiptCell = () => 'Não calculado';
         const promotionMarginCell = () => 'MC parcial';
         const promotionFinancialResult = () => ({available:false});
+        const promotionPriority = () => [0,0,1,-50];
         const promotionSameOpportunity = () => true;
         const promotionPreviewHtml = () => '';
         const promotionState = new Map();
@@ -99,6 +100,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const safe = value => String(value ?? '');
         const brl = value => `R$ ${Number(value).toFixed(2)}`;
         const promotionFinancialResult=()=>({available:false});
+        const promotionPriority = () => [0,0,1,-50];
         const productImage = () => '<img src="foto.jpg">';
         const promotionDisplayName = row => row.name;
         const promotionPeriod = () => 'Período';
@@ -302,7 +304,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
             {'code': 'MLB222', 'data': {'item': {'title': 'Preta', 'user_product_id': 'MLBU765'}, 'promotions': [
                 {'name': '10.10', 'promotion_type': 'DEAL', 'promotion_id': 'A', 'suggested_discounted_price': 69.8, 'discount_meli_boost_amount': 10}]}},
         ]
-        script = "function promotionDisplayName(row){return row.name;}\n" + function + '\nconst results=' + json.dumps(results) + ';\nconsole.log(JSON.stringify(promotionCampaignGroups(results)));'
+        script = "function promotionDisplayName(row){return row.name;} function promotionCompare(){return 0;}\n" + function + '\nconst results=' + json.dumps(results) + ';\nconsole.log(JSON.stringify(promotionCampaignGroups(results)));'
         groups = json.loads(subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout)
         campaign = next(group for group in groups if group['name'] == '10.10')
         self.assertEqual([(entry['code'], entry['index'], entry['row']['suggested_discounted_price'], entry['row']['discount_meli_boost_amount']) for entry in campaign['listings']],
@@ -492,7 +494,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('Preço sugerido; edite para recalcular antes de aprovar', row)
         self.assertIn('min_discounted_price', row)
         self.assertIn('max_discounted_price', row)
-        self.assertIn('<td class="num">${{priceCell}}</td><td class="num">${{promotionReceiptCell(row)}}</td>', row)
+        self.assertIn('<td class="num">${{priceCell}}${{referenceHtml}}</td><td class="num">${{promotionReceiptCell(row)}}</td>', row)
         self.assertNotIn('<label>Preço promocional<input', row[row.index('const actionControls'):row.index('const quote =')])
         self.assertIn('function promotionRequoteEditedPrice(input)', source)
         requote = source[source.index('    async function promotionRequoteEditedPrice'):source.index('    function activatePromotionPanels')]
