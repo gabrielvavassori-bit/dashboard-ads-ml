@@ -3721,6 +3721,52 @@ def render_dashboard(data):
       const rebate = Number(row.discount_meli_boost_amount || 0);
       return (Number.isFinite(price) ? price : 0) + (Number.isFinite(rebate) ? rebate : 0);
     }}
+    function promotionCategory(row) {{
+      const type = String(row.promotion_type || '').toUpperCase();
+      if (/COUPON|FOLLOWER|ABANDONED/.test(type)) return 1;
+      return ['LIGHTNING','PRICE_DISCOUNT','SELLER_CAMPAIGN','MARKETPLACE_CAMPAIGN','DEAL','DOD','SMART','PRE_NEGOTIATED','UNHEALTHY_STOCK','PRICE_MATCHING','SELLER_DISCOUNT'].includes(type) ? 0 : 2;
+    }}
+    function promotionPriority(row, item = {{}}) {{
+      const now = new Date().toISOString().slice(0, 10);
+      const start = String(row.start_date || '').slice(0, 10);
+      const end = String(row.finish_date || '').slice(0, 10);
+      const status = String(row.status || '').toLowerCase();
+      const phase = ['finished','ended','expired'].includes(status) || (end && end < now) ? 2 : start && start > now ? 1 : 0;
+      const financial = promotionFinancialResult(row, item);
+      const quote = row.receipt_quote || {{}};
+      const valid = quote.available === true && quote.receipt_before_cost_tax != null && promotionQuoteMatchesPrice(row, promotionEffectivePrice(row, item));
+      const receipt = valid ? Number(quote.receipt_before_cost_tax) : NaN;
+      const tier = financial.available ? (financial.margin >= promotionMarginTarget ? 0 : 2) : Number.isFinite(receipt) ? 1 : 3;
+      return [promotionCategory(row), phase, tier, -(financial.available ? financial.profit : Number.isFinite(receipt) ? receipt : 0)];
+    }}
+    function promotionCompare(a, b, itemA = {{}}, itemB = itemA) {{
+      const left = promotionPriority(a, itemA), right = promotionPriority(b, itemB);
+      for (let i = 0; i < left.length; i++) if (left[i] !== right[i]) return left[i] - right[i];
+      return 0;
+    }}
+    function promotionOrganizeTables(html) {{
+      return html.replace(/<tbody>([\s\S]*?)<\/tbody>/g, (_, body) => {{
+        const rows = (body.match(/<tr [\s\S]*?<\/tr>/g) || []).map((html, index) => {{
+          const key = html.match(/data-promotion-priority="([^"]+)"/);
+          return {{html, index, priority:key ? key[1].split(',').map(Number) : [2,0,3,0]}};
+        }});
+        rows.sort((a,b) => {{
+          for (let i=0;i<4;i++) if(a.priority[i] !== b.priority[i]) return a.priority[i]-b.priority[i];
+          return a.index-b.index;
+        }});
+        let category = -1;
+        const grayLeaders = new Set();
+        return '<tbody>' + rows.map(entry => {{
+          const next = entry.priority[0];
+          const heading = next !== category ? `<tr class="promotion-category-heading"><td colspan="10"><b>${{['Promoções de preço','Cupons e benefícios condicionais','Tipo a confirmar'][next]}}</b><small>${{next === 1 ? 'Condições específicas; não concorrem à melhor promoção de preço.' : 'Disponíveis antes das futuras/encerradas. Sem custos completos: maior recebimento estimado primeiro; não comprova lucro.'}}</small></td></tr>` : '';
+          category = next;
+          const code = entry.html.match(/data-promotion-item="([^"]+)"/)?.[1];
+          const grayLeader = next === 0 && entry.priority[1] === 0 && entry.priority[2] === 1 && code && !grayLeaders.has(code);
+          if (grayLeader) grayLeaders.add(code);
+          return heading + (grayLeader ? entry.html.replace('<td>', '<td><span style="display:block;background:#eef0f3;color:#526071;padding:4px;border-radius:5px">Maior recebimento disponível — margem não apurada</span>') : entry.html);
+        }}).join('') + '</tbody>';
+      }});
+    }}
     function promotionRankRows(item, rows) {{
       const normalized = rows.map((row, index) => {{
         const allocation = promotionDiscountAllocation(row);
@@ -3730,7 +3776,7 @@ def render_dashboard(data):
       const highestSubsidy = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.subsidy) ? entry.subsidy : 0));
       const highestPayout = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.payout) ? entry.payout : 0));
       return normalized.sort((a, b) =>
-        (b.payout - a.payout) || (b.total - a.total) || (b.subsidy - a.subsidy) || (b.rebate - a.rebate) || a.index - b.index
+        promotionCompare(a.row, b.row, item) || a.index - b.index
       ).map(entry => ({{...entry, bestPayout:entry.payout > 0 && entry.payout === highestPayout, bestDiscount:entry.total > 0 && entry.total === highestDiscount, bestSubsidy:entry.subsidy > 0 && entry.subsidy === highestSubsidy}}));
     }}
     function promotionTotalCellValue(row) {{
@@ -3930,12 +3976,22 @@ def render_dashboard(data):
         const flexScenario = result.flexAvailable ? `<div class="promotion-margin-note"><b>Cenário consultivo Flex · média distância${{result.flexWeightEstimated ? ' · estimado' : ''}}</b>${{line('Tarifa de venda', '−' + brl(result.flexFee))}}${{line('Frete tradicional', 'Desconsiderado')}}${{line(`Taxa Flex · ${{result.flexPriceBand}}`, '−' + brl(result.flexFixedFee))}}${{line(`Bônus ML · ${{result.flexWeightBand}}`, '+' + brl(result.flexBonus))}}${{line('Transportador Flex informado', '−' + brl(result.flexCarrierCost))}}${{line('Custo líquido Flex', '−' + brl(result.flexNetCost))}}${{line('Resultado com Flex', brl(result.flexProfit))}}${{line('Margem com Flex', flexMargin + '%')}}Cálculo validado pela regra da calculadora: substitui o frete normal por transportador + taxa Flex − bônus do Mercado Livre. Peso usado: ${{result.flexWeight.toLocaleString('pt-BR',{{maximumFractionDigits:3}})}} kg (${{safe(result.flexWeightSource)}}).${{result.flexWeightEstimated ? ' Como a API não informou o peso faturável, foi usada a faixa intermediária de 0,5 a 5 kg; o valor é consultivo.' : ''}}</div>` : (result.flexActive ? `<div class="promotion-margin-note"><b>Flex ativo</b> ${{safe(result.flexPendingReason || 'Configure o custo do transportador Flex para calcular o cenário consultivo.')}}</div>` : '');
         const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}${{line('Custo do produto', '−' + brl(result.cost))}}${{line('Débitos fiscais', '−' + brl(result.debits))}}${{line('Créditos fiscais aproveitados', '+' + brl(result.credits))}}${{result.difal > 0 ? line('DIFAL', '−' + brl(result.difal)) : line('DIFAL', brl(0))}}<div class="promotion-margin-total">${{line('Lucro líquido estimado', brl(result.profit))}}</div><div class="promotion-margin-note">Margem líquida estimada: ${{margin}}%. Rebate, tarifa e frete vêm da cotação da oportunidade; custo e parâmetros fiscais vêm do SKU. O Flex não compõe esta margem.</div>${{flexScenario}}`;
         const skuFloor = effectiveMarginTarget > promotionMarginTarget ? `<small>Piso do SKU: ${{effectiveMarginTarget.toLocaleString('pt-BR')}}%</small>` : '';
-        return `<span class="promotion-margin-value ${{result.profit < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small>${{skuFloor}}${{flexWarning ? `<span class="promotion-flex-warning">⚠ Flex ativo: margem ${{flexMargin}}%, abaixo da meta de ${{effectiveMarginTarget.toLocaleString('pt-BR')}}%</span>` : (result.flexActive && !result.flexAvailable ? '<small>Flex ativo · cálculo pendente</small>' : '')}}</span>`;
+        return `<span class="promotion-margin-value ${{result.margin < effectiveMarginTarget ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small>${{skuFloor}}${{flexWarning ? `<span class="promotion-flex-warning">⚠ Flex ativo: margem ${{flexMargin}}%, abaixo da meta de ${{effectiveMarginTarget.toLocaleString('pt-BR')}}%</span>` : (result.flexActive && !result.flexAvailable ? '<small>Flex ativo · cálculo pendente</small>' : '')}}</span>`;
       }}
       const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{line('Custo do produto', 'Não informado')}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line('Saldo antes de custo e imposto', brl(receipt))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. A margem de contribuição real depende do custo e do imposto cadastrados; estes não foram assumidos como zero.</div>`;
-      return `<span class="promotion-margin-value ${{receipt < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small></span>`;
+      return `<span class="promotion-margin-value" style="background:#eef0f3;color:#526071" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small><small>Margem não apurada</small></span>`;
     }}
     function promotionTableRow(item, entry, allowAction, listing = null, selection = null) {{
+      // Resolve history by exact MLB, never by the parent SKU/family. Ads rows
+      // can repeat a listing; only one carries its non-duplicated sales facts.
+      const historyRows = typeof DATA !== 'undefined' ? (DATA.items || []).filter(candidate => String(candidate.code || '').toUpperCase() === String(item.code || '').toUpperCase()) : [];
+      const history = historyRows.find(candidate => Number(candidate.units) > 0) || historyRows[0] || (typeof DATA === 'undefined' ? item : {{}});
+      const units = Number(history.units);
+      const revenue = Number(history.totalRevenue);
+      const average = units > 0 && Number.isFinite(revenue) && revenue > 0 ? revenue / units : 0;
+      const period = typeof DATA !== 'undefined' ? (DATA.meta?.onlineMode?.onlinePeriod || DATA.meta?.period || {{}}) : {{}};
+      const historyLabel = period.dateFrom && period.dateTo ? `${{period.dateFrom}} a ${{period.dateTo}}` : 'período selecionado';
+      const historyHtml = `<small>Média vendida: ${{average > 0 ? brl(average) : 'Sem referência de vendas'}}</small><small>${{safe(historyLabel)}}${{units > 0 ? ` · ${{units.toLocaleString('pt-BR')}} unidades` : ''}}</small><small>Última venda: ${{Number(history.lastSalePrice) > 0 ? brl(Number(history.lastSalePrice)) : 'N/D'}} · ${{safe(history.lastSaleDate || 'Data não informada')}}</small>`;
       const {{row:sourceRow, index, payout, bestPayout, bestDiscount, bestSubsidy}} = entry;
       // Campaign/group views keep a snapshot of each opportunity. Prefer the live
       // per-MLB row so an edited preview price survives the following re-render.
@@ -3945,6 +4001,10 @@ def render_dashboard(data):
       const original = Number(row.original_price || item.currentPrice || item.lastPrice || 0);
       const allocation = promotionDiscountAllocation(row);
       const price = promotionEffectivePrice(row, item);
+      const difference = average > 0 && price > 0 ? (price / average - 1) * 100 : null;
+      const band = difference == null ? 'Sem referência de vendas' : difference < -5 - 1e-9 ? 'Abaixo da média' : difference > 5 + 1e-9 ? 'Acima da média' : 'Na faixa da média';
+      const tone = difference == null ? '#526071' : difference > 5 + 1e-9 ? '#b42318' : difference < -5 - 1e-9 ? '#946200' : '#344054';
+      const referenceHtml = `<div class="promotion-sale-reference" style="margin-top:8px;white-space:normal"><b style="color:${{tone}}">${{band}}</b>${{difference == null ? '' : `<small>${{Math.abs(difference).toLocaleString('pt-BR',{{maximumFractionDigits:2}})}}% ${{difference < 0 ? 'abaixo' : difference > 0 ? 'acima' : 'de diferença'}} da média</small>`}}${{historyHtml}}</div>`;
       const status = String(row.status || 'status não informado');
       const active = ['started', 'active'].includes(status.toLowerCase());
       const quoteConsistent = row.receipt_quote?.available !== true || promotionQuoteMatchesPrice(row, price);
@@ -3980,7 +4040,7 @@ def render_dashboard(data):
       const rebatePercent = Number(row.discount_meli_boosted_percentage);
       const rebateText = Number.isFinite(rebate) && rebate > 0 ? `<b>${{brl(rebate)}}</b>${{Number.isFinite(rebatePercent) && rebatePercent > 0 ? `<small>${{rebatePercent.toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</small>` : ''}}` : '<span class="muted">—</span>';
       const classes = `${{bestPayout ? 'promotion-best-payout ' : ''}}${{bestDiscount ? 'promotion-best-discount ' : ''}}${{bestSubsidy ? 'promotion-best-subsidy' : ''}}`;
-      const payoutBadge = bestPayout ? '<span class="promotion-rank">Maior recebimento estimado</span>' : '';
+      const payoutBadge = bestPayout ? '<span class="promotion-rank">Maior recebimento estimado — confira a margem</span>' : '';
       const discountBadge = bestDiscount ? '<span class="promotion-rank">Maior desconto</span>' : '';
       const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
       const selectionControl = selection ? `<input class="promotion-bulk-select" type="checkbox" data-promo-bulk-select="${{safe(selection.key)}}" data-promo-scope-key="${{safe(selection.scopeKey)}}"${{selection.checked ? ' checked' : ''}} aria-label="Selecionar ${{safe(item.code)}} para prévia coletiva">` : '';
@@ -3994,7 +4054,7 @@ def render_dashboard(data):
       const priceCell = editablePrice
         ? `<div class="promotion-price-editor"><label><span>Preço promocional</span><input type="number"${{priceLimits}} step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"></label><label><span>Margem desejada (%)</span><input class="promotion-target-margin" type="number" min="-99" max="99" step="0.01" value="${{currentMargin == null ? '' : currentMargin.toFixed(2)}}" data-promo-target-margin="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"${{currentMargin == null ? ' disabled' : ''}}></label><span class="promotion-target-feedback" data-promo-target-feedback="${{index}}">${{currentMargin == null ? 'Cadastre custo e impostos para calcular por margem.' : 'Altere o preço ou informe a margem desejada.'}}</span><small>Preço sugerido; edite para recalcular antes de aprovar</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></div>`
         : `<b>${{price > 0 ? brl(price) : '—'}}</b><small>${{active ? 'Preço promocional ativo' : 'Preço da oportunidade retornado pela API'}}</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small>`;
-      return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionAllocationCell(allocation.meli, original, allocation.meliDerived)}}${{subsidyBadge}}</td><td class="num">${{promotionAllocationCell(allocation.seller, original, allocation.sellerDerived, allocation.sellerEstimatedFromTotal ? 'Estimado pelo total; subsídio ML não informado' : '')}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b><small>Preço original</small></td><td class="num">${{priceCell}}</td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{promotionMarginCell(row, item)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
+      return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}" data-promotion-priority="${{promotionPriority(row, item).join(',')}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionAllocationCell(allocation.meli, original, allocation.meliDerived)}}${{subsidyBadge}}</td><td class="num">${{promotionAllocationCell(allocation.seller, original, allocation.sellerDerived, allocation.sellerEstimatedFromTotal ? 'Estimado pelo total; subsídio ML não informado' : '')}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b><small>Preço original</small></td><td class="num">${{priceCell}}${{referenceHtml}}</td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{promotionMarginCell(row, item)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
     function promotionTableHtml(item, rows, allowAction = false) {{
       const ranked = promotionRankRows(item, rows);
@@ -4004,7 +4064,7 @@ def render_dashboard(data):
       }} : null;
       const body = ranked.map(entry => promotionTableRow(item, entry, allowAction, listing)).join('');
       if (!body) return '<div class="detail-modal-empty">Nenhuma campanha elegível retornada.</div>';
-      return `<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Promoção e período</th><th>Subsídio ML</th><th>Desconto vendedor</th><th>Desconto total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div>`;
+      return promotionOrganizeTables(`<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Promoção e período</th><th>Subsídio ML</th><th>Desconto vendedor</th><th>Desconto total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div>`);
     }}
     function promotionScopeLabel(item) {{
       return item.detailScope === 'family' ? 'família' : item.detailScope === 'mlbu' ? 'variação/MLBU' : item.detailScope === 'sku' ? 'SKU' : item.detailScope === 'campaign' ? 'campanha' : item.detailScope === 'account' ? 'conta' : 'grupo';
@@ -4036,7 +4096,10 @@ def render_dashboard(data):
           groups.get(key).listings.push({{code:result.code, title:result.data.item?.title || result.code, mlbu:result.data.item?.user_product_id || '', row, index}});
         }});
       }});
-      return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+      const sources = typeof DATA !== 'undefined' ? DATA.items || [] : [];
+      return [...groups.values()].sort((a, b) => promotionCompare(a.row, b.row,
+        sources.find(item => item.code === a.listings[0]?.code) || {{}},
+        sources.find(item => item.code === b.listings[0]?.code) || {{}}) || a.name.localeCompare(b.name, 'pt-BR'));
     }}
     function promotionVisibleListings(state) {{
       const visibleResults = (state.results || []).filter(result => promotionMatchesScopeSearch(result, state.scopeSearch));
@@ -4048,7 +4111,10 @@ def render_dashboard(data):
           campaignKey:group.key,
           campaignName:group.name,
           selectionKey:`${{group.key}}|${{listing.code}}|${{listing.index}}`
-        }})));
+        }}))).sort((a, b) => {{
+          const sources = typeof DATA !== 'undefined' ? DATA.items || [] : [];
+          return a.code.localeCompare(b.code) || promotionCompare(a.row, b.row, sources.find(item => item.code === a.code) || {{}}) || a.index - b.index;
+        }});
     }}
     function promotionScopeBulkToolbarHtml(state, scopeKey) {{
       const listings = promotionVisibleListings(state);
@@ -4127,6 +4193,7 @@ def render_dashboard(data):
       let belowTarget = 0;
       let unavailable = 0;
       groups.filter(group => !campaignKey || group.key === campaignKey).forEach(group => group.listings.forEach(listing => {{
+        if (/COUPON|FOLLOWER|ABANDONED/.test(String(listing.row.promotion_type || '').toUpperCase())) return;
         const source = sourceByCode.get(listing.code) || {{}};
         const active = ['started','active'].includes(String(listing.row.status || '').toLowerCase());
         if (active || listing.row.can_join !== true) {{ unavailable += 1; return; }}
@@ -4201,7 +4268,7 @@ def render_dashboard(data):
         const body = listings.map(listing => {{
           const sourceItem = sources.find(source => String(source.code).toUpperCase() === listing.code) || {{}};
           listing = {{...listing, sku:sourceItem.sku || '', thumbnailUrl:sourceItem.thumbnailUrl || '', mlbu:sourceItem.userProductId || listing.mlbu}};
-          const source = {{...item, code:listing.code, currentPrice:state.results.find(result => result.code === listing.code)?.data?.item?.price || item.currentPrice}};
+          const source = {{...item, ...sourceItem, code:listing.code, currentPrice:state.results.find(result => result.code === listing.code)?.data?.item?.price || item.currentPrice}};
           const individualState = promotionState.get(listing.code) || {{}};
           const entry = {{row:listing.row, index:listing.index, payout:promotionReceiptValue(listing.row), bestPayout:false, bestDiscount:false, bestSubsidy:false}};
           const selectionKey = `${{group.key}}|${{listing.code}}|${{listing.index}}`;
@@ -4250,7 +4317,7 @@ def render_dashboard(data):
           ? `<div class="promotion-option"><b>${{safe(result.code)}}</b>${{promotionWriteAccessHtml(result.data)}}</div>`
           : '';
       }}).join('');
-      const content = view === 'campaign' ? byCampaign : view === 'sku' ? bySku : view === 'hybrid' ? hybrid : results;
+      const content = promotionOrganizeTables(view === 'campaign' ? byCampaign : view === 'sku' ? bySku : view === 'hybrid' ? hybrid : results);
       const loaded = Number(state.results.length || 0);
       const total = Number(state.sourceTotal || loaded);
       const pagination = item.detailScope === 'campaign'
