@@ -2239,6 +2239,7 @@ def render_dashboard(data):
     let financeLoaded = false;
     let activeFinanceSku = '';
     let activeFinanceSkus = [];
+    let activeFinanceExpected = {{}};
     const selectedFinanceSkus = new Set();
     let sortState = {{ key:'revenue', direction:1 }};
     let abcMode = 'hybrid';
@@ -2371,6 +2372,10 @@ def render_dashboard(data):
       const profile = (financeProfile.fiscalBySku || {{}})[sku] || {{}};
       activeFinanceSku = sku;
       activeFinanceSkus = skus;
+      activeFinanceExpected = Object.fromEntries(skus.map(key => [key, {{
+        cost: Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, key) ? financeProfile.costBySku[key] : null,
+        fiscal: (financeProfile.fiscalBySku || {{}})[key] || null
+      }}]));
       const bulk = skus.length > 1;
       financeField('financeSkuModalTitle').textContent = bulk ? `Editar ${{skus.length}} produtos` : `Editar ${{sku}}`;
       financeField('financeSkuModalSubtitle').textContent = bulk ? 'Os valores salvos serão aplicados somente aos SKUs selecionados.' : `${{item.code || 'Sem MLB'}} · ${{item.title || 'Produto sem título'}}`;
@@ -2407,11 +2412,12 @@ def render_dashboard(data):
     function closeFinanceSkuModal() {{
       activeFinanceSku = '';
       activeFinanceSkus = [];
+      activeFinanceExpected = {{}};
       financeField('financeSkuModal').classList.remove('open');
       financeField('financeSkuModal').setAttribute('aria-hidden', 'true');
     }}
-    async function persistFinanceProfile(successMessage) {{
-      const response = await fetch('/api/finance-profile', {{method:'POST', credentials:'same-origin', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{costProfile:financeProfile, saleCosts:[]}})}});
+    async function persistFinanceProfile(successMessage, skuChanges) {{
+      const response = await fetch('/api/finance-profile', {{method:'POST', credentials:'same-origin', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{skuChanges}})}});
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'Não foi possível salvar.');
       const stored = payload.profile;
@@ -2423,7 +2429,6 @@ def render_dashboard(data):
       const skus = activeFinanceSkus.length ? [...activeFinanceSkus] : activeFinanceSku ? [activeFinanceSku] : [];
       if (!skus.length) return;
       const cost = skuFiscalOptionalNumber('skuFiscalCost');
-      const costs = {{...(financeProfile.costBySku || {{}})}};
       const difalStatus = financeField('skuFiscalDifal').value;
       const profile = {{
         taxRegime:financeField('skuFiscalTaxRegime').value,
@@ -2441,12 +2446,12 @@ def render_dashboard(data):
         freightCreditEnabled:financeField('skuFiscalFreightCredit').value === 'enabled',
         freightIcmsCreditRate:skuFiscalOptionalNumber('skuFiscalFreightIcms'), icmsStDecision:financeField('skuFiscalStDecision').value
       }};
-      const fiscalBySku = {{...(financeProfile.fiscalBySku || {{}})}};
-      skus.forEach(sku => {{ if (cost == null) delete costs[sku]; else costs[sku] = cost; fiscalBySku[sku] = {{...profile}}; }});
-      financeProfile = {{...financeProfile, costBySku:costs, fiscalBySku}};
+      const skuChanges = skus.map(sku => ({{sku, cost, fiscal:{{...profile}},
+        expectedCost: activeFinanceExpected[sku]?.cost ?? null,
+        expectedFiscal: activeFinanceExpected[sku]?.fiscal ?? null}}));
       financeField('financeSkuModalSave').disabled = true;
       try {{
-        await persistFinanceProfile(skus.length > 1 ? `${{skus.length}} produtos salvos.` : `Produto ${{skus[0]}} salvo.`);
+        await persistFinanceProfile(skus.length > 1 ? `${{skus.length}} produtos salvos.` : `Produto ${{skus[0]}} salvo.`, skuChanges);
         skus.forEach(sku => selectedFinanceSkus.delete(sku));
         closeFinanceSkuModal(); renderFinanceRows();
       }}

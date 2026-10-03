@@ -492,6 +492,56 @@ def get_intelligence_finance_cache(user_id, client_id):
         conn.close()
 
 
+def update_finance_skus(user_id, client_id, changes):
+    """Apply selected SKU edits without replacing another tab's account-wide maps."""
+    client_id = str(client_id or "").strip()
+    if not client_id or not changes:
+        raise ValueError("Conta ou SKUs invalidos.")
+    conn = get_conn()
+    try:
+        with _lock:
+            conn.execute("BEGIN IMMEDIATE")
+            current = conn.execute(
+                "SELECT cost_by_sku_json, fiscal_by_sku_json FROM ml_account_financial_profiles WHERE client_id=?",
+                (client_id,),
+            ).fetchone()
+            costs = _json_object(current["cost_by_sku_json"]) if current else {}
+            fiscal = _json_object(current["fiscal_by_sku_json"]) if current else {}
+            for change in changes:
+                sku = change["sku"]
+                actual_cost = costs.get(sku)
+                actual_fiscal = fiscal.get(sku)
+                if actual_cost != change["expectedCost"] or actual_fiscal != change["expectedFiscal"]:
+                    conn.execute("ROLLBACK")
+                    raise ValueError("Cadastro alterado em outra aba. Atualize a pagina antes de salvar.")
+            for change in changes:
+                sku = change["sku"]
+                if change["cost"] is None:
+                    costs.pop(sku, None)
+                else:
+                    costs[sku] = change["cost"]
+                fiscal[sku] = change["fiscal"]
+            ts = now()
+            conn.execute(
+                """INSERT INTO ml_account_financial_profiles
+                   (client_id,cost_by_sku_json,fiscal_by_sku_json,updated_by_user_id,updated_at)
+                   VALUES (?,?,?,?,?) ON CONFLICT(client_id) DO UPDATE SET
+                   cost_by_sku_json=excluded.cost_by_sku_json,
+                   fiscal_by_sku_json=excluded.fiscal_by_sku_json,
+                   updated_by_user_id=excluded.updated_by_user_id,updated_at=excluded.updated_at""",
+                (client_id, json.dumps(costs, ensure_ascii=True),
+                 json.dumps(fiscal, ensure_ascii=True), user_id, ts),
+            )
+            conn.execute("COMMIT")
+        return get_intelligence_finance_cache(user_id, client_id)["profile"]
+    except Exception:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.close()
+
+
 def upsert_intelligence_finance_cache(user_id, client_id, profile, rows):
     client_id = str(client_id or "").strip()
     if not client_id:
@@ -519,6 +569,9 @@ def upsert_intelligence_finance_cache(user_id, client_id, profile, rows):
             }
             def retained(name, default):
                 if name in profile:
+                    if name in {"costBySku", "fiscalBySku"} and current:
+                        prior = _json_object(current[profile_columns[name]])
+                        return {**prior, **(profile[name] or {})}
                     return profile[name]
                 column = profile_columns.get(name)
                 if not current or not column or column not in current.keys():

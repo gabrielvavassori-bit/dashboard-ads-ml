@@ -30,8 +30,8 @@ class FiscalProfileUiTests(unittest.TestCase):
 
     def test_fiscal_profile_is_in_remote_payload_and_local_backup(self):
         self.assertIn("fetch('/api/finance-profile'", self.source)
-        self.assertIn("costProfile:financeProfile", self.source)
-        self.assertIn("costBySku:costs", self.source)
+        self.assertIn("skuChanges", self.source)
+        self.assertIn("expectedCost: activeFinanceExpected", self.source)
         self.assertIn("fiscalProfile:", self.source)
         self.assertIn("fiscalBySku", self.source)
         self.assertIn("const stored = payload.profile || payload", self.source)
@@ -50,8 +50,8 @@ class FiscalProfileUiTests(unittest.TestCase):
         self.assertLess(self.source.index('<nav class="page-nav"'), self.source.index("{f'<section class=\"online-notice\""))
 
     def test_detailed_tax_data_is_saved_per_sku(self):
-        self.assertIn('skus.forEach(sku =>', self.source)
-        self.assertIn('fiscalBySku[sku] = {{...profile}}', self.source)
+        self.assertIn('skus.map(sku =>', self.source)
+        self.assertIn('fiscal:{{...profile}}', self.source)
         self.assertIn('taxRegime:', self.source)
         self.assertIn('simpleTaxRate:', self.source)
         self.assertIn('flexCarrierCost:', self.source)

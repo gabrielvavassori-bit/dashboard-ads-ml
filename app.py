@@ -2675,6 +2675,35 @@ class Handler(BaseHTTPRequestHandler):
         user, link = context
         try:
             payload = _parse_json_body(self)
+            if "skuChanges" in payload:
+                changes = payload["skuChanges"]
+                if not isinstance(changes, list) or not 1 <= len(changes) <= 100:
+                    raise ValueError("Lista de SKUs invalida.")
+                clean_changes = []
+                seen_skus = set()
+                for change in changes:
+                    if not isinstance(change, dict):
+                        raise ValueError("Alteracao de SKU invalida.")
+                    sku = str(change.get("sku") or "").strip()[:300]
+                    cost, expected_cost = change.get("cost"), change.get("expectedCost")
+                    fiscal, expected_fiscal = change.get("fiscal"), change.get("expectedFiscal")
+                    if not sku or fiscal is None or not isinstance(fiscal, dict) or (expected_fiscal is not None and not isinstance(expected_fiscal, dict)):
+                        raise ValueError("Dados fiscais do SKU invalidos.")
+                    if sku in seen_skus:
+                        raise ValueError("SKU duplicado na alteracao.")
+                    seen_skus.add(sku)
+                    if len(json.dumps(fiscal, ensure_ascii=True).encode("utf-8")) > 50_000:
+                        raise ValueError("Dados fiscais do SKU excedem o limite permitido.")
+                    for value in (cost, expected_cost):
+                        if value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0 or value > 1e15):
+                            raise ValueError("Custo do SKU invalido.")
+                    clean_changes.append({"sku": sku, "cost": cost, "expectedCost": expected_cost,
+                                          "fiscal": fiscal, "expectedFiscal": expected_fiscal})
+                saved_profile = db.update_finance_skus(user["id"], link["client_id"], clean_changes)
+                _send_json(self, {"ok": True, "clientId": link["client_id"], "profile": saved_profile})
+                return
+            if not require_sales:
+                raise ValueError("Pagina antiga de custos. Atualize o dashboard antes de salvar.")
             profile = payload.get("costProfile") or {}
             rows = payload.get("saleCosts") or []
             if not isinstance(profile, dict) or not isinstance(rows, list) or len(rows) > 10000:

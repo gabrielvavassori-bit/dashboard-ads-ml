@@ -109,6 +109,36 @@ class FinanceProfilePersistenceTests(unittest.TestCase):
         self.assertEqual(profile["fiscalBySku"], {"A": {"cost": 10}})
         self.assertEqual(profile["costBySku"], {"B": 20})
 
+    def test_selected_sku_update_preserves_other_skus_and_detects_stale_edit(self):
+        db.upsert_intelligence_finance_cache(1, "client-guard", {
+            "costBySku": {"LAZ-2X2": 10, "LAZ-3X3": 30},
+            "fiscalBySku": {"LAZ-2X2": {"evidenceStatus": "user_informed"}},
+        }, [])
+        saved = db.update_finance_skus(2, "client-guard", [{
+            "sku": "LAZ-3X3", "cost": 31, "expectedCost": 30,
+            "fiscal": {"evidenceStatus": "pending"}, "expectedFiscal": None,
+        }])
+        self.assertEqual(saved["costBySku"], {"LAZ-2X2": 10, "LAZ-3X3": 31})
+        self.assertEqual(saved["fiscalBySku"]["LAZ-2X2"], {"evidenceStatus": "user_informed"})
+        with self.assertRaisesRegex(ValueError, "outra aba"):
+            db.update_finance_skus(1, "client-guard", [{
+                "sku": "LAZ-3X3", "cost": 40, "expectedCost": 30,
+                "fiscal": {}, "expectedFiscal": None,
+            }])
+        self.assertEqual(db.get_intelligence_finance_cache(1, "client-guard")["profile"]["costBySku"]["LAZ-3X3"], 31)
+
+    def test_legacy_snapshot_cannot_erase_skus_it_did_not_load(self):
+        db.upsert_intelligence_finance_cache(1, "client-tabs", {
+            "costBySku": {"LAZ-2X2": 10, "LAZ-3X2": 20},
+            "fiscalBySku": {"LAZ-2X2": {"evidenceStatus": "pending"}},
+        }, [])
+        db.upsert_intelligence_finance_cache(2, "client-tabs", {
+            "costBySku": {"LAZ-3X2": 21}, "fiscalBySku": {},
+        }, [])
+        result = db.get_intelligence_finance_cache(1, "client-tabs")["profile"]
+        self.assertEqual(result["costBySku"], {"LAZ-2X2": 10, "LAZ-3X2": 21})
+        self.assertEqual(result["fiscalBySku"]["LAZ-2X2"], {"evidenceStatus": "pending"})
+
     def test_init_repairs_an_older_partial_canonical_table(self):
         conn = db.get_conn()
         try:
