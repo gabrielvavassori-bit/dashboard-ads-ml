@@ -650,18 +650,33 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertEqual(handler.count("promotionApiRequest('/api/promotions/confirm'"), 1)
         self.assertIn('executionStatus:\'success\'', handler)
         self.assertIn('executionStatus:\'error\'', handler)
+        self.assertIn('executionStatus:\'pending\'', handler)
+        self.assertIn('waitForPromotionConfirmation', handler)
         self.assertIn('loadPromotionAudit()', handler)
 
     def test_collective_retry_targets_only_failed_items_and_skips_successes(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         handler = source[source.index("document.querySelectorAll('[data-promo-bulk-execute]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
-        self.assertIn("hasFailures ? item.executionStatus === 'error' : item.executionStatus !== 'success'", handler)
+        self.assertIn("hasFailures ? item.executionStatus === 'error' : !['success','pending'].includes(item.executionStatus)", handler)
         self.assertIn('Prévia ausente ou expirada. Gere uma nova prévia antes de executar.', handler)
         self.assertIn('Repetir ${{executionCandidates}} falha(s)', source)
+        self.assertIn("!['success','pending'].includes(item.executionStatus)", source)
+
+    def test_collective_confirmation_polls_read_only_and_never_resends_pending_items(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        waiter = source[source.index('    async function waitForPromotionConfirmation'):source.index('    async function pollPromotionConfirmation')]
+        self.assertIn('maxAttempts = 30', waiter)
+        self.assertIn('setTimeout(resolve, 2000)', waiter)
+        self.assertIn('/api/promotions?item_id=', waiter)
+        self.assertNotIn("'/api/promotions/confirm'", waiter)
+        handler = source[source.index("document.querySelectorAll('[data-promo-bulk-execute]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
+        self.assertEqual(handler.count("promotionApiRequest('/api/promotions/confirm'"), 1)
+        self.assertIn('confirmation_state_unknown', handler)
+        self.assertIn('Não será reenviada automaticamente.', handler)
 
     def test_individual_confirmation_polls_without_resending_mutation(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
-        poller = source[source.index('    async function pollPromotionConfirmation'):source.index('    function restorePromotionConfigDialog')]
+        poller = source[source.index('    async function waitForPromotionConfirmation'):source.index('    function restorePromotionConfigDialog')]
         self.assertIn('maxAttempts = 30', poller)
         self.assertIn('setTimeout(resolve, 2000)', poller)
         self.assertIn('/api/promotions?item_id=', poller)

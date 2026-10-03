@@ -4027,27 +4027,30 @@ def render_dashboard(data):
       const executionSuccess = run.items.filter(item => item.executionStatus === 'success').length;
       const executionErrors = run.items.filter(item => item.executionStatus === 'error').length;
       const executionRunning = run.items.filter(item => item.executionStatus === 'running').length;
+      const executionPending = run.items.filter(item => item.executionStatus === 'pending').length;
       const actionLabel = run.operation === 'join' ? 'Participar' : run.operation === 'update' ? 'Alterar' : 'Sair';
       const rows = run.items.map(item => {{
-        const status = item.executionStatus === 'success' ? 'Aplicada' : item.executionStatus === 'error' ? 'Falhou' : item.executionStatus === 'running' ? 'Executando' : item.status === 'ready' ? 'Prévia pronta' : item.status === 'error' ? 'Impedido' : 'Preparando';
+        const status = item.executionStatus === 'success' ? 'Aplicada' : item.executionStatus === 'error' ? 'Falhou' : item.executionStatus === 'running' ? `Consultando (${{item.executionAttempt || 1}}/30)` : item.executionStatus === 'pending' ? 'Aguardando Mercado Livre' : item.status === 'ready' ? 'Prévia pronta' : item.status === 'error' ? 'Impedido' : 'Preparando';
         const statusClass = item.executionStatus === 'success' ? 'ready' : item.executionStatus === 'error' ? 'error' : item.status;
         const margin = Number.isFinite(item.margin) ? `${{brl(item.profit)}} · ${{item.margin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}%` : 'Margem N/D';
         const approval = item.executionStatus === 'success'
           ? `<span class="muted">Confirmada no Mercado Livre</span>`
+          : item.executionStatus === 'pending'
+          ? `<span class="muted">Solicitação já enviada; consulte novamente sem reenviar.</span>`
           : item.status === 'ready'
           ? `<label><input type="checkbox" data-promo-bulk-approve="${{safe(item.selectionKey)}}" data-promo-scope-key="${{safe(scopeKey)}}"${{approvedKeys.has(item.selectionKey) ? ' checked' : ''}}> Aprovar para execução</label>`
           : `<span class="muted">${{safe(item.error || '')}}</span>`;
-        const error = item.executionStatus === 'error' ? `<span class="muted">${{safe(item.executionError || 'Falha não informada')}}</span>` : '';
+        const error = ['error','pending'].includes(item.executionStatus) ? `<span class="muted">${{safe(item.executionError || 'Falha não informada')}}</span>` : '';
         return `<div class="promotion-bulk-summary-row"><div><b>${{safe(item.code)}}</b><small>${{safe(item.sku || 'SKU não informado')}} · ${{safe(item.title || '')}}</small></div><div><span class="muted">Ação</span><b>${{safe(actionLabel)}}</b></div><div><span class="muted">Preço</span><b>${{item.price > 0 ? brl(item.price) : '—'}}</b></div><div><span class="muted">Resultado estimado</span><b>${{margin}}</b></div><div><span class="promotion-bulk-status ${{statusClass}}">${{status}}</span>${{error}}${{approval}}</div></div>`;
       }}).join('');
       const allReadyApproved = ready > 0 && approvedKeys.size === ready;
       const executionCandidates = executionErrors > 0
         ? run.items.filter(item => stagedKeys.has(item.selectionKey) && item.executionStatus === 'error').length
-        : run.items.filter(item => stagedKeys.has(item.selectionKey) && item.executionStatus !== 'success').length;
+        : run.items.filter(item => stagedKeys.has(item.selectionKey) && !['success','pending'].includes(item.executionStatus)).length;
       const executionLabel = executionErrors > 0 ? `Repetir ${{executionCandidates}} falha(s)` : `Executar ${{executionCandidates}} promoção(ões)`;
-      const executionSummary = executionSuccess || executionErrors || executionRunning ? `${{executionSuccess}} aplicada(s), ${{executionErrors}} falha(s) e ${{executionRunning}} em execução.` : 'Nenhuma promoção foi aplicada.';
+      const executionSummary = executionSuccess || executionErrors || executionRunning || executionPending ? `${{executionSuccess}} aplicada(s), ${{executionErrors}} falha(s), ${{executionRunning}} em consulta e ${{executionPending}} aguardando retorno.` : 'Nenhuma promoção foi aplicada.';
       const execution = stagedKeys.size ? `<div class="promotion-success"><b>Lote revisado:</b> ${{stagedKeys.size}} promoção(ões) autorizada(s). ${{executionSummary}}</div>${{executionCandidates && !executionRunning ? `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-execution-ack data-promo-scope-key="${{safe(scopeKey)}}"${{run.executionAcknowledged ? ' checked' : ''}}> Confirmo a aplicação destas promoções no Mercado Livre</label><button class="promotion-confirm" type="button" data-promo-bulk-execute data-promo-scope-key="${{safe(scopeKey)}}"${{run.executionAcknowledged ? '' : ' disabled'}}>${{executionLabel}}</button><span class="muted">Execução sequencial por MLB; falhas não interrompem nem repetem os itens já confirmados.</span></div>` : ''}}` : '';
-      const controls = executionSuccess || executionErrors || executionRunning ? '' : `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-approve-all data-promo-scope-key="${{safe(scopeKey)}}"${{allReadyApproved ? ' checked' : ''}}${{ready ? '' : ' disabled'}}> Aprovar todas as prévias válidas</label><button type="button" data-promo-bulk-stage-confirm data-promo-scope-key="${{safe(scopeKey)}}"${{approvedKeys.size ? '' : ' disabled'}}>Confirmar ${{approvedKeys.size}} para próxima etapa</button><span class="muted">Esta confirmação apenas forma o lote; ainda não envia nada ao Mercado Livre.</span></div>`;
+      const controls = executionSuccess || executionErrors || executionRunning || executionPending ? '' : `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-approve-all data-promo-scope-key="${{safe(scopeKey)}}"${{allReadyApproved ? ' checked' : ''}}${{ready ? '' : ' disabled'}}> Aprovar todas as prévias válidas</label><button type="button" data-promo-bulk-stage-confirm data-promo-scope-key="${{safe(scopeKey)}}"${{approvedKeys.size ? '' : ' disabled'}}>Confirmar ${{approvedKeys.size}} para próxima etapa</button><span class="muted">Esta confirmação apenas forma o lote; ainda não envia nada ao Mercado Livre.</span></div>`;
       return `<div class="promotion-bulk-summary"><div class="promotion-bulk-summary-head"><div><b>Resumo das prévias coletivas</b><div class="muted">${{safe(run.campaignName || 'Campanha')}} · revise cada MLB antes de formar o lote.</div></div><div><b>${{ready}} pronta(s)</b> · ${{errors}} impedida(s) · ${{pending}} em processamento</div></div>${{controls}}${{execution}}<div class="promotion-bulk-summary-list">${{rows}}</div></div>`;
     }}
     function promotionMarginRecommendations(results, sources, target, campaignKey = '', query = '') {{
@@ -4228,27 +4231,33 @@ def render_dashboard(data):
         return !(expectedPrice > 0 && observedPrice > 0) || Math.abs(expectedPrice - observedPrice) <= 0.01;
       }});
     }}
-    async function pollPromotionConfirmation(code, preview, firstResult = null) {{
+    async function waitForPromotionConfirmation(code, preview, onAttempt = null) {{
       const maxAttempts = 30;
+      let lastError = null;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {{
-        promotionStateUpdate(code, {{loading:false, confirmation:{{status:'processing', attempt, maxAttempts}}, error:'', result:null}});
+        if (onAttempt) onAttempt(attempt, maxAttempts);
         if (attempt > 1) await new Promise(resolve => setTimeout(resolve, 2000));
         try {{
           const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
-          if (promotionConfirmationMatches(data, preview)) {{
-            activePromotionConfigKey = null;
-            promotionStateUpdate(code, {{loading:false, data, preview:null, result:firstResult || {{ok:true}}, confirmation:{{status:'approved', attempt}}, error:''}});
-            loadPromotionAudit();
-            return;
-          }}
+          if (promotionConfirmationMatches(data, preview)) return {{confirmed:true, data, attempt, maxAttempts}};
         }} catch (error) {{
-          if (attempt === maxAttempts) {{
-            promotionStateUpdate(code, {{loading:false, confirmation:{{status:'pending', attempt}}, error:'A solicitação foi enviada, mas o Mercado Livre ainda não publicou o estado final. Não envie novamente; use Consultar promoções para acompanhar.'}});
-            return;
-          }}
+          lastError = error;
         }}
       }}
-      promotionStateUpdate(code, {{loading:false, confirmation:{{status:'pending', attempt:maxAttempts}}, error:'A solicitação continua aguardando confirmação do Mercado Livre. Não envie novamente; consulte o estado mais tarde.'}});
+      return {{confirmed:false, attempt:maxAttempts, maxAttempts, error:lastError}};
+    }}
+    async function pollPromotionConfirmation(code, preview, firstResult = null) {{
+      const outcome = await waitForPromotionConfirmation(code, preview, (attempt, maxAttempts) => {{
+        promotionStateUpdate(code, {{loading:false, confirmation:{{status:'processing', attempt, maxAttempts}}, error:'', result:null}});
+      }});
+      if (outcome.confirmed) {{
+        activePromotionConfigKey = null;
+        promotionStateUpdate(code, {{loading:false, data:outcome.data, preview:null, result:firstResult || {{ok:true}}, confirmation:{{status:'approved', attempt:outcome.attempt}}, error:''}});
+        loadPromotionAudit();
+        return true;
+      }}
+      promotionStateUpdate(code, {{loading:false, confirmation:{{status:'pending', attempt:outcome.attempt}}, error:'A solicitação continua aguardando confirmação do Mercado Livre. Não envie novamente; consulte o estado mais tarde.'}});
+      return false;
     }}
     function restorePromotionConfigDialog() {{
       if (!activePromotionConfigKey) return;
@@ -4609,21 +4618,38 @@ def render_dashboard(data):
         if (!bulkRun.executionAcknowledged || !bulkRun.confirmation?.selectionKeys?.length) return;
         const stagedKeys = new Set(bulkRun.confirmation.selectionKeys);
         const hasFailures = (bulkRun.items || []).some(item => stagedKeys.has(item.selectionKey) && item.executionStatus === 'error');
-        const candidates = (bulkRun.items || []).filter(item => stagedKeys.has(item.selectionKey) && (hasFailures ? item.executionStatus === 'error' : item.executionStatus !== 'success'));
+        const candidates = (bulkRun.items || []).filter(item => stagedKeys.has(item.selectionKey) && (hasFailures ? item.executionStatus === 'error' : !['success','pending'].includes(item.executionStatus)));
         button.disabled = true;
         promotionStateUpdate(key, {{bulkRun:{{...bulkRun, executionAcknowledged:false}}}});
         for (const item of candidates) {{
           const itemState = promotionState.get(item.code) || {{}};
           const previewToken = itemState.preview?.preview_token;
           if (!previewToken) {{ promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'error', executionError:'Prévia ausente ou expirada. Gere uma nova prévia antes de executar.'}}); continue; }}
-          promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionError:''}});
+          const preview = itemState.preview;
+          promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionAttempt:1, executionError:''}});
           try {{
             const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:item.code, preview_token:previewToken}});
-            const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(item.code)}}`);
-            promotionStateUpdate(item.code, {{loading:false, data, preview:null, result, error:''}});
-            promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'success', executionError:''}});
+            const outcome = await waitForPromotionConfirmation(item.code, preview, attempt => promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionAttempt:attempt, executionError:''}}));
+            if (outcome.confirmed) {{
+              promotionStateUpdate(item.code, {{loading:false, data:outcome.data, preview:null, result, error:''}});
+              promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'success', executionAttempt:outcome.attempt, executionError:''}});
+            }} else {{
+              promotionStateUpdate(item.code, {{loading:false, confirmation:{{status:'pending', attempt:outcome.attempt}}, error:'Solicitação enviada; confirmação ainda pendente no Mercado Livre. Não reenvie.'}});
+              promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'pending', executionAttempt:outcome.attempt, executionError:'Solicitação enviada; confirmação ainda pendente. Não será reenviada automaticamente.'}});
+            }}
           }} catch (error) {{
-            promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'error', executionError:error.message}});
+            if (['promotion_confirmation_unverified','promotion_removal_unverified','campaign_confirmation_unverified','confirmation_in_progress','confirmation_state_unknown'].includes(String(error.code || ''))) {{
+              const outcome = await waitForPromotionConfirmation(item.code, preview, attempt => promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionAttempt:attempt, executionError:''}}));
+              if (outcome.confirmed) {{
+                promotionStateUpdate(item.code, {{loading:false, data:outcome.data, preview:null, result:{{ok:true}}, error:''}});
+                promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'success', executionAttempt:outcome.attempt, executionError:''}});
+              }} else {{
+                promotionStateUpdate(item.code, {{loading:false, confirmation:{{status:'pending', attempt:outcome.attempt}}, error:'Solicitação enviada; confirmação ainda pendente no Mercado Livre. Não reenvie.'}});
+                promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'pending', executionAttempt:outcome.attempt, executionError:'Solicitação enviada; confirmação ainda pendente. Não será reenviada automaticamente.'}});
+              }}
+            }} else {{
+              promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'error', executionError:`Promoção recusada: ${{error.message}}`}});
+            }}
           }}
         }}
         loadPromotionAudit();
