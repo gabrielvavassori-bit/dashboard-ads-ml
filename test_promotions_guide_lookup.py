@@ -26,6 +26,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionLimits = () => '';
         const promotionReceiptCell = () => 'Não calculado';
         const promotionMarginCell = () => 'MC parcial';
+        const promotionFinancialResult = () => ({available:false});
+        const promotionSameOpportunity = () => true;
         const promotionPreviewHtml = () => '';
         const promotionState = new Map();
         const brl = value => `R$ ${value}`;
@@ -498,6 +500,41 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('receipt_quote:preview.summary?.receipt_quote', requote)
         self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", requote)
 
+    def test_target_margin_requotes_price_within_marketplace_limits(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
+        self.assertIn('Margem desejada (%)', row)
+        self.assertIn('data-promo-target-margin=', row)
+        self.assertIn('min_discounted_price', row)
+        self.assertIn('max_discounted_price', row)
+        solver = source[source.index('    async function promotionPreviewAtPrice'):source.index('    function activatePromotionPanels')]
+        self.assertIn("promotionApiRequest('/api/promotions/preview'", solver)
+        self.assertIn('promotionFinancialResult(quotedRow, item)', solver)
+        self.assertIn('for (let attempt = 0; attempt < 8', solver)
+        self.assertIn('(target - lower.financial.margin)', solver)
+        self.assertIn('Margem de ${{target.toLocaleString', solver)
+        self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", solver)
+
+    def test_confirmed_promotion_refreshes_loaded_scope_without_page_reload(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        propagation = source[source.index('    function promotionMergeFreshData'):source.index('    async function waitForPromotionConfirmation')]
+        self.assertIn('promotionPropagateFreshData', propagation)
+        self.assertIn('state.results.map', propagation)
+        self.assertIn('promotionSameOpportunity', propagation)
+        self.assertIn('preview_price:null', propagation)
+        poller = source[source.index('    async function pollPromotionConfirmation'):source.index('    function restorePromotionConfigDialog')]
+        self.assertIn('promotionPropagateFreshData(code, outcome.data)', poller)
+
+    def test_listing_identity_keeps_campaign_name_period_and_status(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
+        self.assertIn('promotion-listing-campaign', row)
+        self.assertIn('promotionDisplayName(row)', row)
+        self.assertIn('promotionPeriod(row)', row)
+        self.assertIn('promotionStatusLabel(row)', row)
+        status = source[source.index('    function promotionStatusLabel'):source.index('    function promotionStatusClass')]
+        self.assertIn("['scheduled','programmed','pending']", status)
+
     def test_individual_campaign_button_generates_preview_without_immediate_confirmation(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         handler = source[source.index("document.querySelectorAll('[data-promo-campaign]')"):source.index("document.querySelectorAll('[data-promo-create-campaign]')")]
@@ -508,7 +545,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
         handler = source[source.index("document.querySelectorAll('[data-promo-direct]')"):source.index("document.querySelectorAll('[data-promo-campaign]')")]
-        self.assertIn('const liveRow = listing ? promotionState.get(item.code)?.data?.promotions?.[index] : null;', row)
+        self.assertIn('liveRows.find(candidate => promotionSameOpportunity(candidate, sourceRow))', row)
         self.assertIn('const row = liveRow || sourceRow;', row)
         self.assertIn('data-promo-dialog-key=', row)
         self.assertIn('promotionPreviewHtml(item, directState)', row)
