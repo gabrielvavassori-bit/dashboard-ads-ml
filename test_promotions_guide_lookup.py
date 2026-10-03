@@ -754,6 +754,19 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('const active = jobs.find', source)
         self.assertIn('promotionMonitorBulkJob(active.id)', source)
 
+    def test_account_scan_uses_only_fiscal_ready_skus_and_remains_read_only(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('id="promotionAccountScan"', source)
+        scanner = source[source.index('    function promotionAccountEligibleSources'):source.index('    async function promotionRunCollectivePreview')]
+        self.assertIn('financeProfile.costBySku', scanner)
+        self.assertIn('financeProfile.fiscalBySku', scanner)
+        self.assertIn("detailScope:'account'", scanner)
+        self.assertIn('Math.min(3, pending.length)', scanner)
+        self.assertIn('completed % 20 === 0', scanner)
+        self.assertIn("promotionApiRequest(`/api/promotions?item_id=", scanner)
+        self.assertNotIn("'/api/promotions/preview'", scanner)
+        self.assertNotIn("'/api/promotions/confirm'", scanner)
+
     def test_individual_confirmation_polls_without_resending_mutation(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         poller = source[source.index('    async function waitForPromotionConfirmation'):source.index('    function restorePromotionConfigDialog')]

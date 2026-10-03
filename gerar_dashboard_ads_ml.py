@@ -2100,6 +2100,11 @@ def render_dashboard(data):
           <label>Margem mínima (%)<input id="promotionMarginTarget" type="number" min="0" max="100" step="0.1" value="15"></label>
           <button type="submit">Consultar promoções</button>
         </form>
+        <div class="promotion-option">
+          <h3>Varredura consultiva da conta</h3>
+          <div class="muted">Consulta somente anúncios cujos SKUs possuem custo e perfil fiscal salvos. Cada SKU respeita seu próprio piso de margem. Nenhuma promoção é aplicada nesta etapa.</div>
+          <div class="promotion-bulk-toolbar"><button type="button" id="promotionAccountScan">Analisar SKUs com custo salvo</button><button type="button" id="promotionAccountScanCancel" class="secondary-action" hidden>Interromper consulta</button><span id="promotionAccountScanStatus" class="muted"></span></div>
+        </div>
         <div id="promotionGuideResult" aria-live="polite"></div>
         <div id="promotionBulkJobs" class="promotion-bulk-summary" aria-live="polite"><span class="muted">Nenhum lote massivo consultado nesta sessão.</span></div>
         <details class="promotion-audit"><summary>Histórico de confirmações</summary><button type="button" id="promotionAuditLoad">Atualizar histórico</button><div id="promotionAuditResult" class="note" aria-live="polite">Abra para consultar as confirmações desta conta.</div></details>
@@ -2225,6 +2230,7 @@ def render_dashboard(data):
     let promotionMarginTarget = 15;
     let promotionCampaignCatalog = {{loading:false, loaded:false, campaigns:[], error:''}};
     let promotionJobPollTimer = null;
+    let promotionAccountScanCancelled = false;
     let activePromotionConfigKey = '';
     let financeProfile = {{
       costBySku: {{}}, costByKey: {{}}, profitTaxRate: 0, flexCarrierCost: 0,
@@ -4001,7 +4007,7 @@ def render_dashboard(data):
       return `<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Promoção e período</th><th>Subsídio ML</th><th>Desconto vendedor</th><th>Desconto total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div>`;
     }}
     function promotionScopeLabel(item) {{
-      return item.detailScope === 'family' ? 'família' : item.detailScope === 'mlbu' ? 'variação/MLBU' : item.detailScope === 'sku' ? 'SKU' : item.detailScope === 'campaign' ? 'campanha' : 'grupo';
+      return item.detailScope === 'family' ? 'família' : item.detailScope === 'mlbu' ? 'variação/MLBU' : item.detailScope === 'sku' ? 'SKU' : item.detailScope === 'campaign' ? 'campanha' : item.detailScope === 'account' ? 'conta' : 'grupo';
     }}
     function promotionScopeItems(item) {{
       const sources = (item.children && item.children.length) ? item.children : [item];
@@ -4588,6 +4594,58 @@ def render_dashboard(data):
         if (monitor) {{ monitor.className = 'promotion-job-monitor visible error'; monitor.innerHTML = `<b>Não foi possível consultar o lote.</b><div class="muted">${{safe(error.message)}}</div>`; }}
         return null;
       }}
+    }}
+    function promotionAccountEligibleSources() {{
+      const costs = financeProfile.costBySku || {{}};
+      const profiles = financeProfile.fiscalBySku || {{}};
+      const eligibleSkus = new Set(Object.keys(profiles).filter(sku => Number.isFinite(Number(costs[sku])) && Number(costs[sku]) >= 0 && Object.keys(profiles[sku] || {{}}).length));
+      const seen = new Set();
+      return allItems.filter(item => {{
+        const sku = String(item.sku || '').trim();
+        const code = String(item.code || '').toUpperCase();
+        if (!eligibleSkus.has(sku) || !/^MLB[0-9]+$/.test(code) || seen.has(code)) return false;
+        seen.add(code);
+        return true;
+      }});
+    }}
+    async function scanPromotionAccount() {{
+      const status = document.getElementById('promotionAccountScanStatus');
+      const start = document.getElementById('promotionAccountScan');
+      const cancel = document.getElementById('promotionAccountScanCancel');
+      const sources = promotionAccountEligibleSources();
+      if (!sources.length) {{ status.textContent = 'Nenhum anúncio com custo e perfil fiscal salvos foi encontrado.'; return; }}
+      promotionAccountScanCancelled = false;
+      start.disabled = true;
+      cancel.hidden = false;
+      const item = {{promotionGuide:true, detailScope:'account', detailId:'fiscal-ready', code:'ACCOUNT:FISCAL-READY', title:'Conta inteira', children:sources}};
+      const key = promotionScopeKey(item);
+      promotionGuideItem = item;
+      promotionState.set(key, {{loading:true, results:null, error:'', selectedListingKeys:[]}});
+      renderPromotionGuide();
+      const results = [];
+      const pending = sources.map(source => String(source.code || '').toUpperCase());
+      let completed = 0;
+      status.textContent = `0 de ${{pending.length}} anúncios consultados.`;
+      const worker = async () => {{
+        while (pending.length && !promotionAccountScanCancelled) {{
+          const code = pending.shift();
+          try {{
+            const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
+            promotionState.set(code, {{...(promotionState.get(code) || {{}}), loading:false, data, error:''}});
+            results.push({{code, data}});
+          }} catch (error) {{ results.push({{code, error:error.message}}); }}
+          completed += 1;
+          status.textContent = `${{completed}} de ${{sources.length}} anúncios consultados${{promotionAccountScanCancelled ? ' · interrompido' : ''}}.`;
+          if (completed % 20 === 0) await new Promise(resolve => setTimeout(resolve, 350));
+        }}
+      }};
+      await Promise.all(Array.from({{length:Math.min(3, pending.length)}}, worker));
+      results.sort((a, b) => a.code.localeCompare(b.code, 'pt-BR'));
+      promotionState.set(key, {{loading:false, results, error:promotionAccountScanCancelled ? 'Consulta interrompida; somente os anúncios concluídos são exibidos.' : '', selectedListingKeys:[]}});
+      status.textContent = `${{results.filter(result => result.data).length}} anúncio(s) consultado(s), ${{results.filter(result => result.error).length}} falha(s). Revise os candidatos abaixo.`;
+      start.disabled = false;
+      cancel.hidden = true;
+      renderPromotionGuide();
     }}
     async function promotionRunCollectivePreview(scopeKey, jobs, campaignName, operation = 'join') {{
       if (!jobs.length) return;
@@ -5607,6 +5665,8 @@ def render_dashboard(data):
       promotionMarginTarget = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 15;
       if (promotionGuideItem) renderPromotionGuide();
     }});
+    document.getElementById('promotionAccountScan').addEventListener('click', scanPromotionAccount);
+    document.getElementById('promotionAccountScanCancel').addEventListener('click', () => {{ promotionAccountScanCancelled = true; }});
     document.getElementById('promotionGuideForm').addEventListener('submit', event => {{
       event.preventDefault();
       const raw = document.getElementById('promotionGuideMlb').value;
