@@ -70,10 +70,14 @@
       ],
       "file_globs": [
         "app.py",
+        "db.py",
+        "assets/inteligencia-vendas-marketplace.html",
         "gerar_dashboard_ads_ml.py",
         "auth.py",
         "beta_bridge.py",
         "test_regression_001_snapshot_integrity.py",
+        "test_finance_profile_persistence.py",
+        "test_fiscal_profile_ui.py",
         "test_online_periods.py",
         "test_integrations.py",
         "test_antiregression_hook.py",
@@ -93,6 +97,8 @@
             "-m",
             "unittest",
             "-v",
+            "test_finance_profile_persistence.py",
+            "test_fiscal_profile_ui.py",
             "test_regression_001_snapshot_integrity.py",
             "test_operational_availability.py",
             "test_tacos_status_consistency.py",
@@ -102,6 +108,77 @@
           "blocking": true
         }
       ]
+    },
+    {
+      "id": "REGRESSION-004",
+      "title": "Comparacao 7d independente do cache financeiro parcial",
+      "severity": "ALTA",
+      "components": [
+        "listing_performance_7d"
+      ],
+      "domains": [
+        "listing_visits",
+        "sales_performance"
+      ],
+      "tags": [
+        "closed_days",
+        "independent_coverage",
+        "no_ads_clicks",
+        "no_false_nd"
+      ],
+      "invariant": "Comparar 14 dias encerrados da mesma conta, por MLB unico e cobertura independente de vendas e visitas. Cache financeiro parcial nao bloqueia fatos operacionais completos; ausencia nunca vira zero.",
+      "file_globs": [
+        "app.py",
+        "gerar_dashboard_ads_ml.py",
+        "dash_ads_operational.py",
+        "coletar.py",
+        "test_performance_7d.py"
+      ],
+      "protections": [
+        {
+          "command": [
+            "{python}",
+            "-m",
+            "unittest",
+            "-v",
+            "test_performance_7d.py"
+          ],
+          "blocking": true
+        }
+      ]
+    },
+    {
+      "id": "REGRESSION-005",
+      "title": "Cotacao promocional preserva preco, tarifa, frete e flutuante",
+      "severity": "ALTA",
+      "components": ["promotion_margin_tooltip", "seller_promotions"],
+      "domains": ["financial_reporting", "mercado_livre_promotions"],
+      "tags": ["receipt_quote", "offer_price", "editable_offer_price", "preview_before_confirmation", "descriptive_hover", "no_invented_cost", "promotion_table"],
+      "invariant": "A tabela por MLB ou campanha deve priorizar o preco efetivo da oportunidade sobre sugestoes adicionais da API e manter o recebimento cotado e o flutuante descritivo de tarifa, frete, custo e imposto. O preco sugerido editavel fica na coluna Preco promocional, respeita os limites minimo e maximo da oportunidade e gera nova cotacao de recebimento e margem antes de qualquer confirmacao. A margem desejada pode recalcular o preco apenas por previas consultivas dentro desses limites. A selecao e a previa coletiva devem existir nas visoes Campanha, SKU, Hibrida e Anuncio/variacao e abranger somente os itens carregados que continuam visiveis pelo filtro e pela campanha escolhida. Depois de uma confirmacao, preco, campanha, periodo e estado devem atualizar nas visoes carregadas sem F5. Se a cotacao pertencer a outro preco, recebimento, margem e aplicacao ficam bloqueados ate nova previa. Custo e imposto ausentes aparecem como nao informados, nunca como zero real. Cotacao indisponivel permanece N/D sem alargar a tabela.",
+      "file_globs": ["gerar_dashboard_ads_ml.py", "test_promotions_guide_lookup.py"],
+      "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_promotions_guide_lookup.py"], "blocking": true}]
+    },
+    {
+      "id": "REGRESSION-006",
+      "title": "Devolucoes confirmadas independem da cobertura financeira parcial",
+      "severity": "ALTA",
+      "components": ["dash_ads_returns_bridge", "returns_kpis"],
+      "domains": ["financial_reporting", "mercado_livre_returns"],
+      "tags": ["returns", "rolling_period", "returned_orders", "no_false_nd"],
+      "invariant": "O beta mostra valor e contagem de pedidos devolvidos quando a ponte comprova a janela exata; a taxa por pedidos continua N/D sem universo de pedidos comprovado, sem ocultar a contagem nem inventar denominador.",
+      "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "test_operational_availability.py"],
+      "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_operational_availability.py"], "blocking": true}]
+    },
+    {
+      "id": "REGRESSION-007",
+      "title": "Peso faturavel do Flex preserva unidade e fallback intermediario",
+      "severity": "ALTA",
+      "components": ["seller_promotions", "promotion_flex_scenario"],
+      "domains": ["financial_reporting", "mercado_livre_promotions", "shipping"],
+      "tags": ["flex", "billable_weight", "weight_unit", "medium_band_fallback", "no_false_heavy_weight"],
+      "invariant": "O peso faturavel recebido da cotacao do Mercado Livre deve ser normalizado de gramas para quilogramas e acompanhado de unidade explicita. Peso ausente, legado ou sem unidade comprovada usa consultivamente 2 kg, na faixa de 0,5 a 5 kg; nunca pode ser inferido como acima de 5 kg pelo valor bruto ou pelo frete.",
+      "file_globs": ["gerar_dashboard_ads_ml.py", "test_promotions_guide_lookup.py", "regressions/manifest.json"],
+      "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_promotions_guide_lookup.py"], "blocking": true}]
     }
   ]
 }

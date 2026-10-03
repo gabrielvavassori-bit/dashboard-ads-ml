@@ -163,6 +163,22 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS promotion_action_audit (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    client_id      TEXT NOT NULL,
+    item_id        TEXT NOT NULL,
+    status         TEXT NOT NULL,
+    agent_audit_id TEXT,
+    idempotent     INTEGER NOT NULL DEFAULT 0,
+    response_json  TEXT NOT NULL DEFAULT '{}',
+    created_at     INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_promotion_action_audit_scope
+    ON promotion_action_audit(user_id, client_id, created_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS beta_handoffs (
     nonce_hash TEXT PRIMARY KEY,
     expires_at INTEGER NOT NULL,
@@ -184,6 +200,23 @@ CREATE TABLE IF NOT EXISTS intelligence_cost_profiles (
 
 CREATE INDEX IF NOT EXISTS idx_intelligence_cost_profiles_account
     ON intelligence_cost_profiles(user_id, client_id);
+
+-- Perfil financeiro canonico da conta Mercado Livre. Diferentemente do perfil
+-- legado acima, pertence ao client_id e pode ser lido pelo Dash Ads e pela
+-- Inteligencia de Vendas independentemente do usuario que o atualizou.
+CREATE TABLE IF NOT EXISTS ml_account_financial_profiles (
+    client_id TEXT PRIMARY KEY,
+    cost_by_sku_json TEXT NOT NULL DEFAULT '{}',
+    cost_by_key_json TEXT NOT NULL DEFAULT '{}',
+    profit_tax_rate REAL NOT NULL DEFAULT 0,
+    flex_carrier_cost REAL NOT NULL DEFAULT 0,
+    fiscal_mode TEXT NOT NULL DEFAULT 'simple',
+    tax_regime TEXT NOT NULL DEFAULT 'simple',
+    fiscal_profile_json TEXT NOT NULL DEFAULT '{}',
+    fiscal_by_sku_json TEXT NOT NULL DEFAULT '{}',
+    updated_by_user_id INTEGER,
+    updated_at INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS intelligence_sale_costs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -320,6 +353,52 @@ def init_db():
                           0, created_at, created_at, updated_at, last_verified_at
                    FROM user_ml_links"""
             )
+            finance_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(ml_account_financial_profiles)")
+            }
+            finance_migrations = {
+                "cost_by_sku_json": "ALTER TABLE ml_account_financial_profiles ADD COLUMN cost_by_sku_json TEXT NOT NULL DEFAULT '{}'",
+                "cost_by_key_json": "ALTER TABLE ml_account_financial_profiles ADD COLUMN cost_by_key_json TEXT NOT NULL DEFAULT '{}'",
+                "profit_tax_rate": "ALTER TABLE ml_account_financial_profiles ADD COLUMN profit_tax_rate REAL NOT NULL DEFAULT 0",
+                "flex_carrier_cost": "ALTER TABLE ml_account_financial_profiles ADD COLUMN flex_carrier_cost REAL NOT NULL DEFAULT 0",
+                "fiscal_mode": "ALTER TABLE ml_account_financial_profiles ADD COLUMN fiscal_mode TEXT NOT NULL DEFAULT 'simple'",
+                "tax_regime": "ALTER TABLE ml_account_financial_profiles ADD COLUMN tax_regime TEXT NOT NULL DEFAULT 'simple'",
+                "fiscal_profile_json": "ALTER TABLE ml_account_financial_profiles ADD COLUMN fiscal_profile_json TEXT NOT NULL DEFAULT '{}'",
+                "fiscal_by_sku_json": "ALTER TABLE ml_account_financial_profiles ADD COLUMN fiscal_by_sku_json TEXT NOT NULL DEFAULT '{}'",
+                "updated_by_user_id": "ALTER TABLE ml_account_financial_profiles ADD COLUMN updated_by_user_id INTEGER",
+                "updated_at": "ALTER TABLE ml_account_financial_profiles ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+            }
+            for column, statement in finance_migrations.items():
+                if column not in finance_columns:
+                    conn.execute(statement)
+
+            # Migra uma unica vez o perfil legado mais recente de cada conta.
+            # INSERT OR IGNORE garante que uma configuracao canonica existente
+            # nunca seja substituida por dados antigos durante um novo boot.
+            legacy_profiles = conn.execute(
+                """SELECT p.* FROM intelligence_cost_profiles p
+                   INNER JOIN (
+                     SELECT client_id, MAX(updated_at) AS updated_at
+                     FROM intelligence_cost_profiles GROUP BY client_id
+                   ) latest
+                   ON latest.client_id=p.client_id AND latest.updated_at=p.updated_at
+                   ORDER BY p.id DESC"""
+            ).fetchall()
+            migrated_clients = set()
+            for profile in legacy_profiles:
+                client_id = str(profile["client_id"] or "").strip()
+                if not client_id or client_id in migrated_clients:
+                    continue
+                migrated_clients.add(client_id)
+                conn.execute(
+                    """INSERT OR IGNORE INTO ml_account_financial_profiles
+                       (client_id, cost_by_sku_json, cost_by_key_json,
+                        profit_tax_rate, flex_carrier_cost, updated_by_user_id, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (client_id, profile["cost_by_sku_json"], profile["cost_by_key_json"],
+                     profile["profit_tax_rate"], profile["flex_carrier_cost"],
+                     profile["user_id"], profile["updated_at"]),
+                )
         finally:
             conn.close()
 
@@ -345,9 +424,14 @@ def get_intelligence_finance_cache(user_id, client_id):
     conn = get_conn()
     try:
         profile = conn.execute(
-            "SELECT * FROM intelligence_cost_profiles WHERE user_id=? AND client_id=?",
-            (user_id, client_id),
+            "SELECT * FROM ml_account_financial_profiles WHERE client_id=?",
+            (client_id,),
         ).fetchone()
+        if not profile:
+            profile = conn.execute(
+                "SELECT * FROM intelligence_cost_profiles WHERE user_id=? AND client_id=?",
+                (user_id, client_id),
+            ).fetchone()
         rows = conn.execute(
             """SELECT * FROM intelligence_sale_costs
                WHERE user_id=? AND client_id=? ORDER BY sale_date, id""",
@@ -360,6 +444,11 @@ def get_intelligence_finance_cache(user_id, client_id):
                 "costByKey": _json_object(profile["cost_by_key_json"]),
                 "profitTaxRate": float(profile["profit_tax_rate"] or 0),
                 "flexCarrierCost": float(profile["flex_carrier_cost"] or 0),
+                "fiscalMode": profile["fiscal_mode"] if "fiscal_mode" in profile.keys() else "simple",
+                "taxRegime": profile["tax_regime"] if "tax_regime" in profile.keys() else "simple",
+                "fiscalProfile": _json_object(profile["fiscal_profile_json"]) if "fiscal_profile_json" in profile.keys() else {},
+                "fiscalBySku": _json_object(profile["fiscal_by_sku_json"]) if "fiscal_by_sku_json" in profile.keys() else {},
+                "updatedByUserId": profile["updated_by_user_id"] if "updated_by_user_id" in profile.keys() else user_id,
                 "updatedAt": profile["updated_at"] or 0,
             }
         sale_costs = []
@@ -395,6 +484,59 @@ def upsert_intelligence_finance_cache(user_id, client_id, profile, rows):
     try:
         with _lock:
             conn.execute("BEGIN")
+            current = conn.execute(
+                "SELECT * FROM ml_account_financial_profiles WHERE client_id=?",
+                (client_id,),
+            ).fetchone()
+            profile_columns = {
+                "costBySku": "cost_by_sku_json",
+                "costByKey": "cost_by_key_json",
+                "profitTaxRate": "profit_tax_rate",
+                "flexCarrierCost": "flex_carrier_cost",
+                "fiscalMode": "fiscal_mode",
+                "taxRegime": "tax_regime",
+                "fiscalProfile": "fiscal_profile_json",
+                "fiscalBySku": "fiscal_by_sku_json",
+            }
+            def retained(name, default):
+                if name in profile:
+                    return profile[name]
+                column = profile_columns.get(name)
+                if not current or not column or column not in current.keys():
+                    return default
+                value = current[column]
+                if name in {"costBySku", "costByKey", "fiscalProfile", "fiscalBySku"}:
+                    return _json_object(value)
+                return value
+
+            conn.execute(
+                """INSERT INTO ml_account_financial_profiles
+                   (client_id, cost_by_sku_json, cost_by_key_json,
+                    profit_tax_rate, flex_carrier_cost, fiscal_mode, tax_regime,
+                    fiscal_profile_json, fiscal_by_sku_json, updated_by_user_id, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(client_id) DO UPDATE SET
+                    cost_by_sku_json=excluded.cost_by_sku_json,
+                    cost_by_key_json=excluded.cost_by_key_json,
+                    profit_tax_rate=excluded.profit_tax_rate,
+                    flex_carrier_cost=excluded.flex_carrier_cost,
+                    fiscal_mode=excluded.fiscal_mode,
+                    tax_regime=excluded.tax_regime,
+                    fiscal_profile_json=excluded.fiscal_profile_json,
+                    fiscal_by_sku_json=excluded.fiscal_by_sku_json,
+                    updated_by_user_id=excluded.updated_by_user_id,
+                    updated_at=excluded.updated_at""",
+                (client_id,
+                 json.dumps(retained("costBySku", {}) or {}, ensure_ascii=True),
+                 json.dumps(retained("costByKey", {}) or {}, ensure_ascii=True),
+                 float(retained("profitTaxRate", 0) or 0),
+                 float(retained("flexCarrierCost", 0) or 0),
+                 str(retained("fiscalMode", "simple") or "simple"),
+                 str(retained("taxRegime", "simple") or "simple"),
+                 json.dumps(retained("fiscalProfile", {}) or {}, ensure_ascii=True),
+                 json.dumps(retained("fiscalBySku", {}) or {}, ensure_ascii=True),
+                 user_id, ts),
+            )
             conn.execute(
                 """INSERT INTO intelligence_cost_profiles
                    (user_id, client_id, cost_by_sku_json, cost_by_key_json,
@@ -1463,6 +1605,45 @@ def list_recent_audit_for_user(user_id: int, limit: int = 10):
                ORDER BY created_at DESC, id DESC
                LIMIT ?""",
             (user_id, limit),
+        )
+        return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def record_promotion_action(user_id: int, client_id: str, item_id: str, payload: dict):
+    """Persiste somente o resultado seguro devolvido pelo agente, nunca o preview_token."""
+    safe_payload = dict(payload or {})
+    safe_payload.pop("preview_token", None)
+    status = "success" if safe_payload.get("ok") is True else "failed"
+    conn = get_conn()
+    try:
+        conn.execute(
+            """INSERT INTO promotion_action_audit
+               (user_id, client_id, item_id, status, agent_audit_id, idempotent, response_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                int(user_id), str(client_id or ""), str(item_id or ""), status,
+                str(safe_payload.get("audit_id") or "") or None,
+                1 if safe_payload.get("idempotent") is True else 0,
+                json.dumps(safe_payload, ensure_ascii=False, separators=(",", ":")),
+                now(),
+            ),
+        )
+    finally:
+        conn.close()
+
+
+def list_promotion_action_audit(user_id: int, client_id: str, limit: int = 50):
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """SELECT id, item_id, status, agent_audit_id, idempotent, created_at
+               FROM promotion_action_audit
+               WHERE user_id=? AND client_id=?
+               ORDER BY created_at DESC, id DESC
+               LIMIT ?""",
+            (int(user_id), str(client_id or ""), max(1, min(int(limit or 50), 100))),
         )
         return cur.fetchall()
     finally:

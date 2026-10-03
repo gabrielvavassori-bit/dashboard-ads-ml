@@ -227,7 +227,7 @@ class OnlinePeriodTests(unittest.TestCase):
 
         self.assertEqual(error, "")
         self.assertIsNotNone(data)
-        self.assertEqual(calls[0][0], "/internal/dash-ads/online-cache-latest")
+        self.assertEqual(calls[0][0], "/internal/dash-ads/operational-cache")
         self.assertNotIn(
             "/internal/dash-ads/online-cache-refresh",
             [path for path, _params in calls],
@@ -594,7 +594,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual([row["date"] for row in item["dailySeries"]], ["2026-08-11", "2026-08-12", "2026-08-13"])
         self.assertEqual(item["dailySeries"][0]["adsRevenue"], 50)
         self.assertEqual(item["dailySeries"][0]["investment"], 10)
-        self.assertEqual(item["dailySeries"][0]["tacosBaseRevenue"], 39.90)
+        self.assertEqual(item["dailySeries"][0]["tacosBaseRevenue"], 29.90)
         account_daily = data["accountDailySeries"]
         self.assertEqual([row["date"] for row in account_daily], ["2026-08-11", "2026-08-12", "2026-08-13"])
         self.assertEqual(account_daily[0]["orders"], 3)
@@ -604,14 +604,14 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(account_daily[0]["investment"], 15)
         self.assertAlmostEqual(account_daily[0]["price"], 129.90 / 3)
         self.assertAlmostEqual(account_daily[0]["roas"], 80 / 15)
-        self.assertAlmostEqual(account_daily[0]["tacos"], 15 / 149.90)
+        self.assertAlmostEqual(account_daily[0]["tacos"], 15 / 129.90)
 
         html = render_dashboard(data)
         self.assertIn('data-account-daily-chart', html)
         self.assertIn("<h3>Desempenho diário da conta</h3>", html)
         self.assertNotIn("<summary>Desempenho diário da conta</summary>", html)
         self.assertLess(html.index('id="kpis"'), html.index('data-account-daily-chart'))
-        self.assertLess(html.index('data-account-daily-chart'), html.index('aria-label="Visoes do dashboard"'))
+        self.assertLess(html.index('aria-label="Visoes do dashboard"'), html.index('data-account-daily-chart'))
         self.assertIn("Vendas diarias do periodo", html)
         self.assertIn('data-chart-metric="revenue"', html)
         self.assertIn('data-chart-metric="adsRevenue"', html)
@@ -635,8 +635,60 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("Frete gratis e rapido", html)
         self.assertIn("Frete por conta do comprador", html)
         self.assertIn("Condicao comercial do anuncio", html)
-        self.assertIn("PREVIA SOMENTE LEITURA", html)
-        self.assertIn("Esta etapa nao cria promocao, nao altera preco e nao envia comandos", html)
+        self.assertIn("BETA TRANSACIONAL COM CONFIRMACAO", html)
+        self.assertIn("Promocoes do Mercado Livre", html)
+        self.assertIn("Criar desconto", html)
+        self.assertIn("Criar campanha do vendedor", html)
+        self.assertIn("data-promo-create-campaign", html)
+        self.assertIn("data-promo-operation", html)
+        self.assertIn("Clique em Participar, Alterar ou Sair", html)
+        self.assertNotIn("Participar desta promoção com o anúncio", html)
+        self.assertIn("Desconto total", html)
+        self.assertIn("Parte do vendedor", html)
+        self.assertIn("Parte Mercado Livre", html)
+        self.assertIn("Rebate nas tarifas ML", html)
+        self.assertIn("discount_meli_boost_amount", html)
+        self.assertIn("function salesTrendInline(item)", html)
+        self.assertIn("Métricas 7d", html)
+        self.assertIn("line('Vendas 7d', sales)", html)
+        self.assertIn("line('Visitas', visits)", html)
+        self.assertIn("Conversão: <b>N/D</b>", html)
+        self.assertIn("data-promo-load-scope", html)
+        self.assertIn("Cada ação fica vinculada ao MLB", html)
+        self.assertIn("Math.min(3, pending.length)", html)
+        self.assertIn("if (activeDetailKey) renderDetailModal();", html)
+        self.assertIn('class="promotion-table"', html)
+        self.assertIn("function promotionTableRow(item, entry, allowAction, listing = null, selection = null)", html)
+        self.assertIn("function restorePromotionConfigDialog()", html)
+        self.assertIn("activePromotionConfigKey", html)
+        self.assertIn("document.querySelectorAll('[data-promo-direct]')", html)
+        self.assertIn("promotion-action-status promotion-action-error", html)
+        self.assertIn("agent_response_not_json", html)
+        self.assertIn("agente HTTP", html)
+        self.assertIn("A oportunidade foi atualizada ou expirou", html)
+        self.assertIn("const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {item_id:code, preview_token:preview.preview_token});", html)
+        self.assertNotIn("window.confirm", html)
+        self.assertNotIn("Gerar prévia para participar", html)
+        self.assertIn("const data = await promotionApiRequest(`/api/promotions?item_id=${encodeURIComponent(code)}`);", html)
+        self.assertIn(">Subsídio ML</th>", html)
+        self.assertIn(">Desconto vendedor</th>", html)
+        self.assertIn(">Desconto total</th>", html)
+        self.assertIn(">Rebate ML</th>", html)
+        self.assertIn(">Você recebe (estim.)</th>", html)
+        self.assertIn("Clique em Participar, Alterar ou Sair para abrir a revisão local antes da aplicação", html)
+        self.assertIn("Revisar a saída antes de confirmar", html)
+        self.assertIn("function promotionWriteAccessHtml(data)", html)
+        self.assertIn("Ações bloqueadas para esta conta.", html)
+        self.assertIn("Esta conta possui autorização de escrita em Ofertas e Promoções.", html)
+        self.assertIn("Preços, subsídios e ações são individuais para cada anúncio.", html)
+        self.assertIn("function promotionFriendlyType(row)", html)
+        self.assertIn("Oferta relâmpago", html)
+        self.assertIn("Início: ${promotionDateLabel(row.start_date)}", html)
+        self.assertIn("function promotionRankRows(item, rows)", html)
+        self.assertIn("Maior desconto", html)
+        self.assertIn("Maior subsídio", html)
+        self.assertIn("Maior recebimento estimado", html)
+        self.assertIn("promotion-scope-list", html)
 
     def test_account_daily_chart_does_not_invent_missing_snapshot_dates(self):
         latest_payload = {
@@ -970,7 +1022,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("janela de cache diverge", message)
         self.assertEqual(
             [path for path, _ in calls],
-            ["/internal/dash-ads/online-cache-latest"],
+            ["/internal/dash-ads/operational-cache"],
         )
 
     def test_online_builder_rejects_ads_from_a_different_period(self):
@@ -1226,7 +1278,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIsNone(data)
         self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
         self.assertIn("receita atribuída por Ads supera o faturamento bruto", message)
-        self.assertEqual(calls, ["/internal/dash-ads/online-cache-latest"])
+        self.assertEqual(calls, ["/internal/dash-ads/operational-cache"])
 
     def test_online_builder_accepts_agent_source_errors_alias_for_complete_coverage(self):
         payload = {
@@ -1352,7 +1404,8 @@ class OnlinePeriodTests(unittest.TestCase):
             )
 
         self.assertIsNone(data)
-        self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("reparação", message)
 
     def test_online_builder_never_renders_a_completed_snapshot_from_another_period(self):
         pending = {
@@ -1377,7 +1430,8 @@ class OnlinePeriodTests(unittest.TestCase):
             )
 
         self.assertIsNone(data)
-        self.assertTrue(message.startswith(app.ONLINE_CACHE_PENDING_PREFIX))
+        self.assertTrue(message.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+        self.assertIn("reparação", message)
         self.assertNotIn("fallback", " ".join(calls))
 
     def test_sales_intelligence_injection_uses_real_final_body_tag(self):
