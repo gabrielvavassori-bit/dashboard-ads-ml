@@ -625,14 +625,29 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         self.assertIn('data-promo-bulk-select=', source)
         self.assertIn('data-promo-bulk-operation', source)
-        self.assertIn('data-promo-bulk-preview=', source)
-        self.assertIn('Somente prepara as prévias; nenhuma alteração é aplicada.', source)
+        self.assertIn('data-promo-bulk-preview-visible', source)
+        self.assertIn('nenhuma alteração é aplicada nesta etapa.', source)
         runner = source[source.index('    async function promotionRunCollectivePreview'):source.index('    function activatePromotionPanels')]
-        handler = source[source.index("document.querySelectorAll('[data-promo-bulk-preview]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
+        handler = source[source.index("document.querySelectorAll('[data-promo-bulk-preview-visible]'"):source.index("document.querySelectorAll('[data-promo-bulk-approve]'")]
         self.assertIn("promotionApiRequest('/api/promotions/preview'", runner)
         self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", runner)
         self.assertIn('selectedListingKeys', handler)
         self.assertIn('promotionRunCollectivePreview', handler)
+
+    def test_bulk_action_is_available_in_every_scope_view_and_respects_visible_filter(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('function promotionVisibleListings(state)', source)
+        self.assertIn('data-promo-bulk-all-visible', source)
+        self.assertIn('data-promo-bulk-preview-visible', source)
+        self.assertIn('Selecionar os ${{num(visibleKeys.length)}} anúncios desta visão', source)
+        self.assertIn("campaign:'Campanha', sku:'SKU', hybrid:'Híbrida', listing:'Anúncio/variação'", source)
+        visible = source[source.index('function promotionVisibleListings(state)'):source.index('function promotionScopeBulkToolbarHtml')]
+        self.assertIn('promotionMatchesScopeSearch', visible)
+        self.assertIn('selectedCampaignKey', visible)
+        self.assertIn('selectionKey:', visible)
+        panel = source[source.index('function promotionScopePanelHtml(item)'):source.index('function promotionPanelHtml(item)')]
+        self.assertIn('${{scopeBulkToolbar}}${{recommendationHtml}}', panel)
+        self.assertGreaterEqual(panel.count('checked:selectedListingKeys.has('), 4)
 
     def test_recommended_candidates_generate_one_collective_preview_queue_without_confirmation(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
