@@ -1773,6 +1773,13 @@ def render_dashboard(data):
     .promotion-bulk-status {{ font-weight:800; }}
     .promotion-bulk-status.ready {{ color:#067647; }}
     .promotion-bulk-status.error {{ color:#b42318; }}
+    .promotion-job-monitor {{ position:fixed; right:18px; bottom:82px; z-index:80; width:min(390px,calc(100vw - 36px)); padding:12px; border:1px solid #84adff; border-radius:11px; background:#fff; box-shadow:0 12px 32px rgba(16,24,40,.18); display:none; }}
+    .promotion-job-monitor.visible {{ display:block; }}
+    .promotion-job-monitor-head {{ display:flex; justify-content:space-between; gap:10px; align-items:center; }}
+    .promotion-job-progress {{ height:8px; margin:9px 0; overflow:hidden; border-radius:999px; background:#e4e7ec; }}
+    .promotion-job-progress span {{ display:block; height:100%; background:#155eef; transition:width .25s ease; }}
+    .promotion-job-monitor.done .promotion-job-progress span {{ background:#07883f; }}
+    .promotion-job-monitor.error .promotion-job-progress span {{ background:#d92d20; }}
     @media (max-width:800px) {{ .promotion-bulk-summary-row {{ grid-template-columns:1fr 1fr; }} }}
     .promotion-scope-list h5 {{ margin:0 0 3px; font-size:14px; }}
     .promotion-listing-identity {{ display:flex; align-items:center; gap:8px; min-width:220px; }}
@@ -2094,9 +2101,11 @@ def render_dashboard(data):
           <button type="submit">Consultar promoções</button>
         </form>
         <div id="promotionGuideResult" aria-live="polite"></div>
+        <div id="promotionBulkJobs" class="promotion-bulk-summary" aria-live="polite"><span class="muted">Nenhum lote massivo consultado nesta sessão.</span></div>
         <details class="promotion-audit"><summary>Histórico de confirmações</summary><button type="button" id="promotionAuditLoad">Atualizar histórico</button><div id="promotionAuditResult" class="note" aria-live="polite">Abra para consultar as confirmações desta conta.</div></details>
       </section>
     </section>
+    <aside id="promotionJobMonitor" class="promotion-job-monitor" aria-live="polite"></aside>
     <section class="view" id="view-finance">
       <section class="card finance-layout">
         <div>
@@ -2215,6 +2224,7 @@ def render_dashboard(data):
     let promotionGuideItem = null;
     let promotionMarginTarget = 15;
     let promotionCampaignCatalog = {{loading:false, loaded:false, campaigns:[], error:''}};
+    let promotionJobPollTimer = null;
     let activePromotionConfigKey = '';
     let financeProfile = {{
       costBySku: {{}}, costByKey: {{}}, profitTaxRate: 0, flexCarrierCost: 0,
@@ -4511,6 +4521,74 @@ def render_dashboard(data):
         target.innerHTML = promotionAuditHtml(data.entries || []);
       }} catch (error) {{ target.innerHTML = `<p class="promotion-error">${{safe(error.message)}}</p>`; }}
     }}
+    function promotionJobLabel(status) {{
+      return ({{queued:'Na fila',running:'Processando',completed:'Concluído',completed_with_errors:'Concluído com falhas'}})[String(status || '')] || safe(status || 'Desconhecido');
+    }}
+    function promotionJobProgressHtml(job, compact = false) {{
+      const total = Math.max(0, Number(job.total || 0));
+      const completed = Math.max(0, Number(job.completed || 0));
+      const percent = total ? Math.min(100, Math.round(completed * 100 / total)) : 0;
+      return `<div class="promotion-job-monitor-head"><b>${{promotionJobLabel(job.status)}}</b><span>${{completed}}/${{total}}</span></div><div class="promotion-job-progress"><span style="width:${{percent}}%"></span></div><div class="muted">${{Number(job.succeeded || 0)}} confirmada(s) · ${{Number(job.failed || 0)}} falha(s)${{compact ? '' : ` · lote ${{safe(job.id || '')}}`}}</div>`;
+    }}
+    function renderPromotionBulkJobs(jobs) {{
+      const target = document.getElementById('promotionBulkJobs');
+      if (!target) return;
+      if (!jobs.length) {{ target.innerHTML = '<span class="muted">Nenhum lote massivo registrado nesta conta.</span>'; return; }}
+      target.innerHTML = `<div class="promotion-bulk-summary-head"><b>Processamentos massivos recentes</b><button type="button" data-promo-jobs-refresh>Atualizar</button></div><div class="promotion-bulk-summary-list">${{jobs.map(job => `<div>${{promotionJobProgressHtml(job)}}</div>`).join('')}}</div>`;
+      target.querySelector('[data-promo-jobs-refresh]')?.addEventListener('click', loadPromotionBulkJobs);
+    }}
+    async function loadPromotionBulkJobs() {{
+      const target = document.getElementById('promotionBulkJobs');
+      try {{
+        const data = await promotionApiRequest('/api/promotions/bulk-jobs');
+        const jobs = data.jobs || [];
+        renderPromotionBulkJobs(jobs);
+        const active = jobs.find(job => ['queued','running'].includes(String(job.status || '')));
+        if (active) promotionMonitorBulkJob(active.id);
+      }} catch (error) {{ if (target) target.innerHTML = `<p class="promotion-error">${{safe(error.message)}}</p>`; }}
+    }}
+    async function promotionRefreshConfirmedItems(results) {{
+      const codes = [...new Set((results || []).filter(result => result.ok).map(result => String(result.item_id || '').toUpperCase()).filter(code => /^MLB\\d+$/.test(code)))];
+      for (const code of codes) {{
+        try {{
+          const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
+          promotionState.set(code, {{...(promotionState.get(code) || {{}}), loading:false, data, error:'', preview:null}});
+        }} catch (error) {{}}
+      }}
+      if (promotionGuideItem) renderPromotionGuide();
+    }}
+    async function promotionMonitorBulkJob(jobId, scopeKey = '', queued = []) {{
+      if (!jobId) return null;
+      try {{ localStorage.setItem('promotionBulkJobId', jobId); }} catch (error) {{}}
+      if (promotionJobPollTimer) clearTimeout(promotionJobPollTimer);
+      const monitor = document.getElementById('promotionJobMonitor');
+      if (monitor) {{ monitor.className = 'promotion-job-monitor visible'; monitor.innerHTML = '<b>Consultando processamento massivo...</b>'; }}
+      try {{
+        const response = await promotionApiRequest(`/api/promotions/bulk-jobs/${{encodeURIComponent(jobId)}}`);
+        const job = response.job || {{}};
+        if (monitor) {{
+          const terminal = ['completed','completed_with_errors'].includes(String(job.status || ''));
+          monitor.className = `promotion-job-monitor visible ${{terminal ? (Number(job.failed || 0) ? 'error' : 'done') : ''}}`;
+          monitor.innerHTML = promotionJobProgressHtml(job, true);
+        }}
+        (job.results || []).forEach(result => {{
+          const queuedItem = queued.find(row => row.item.selectionKey === result.selection_key);
+          if (scopeKey && queuedItem) promotionBulkRunUpdate(scopeKey, queuedItem.item.selectionKey, {{executionStatus:result.ok ? 'success' : 'error', executionError:result.ok ? '' : (result.message || 'Promoção recusada.')}});
+        }});
+        const terminal = ['completed','completed_with_errors'].includes(String(job.status || ''));
+        if (terminal) {{
+          try {{ localStorage.removeItem('promotionBulkJobId'); }} catch (error) {{}}
+          await promotionRefreshConfirmedItems(job.results || []);
+          await loadPromotionBulkJobs();
+          return job;
+        }}
+        promotionJobPollTimer = setTimeout(() => promotionMonitorBulkJob(jobId, scopeKey, queued), 2000);
+        return job;
+      }} catch (error) {{
+        if (monitor) {{ monitor.className = 'promotion-job-monitor visible error'; monitor.innerHTML = `<b>Não foi possível consultar o lote.</b><div class="muted">${{safe(error.message)}}</div>`; }}
+        return null;
+      }}
+    }}
     async function promotionRunCollectivePreview(scopeKey, jobs, campaignName, operation = 'join') {{
       if (!jobs.length) return;
       const runItems = jobs.map(job => {{
@@ -4817,19 +4895,7 @@ def render_dashboard(data):
             const created = await promotionApiRequest('/api/promotions/bulk-jobs', 'POST', {{items:queued.map(row => ({{item_id:row.item_id, preview_token:row.preview_token, selection_key:row.item.selectionKey}}))}});
             const jobId = created.job?.id;
             if (!jobId) throw new Error('O servidor não retornou a identificação do lote.');
-            let finished = false;
-            for (let attempt = 1; attempt <= 180 && !finished; attempt += 1) {{
-              if (attempt > 1) await new Promise(resolve => setTimeout(resolve, 2000));
-              const status = await promotionApiRequest(`/api/promotions/bulk-jobs/${{encodeURIComponent(jobId)}}`);
-              const job = status.job || {{}};
-              (job.results || []).forEach(result => {{
-                const queuedItem = queued.find(row => row.item.selectionKey === result.selection_key);
-                if (!queuedItem) return;
-                promotionBulkRunUpdate(key, queuedItem.item.selectionKey, {{executionStatus:result.ok ? 'success' : 'error', executionAttempt:attempt, executionError:result.ok ? '' : (result.message || 'Promoção recusada.')}});
-              }});
-              finished = ['completed','completed_with_errors'].includes(String(job.status || ''));
-            }}
-            if (!finished) queued.forEach(row => promotionBulkRunUpdate(key, row.item.selectionKey, {{executionStatus:'pending', executionError:'Lote continua em processamento no servidor. Consulte novamente mais tarde.'}}));
+            await promotionMonitorBulkJob(jobId, key, queued);
           }} catch (error) {{
             queued.forEach(row => promotionBulkRunUpdate(key, row.item.selectionKey, {{executionStatus:'error', executionError:`Falha ao iniciar ou consultar o lote: ${{error.message}}`}}));
           }}
@@ -5621,7 +5687,7 @@ def render_dashboard(data):
     document.addEventListener('keydown', event => {{
       if (event.key === 'Escape' && activeDetailKey) closeDetailModal();
     }});
-    renderKpis(); activateAccountDailyChart(); renderAbc(); renderAlerts(); renderTable(); renderOnlineBeta(); loadFinanceProfile();
+    renderKpis(); activateAccountDailyChart(); renderAbc(); renderAlerts(); renderTable(); renderOnlineBeta(); loadFinanceProfile(); loadPromotionBulkJobs();
     try {{
       const savedView = localStorage.getItem('dashboardAdsActiveView');
       const savedButton = savedView ? document.querySelector(`button[data-view="${{savedView}}"]`) : null;

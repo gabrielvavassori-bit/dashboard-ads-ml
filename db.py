@@ -1695,3 +1695,24 @@ def get_promotion_bulk_job(job_id: str, user_id: int, client_id: str, include_re
         return result
     finally:
         conn.close()
+
+
+def list_promotion_bulk_jobs(user_id: int, client_id: str, limit: int = 10):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """SELECT id,status,total,completed,succeeded,failed,result_json,created_at,updated_at
+               FROM promotion_bulk_jobs
+               WHERE user_id=? AND client_id=?
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (int(user_id), str(client_id or ""), max(1, min(int(limit or 10), 25))),
+        ).fetchall()
+        return [{
+            "id": row["id"], "status": row["status"], "total": row["total"],
+            "completed": row["completed"], "succeeded": row["succeeded"],
+            "failed": row["failed"], "results": json.loads(row["result_json"] or "[]"),
+            "createdAt": row["created_at"], "updatedAt": row["updated_at"],
+        } for row in rows]
+    finally:
+        conn.close()

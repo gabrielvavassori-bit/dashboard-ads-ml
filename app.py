@@ -2795,6 +2795,21 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
                 return
+            if path == "/api/promotions/bulk-jobs":
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if not beta_config.BETA_MODE or not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Execução em massa disponível somente no beta autorizado."}, 403)
+                    return
+                link, _, _ = _current_ml_account(user, token)
+                if not link:
+                    _send_json(self, {"ok": False, "message": "Conta Mercado Livre não vinculada."}, 400)
+                    return
+                jobs = db.list_promotion_bulk_jobs(user["id"], (link["client_id"] or "").strip(), 10)
+                _send_json(self, {"ok": True, "jobs": jobs})
+                return
             if path.startswith("/api/promotions/bulk-jobs/"):
                 user, token = _current_user(self)
                 if not user:

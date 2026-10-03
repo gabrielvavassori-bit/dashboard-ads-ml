@@ -144,6 +144,10 @@ class FinanceProfilePersistenceTests(unittest.TestCase):
         finished = db.get_promotion_bulk_job("job_1234567890123456", 1, "client", include_request=True)
         self.assertEqual(finished["items"], [])
         self.assertEqual(finished["succeeded"], 1)
+        recent = db.list_promotion_bulk_jobs(1, "client")
+        self.assertEqual(recent[0]["id"], "job_1234567890123456")
+        self.assertEqual(recent[0]["status"], "completed")
+        self.assertNotIn("items", recent[0])
 
 
 if __name__ == "__main__":

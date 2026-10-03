@@ -578,7 +578,9 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('Confirmo a aplicação destas promoções no Mercado Livre', source)
         bulk_handler = source[source.index("document.querySelectorAll('[data-promo-bulk-execute]')"):source.index("document.querySelectorAll('[data-promo-create-campaign]')")]
         self.assertIn("promotionApiRequest('/api/promotions/bulk-jobs'", bulk_handler)
-        self.assertIn('/api/promotions/bulk-jobs/${{encodeURIComponent(jobId)}}', bulk_handler)
+        self.assertIn('promotionMonitorBulkJob(jobId, key, queued)', bulk_handler)
+        monitor = source[source.index('    async function promotionMonitorBulkJob'):source.index('    async function promotionRunCollectivePreview')]
+        self.assertIn('/api/promotions/bulk-jobs/${{encodeURIComponent(jobId)}}', monitor)
         self.assertIn('Lote enviado ao processamento em segundo plano.', bulk_handler)
 
     def test_account_campaign_inventory_loads_without_product_search(self):
@@ -716,10 +718,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('for (const item of candidates)', handler)
         self.assertNotIn('Promise.all', handler)
         self.assertEqual(handler.count("promotionApiRequest('/api/promotions/bulk-jobs'"), 1)
-        self.assertIn("executionStatus:result.ok ? 'success' : 'error'", handler)
         self.assertIn('executionStatus:\'error\'', handler)
-        self.assertIn('executionStatus:\'pending\'', handler)
-        self.assertIn('/api/promotions/bulk-jobs/${{encodeURIComponent(jobId)}}', handler)
+        self.assertIn('promotionMonitorBulkJob(jobId, key, queued)', handler)
         self.assertIn('loadPromotionAudit()', handler)
 
     def test_collective_retry_targets_only_failed_items_and_skips_successes(self):
@@ -739,8 +739,20 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertNotIn("'/api/promotions/confirm'", waiter)
         handler = source[source.index("document.querySelectorAll('[data-promo-bulk-execute]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
         self.assertEqual(handler.count("promotionApiRequest('/api/promotions/bulk-jobs'"), 1)
-        self.assertIn("['completed','completed_with_errors']", handler)
-        self.assertIn('Lote continua em processamento no servidor.', handler)
+        monitor = source[source.index('    async function promotionMonitorBulkJob'):source.index('    async function promotionRunCollectivePreview')]
+        self.assertIn("['completed','completed_with_errors']", monitor)
+        self.assertIn("localStorage.setItem('promotionBulkJobId'", monitor)
+        self.assertIn('promotionRefreshConfirmedItems', monitor)
+        self.assertNotIn("'/api/promotions/confirm'", monitor)
+
+    def test_bulk_job_monitor_recovers_after_reload_and_lists_server_jobs(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('id="promotionJobMonitor"', source)
+        self.assertIn('id="promotionBulkJobs"', source)
+        self.assertIn("promotionApiRequest('/api/promotions/bulk-jobs')", source)
+        self.assertIn('loadPromotionBulkJobs();', source)
+        self.assertIn('const active = jobs.find', source)
+        self.assertIn('promotionMonitorBulkJob(active.id)', source)
 
     def test_individual_confirmation_polls_without_resending_mutation(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
