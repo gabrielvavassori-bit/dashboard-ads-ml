@@ -283,6 +283,7 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
         url,
         headers={
             "Accept": "application/json",
+            "Accept-Encoding": "identity",
             "X-COMPETITIVE-WORKER-SECRET": secret,
         },
         method="GET",
@@ -305,7 +306,13 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
     try:
         payload = json.loads(raw.decode("utf-8", errors="replace"))
     except json.JSONDecodeError:
-        payload = {"ok": False, "message": "agente-ml retornou resposta nao JSON."}
+        payload = {
+            "ok": False,
+            "error": "agent_response_not_json",
+            "message": "O agente de promoções respondeu em formato inválido. A consulta pode ser repetida com segurança.",
+            "upstream_status": status,
+            "upstream_content_type": "indisponível",
+        }
     if isinstance(payload, dict):
         payload.pop("access_token", None)
         payload.pop("refresh_token", None)
@@ -3526,6 +3533,7 @@ class Handler(BaseHTTPRequestHandler):
             upstream_url,
             headers={
                 "Accept": "application/json",
+                "Accept-Encoding": "identity",
                 "X-COMPETITIVE-WORKER-SECRET": expected,
             },
             method="GET",
@@ -3553,8 +3561,11 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             payload = {
                 "ok": False,
-                "message": "agente-ml retornou resposta nao JSON.",
+                "error": "agent_response_not_json",
+                "message": "O agente de promoções respondeu em formato inválido. A consulta pode ser repetida com segurança.",
                 "http_status": status,
+                "upstream_status": status,
+                "upstream_content_type": "indisponível",
             }
         if isinstance(payload, dict):
             payload.pop("access_token", None)

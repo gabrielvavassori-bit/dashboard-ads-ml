@@ -504,6 +504,32 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn("promotionApiRequest('/api/promotions/preview'", handler)
         self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", handler)
 
+    def test_grouped_price_uses_live_mlb_state_and_direct_action_opens_local_review(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
+        handler = source[source.index("document.querySelectorAll('[data-promo-direct]')"):source.index("document.querySelectorAll('[data-promo-campaign]')")]
+        self.assertIn('const liveRow = listing ? promotionState.get(item.code)?.data?.promotions?.[index] : null;', row)
+        self.assertIn('const row = liveRow || sourceRow;', row)
+        self.assertIn('data-promo-dialog-key=', row)
+        self.assertIn('promotionPreviewHtml(item, directState)', row)
+        self.assertIn('Rejeitar e fechar', row)
+        self.assertIn('rowRoot?.querySelector(`[data-promo-campaign-price=', handler)
+        self.assertIn('body.deal_price = editedPrice;', handler)
+        self.assertIn('activePromotionConfigKey = `${{code}}:${{index}}`;', handler)
+
+    def test_campaign_catalog_retries_read_only_request_once_on_transient_failure(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        loader = source[source.index('    async function loadPromotionCampaignCatalog'):source.index('    async function openPromotionAccountCampaign')]
+        self.assertEqual(loader.count("promotionApiRequest('/api/promotions/campaigns')"), 2)
+        self.assertIn('setTimeout(resolve, 800)', loader)
+
+    def test_bulk_execution_keeps_one_collective_confirmation(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('data-promo-bulk-execute', source)
+        self.assertIn('Confirmo a aplicação destas promoções no Mercado Livre', source)
+        bulk_handler = source[source.index("document.querySelectorAll('[data-promo-bulk-execute]')"):source.index("document.querySelectorAll('[data-promo-create-campaign]')")]
+        self.assertIn("promotionApiRequest('/api/promotions/confirm'", bulk_handler)
+
     def test_account_campaign_inventory_loads_without_product_search(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         app_source = Path('app.py').read_text(encoding='utf-8')

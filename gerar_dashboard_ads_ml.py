@@ -3890,7 +3890,11 @@ def render_dashboard(data):
       return `<span class="promotion-margin-value ${{receipt < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small></span>`;
     }}
     function promotionTableRow(item, entry, allowAction, listing = null, selection = null) {{
-      const {{row, index, payout, bestPayout, bestDiscount, bestSubsidy}} = entry;
+      const {{row:sourceRow, index, payout, bestPayout, bestDiscount, bestSubsidy}} = entry;
+      // Campaign/group views keep a snapshot of each opportunity. Prefer the live
+      // per-MLB row so an edited preview price survives the following re-render.
+      const liveRow = listing ? promotionState.get(item.code)?.data?.promotions?.[index] : null;
+      const row = liveRow || sourceRow;
       const original = Number(row.original_price || item.currentPrice || item.lastPrice || 0);
       const allocation = promotionDiscountAllocation(row);
       const price = promotionEffectivePrice(row, item);
@@ -3916,8 +3920,10 @@ def render_dashboard(data):
         : (directState.error
           ? `<span class="promotion-action-status promotion-action-error">${{safe(directState.error)}}</span>`
           : (directState.result ? '<span class="promotion-action-status promotion-action-success">Ação confirmada. Lista atualizada.</span>' : ''));
+      const directReview = listing ? `${{promotionPreviewHtml(item, directState)}}${{directState.error ? `<div class="promotion-error">${{safe(directState.error)}}</div>` : ''}}${{directState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}` : '';
+      const dialogPrimaryAction = directState.preview ? '' : primaryAction;
       const action = listing && (canJoin || canUpdate || canRemove)
-        ? `<div class="promotion-inline-actions">${{directAction}}<button type="button" class="promotion-settings-button" data-promo-config-open aria-label="Configurar promoção de ${{safe(item.code)}}" title="Configurar promoção">⚙</button>${{directFeedback}}<dialog class="promotion-config-dialog" aria-label="Configurar promoção de ${{safe(item.code)}}"><div class="promotion-config-head"><h3>${{canUpdate ? 'Alterar promoção' : canJoin ? 'Participar da promoção' : 'Sair da promoção'}}</h3><button type="button" class="promotion-config-close" data-promo-config-close aria-label="Fechar">×</button></div><div class="promotion-config-body"><div class="promotion-config-product">${{productImage({{thumbnailUrl:listing.thumbnailUrl,title:listing.title}})}}<div><b>${{safe(listing.title)}}</b><span>${{safe(listing.code)}}${{listing.sku ? ` · SKU ${{safe(listing.sku)}}` : ''}}</span></div></div><div class="promotion-config-campaign">${{safe(promotionDisplayName(row))}} · ${{safe(promotionPeriod(row))}}</div><div class="promotion-config-metrics"><div><span>Preço original</span><b>${{original > 0 ? brl(original) : '—'}}</b></div><div><span>Preço promocional sugerido</span><b>${{price > 0 ? brl(price) : '—'}}</b></div><div><span>Subsídio Mercado Livre</span><b>${{allocation.meli == null ? 'N/D' : `${{allocation.meli.toLocaleString('pt-BR',{{maximumFractionDigits:2}})}}%${{allocation.meliDerived ? ' (calculado)' : ''}}`}}</b></div></div><div class="promotion-config-editor">${{primaryAction && row.action_mode !== 'join_fixed_offer' ? `<label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label>` : `<div class="promotion-config-note">${{primaryAction ? 'Preço definido pela campanha.' : 'A saída não altera o preço nesta prévia.'}}</div>`}}<div class="promotion-config-receipt"><span>Você recebe (estim.)</span><b>${{receipt}}</b><span>${{quote.available === true ? 'Antes de custo e imposto' : safe(quote.reason || 'Tarifa ou frete não informado pelo Mercado Livre.')}}</span></div></div><div class="promotion-config-note">${{safe(promotionLimits(row))}}. Clique em Participar, Alterar ou Sair para aplicar a ação.</div></div><div class="promotion-config-footer"><button type="button" data-promo-config-close>Fechar</button>${{leaveAction}}${{primaryAction}}</div></dialog></div>`
+        ? `<div class="promotion-inline-actions">${{directAction}}<button type="button" class="promotion-settings-button" data-promo-config-open aria-label="Configurar promoção de ${{safe(item.code)}}" title="Configurar promoção">⚙</button>${{directFeedback}}<dialog class="promotion-config-dialog" data-promo-dialog-key="${{safe(item.code)}}:${{index}}" aria-label="Configurar promoção de ${{safe(item.code)}}"><div class="promotion-config-head"><h3>${{directState.preview ? 'Revise e confirme a promoção' : canUpdate ? 'Alterar promoção' : canJoin ? 'Participar da promoção' : 'Sair da promoção'}}</h3><button type="button" class="promotion-config-close" data-promo-config-close aria-label="Fechar">×</button></div><div class="promotion-config-body"><div class="promotion-config-product">${{productImage({{thumbnailUrl:listing.thumbnailUrl,title:listing.title}})}}<div><b>${{safe(listing.title)}}</b><span>${{safe(listing.code)}}${{listing.sku ? ` · SKU ${{safe(listing.sku)}}` : ''}}</span></div></div><div class="promotion-config-campaign">${{safe(promotionDisplayName(row))}} · ${{safe(promotionPeriod(row))}}</div><div class="promotion-config-metrics"><div><span>Preço original</span><b>${{original > 0 ? brl(original) : '—'}}</b></div><div><span>Preço promocional sugerido</span><b>${{price > 0 ? brl(price) : '—'}}</b></div><div><span>Subsídio Mercado Livre</span><b>${{allocation.meli == null ? 'N/D' : `${{allocation.meli.toLocaleString('pt-BR',{{maximumFractionDigits:2}})}}%${{allocation.meliDerived ? ' (calculado)' : ''}}`}}</b></div></div><div class="promotion-config-editor">${{primaryAction && row.action_mode !== 'join_fixed_offer' ? `<label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label>` : `<div class="promotion-config-note">${{primaryAction ? 'Preço definido pela campanha.' : 'A saída não altera o preço nesta prévia.'}}</div>`}}<div class="promotion-config-receipt"><span>Você recebe (estim.)</span><b>${{receipt}}</b><span>${{quote.available === true ? 'Antes de custo e imposto' : safe(quote.reason || 'Tarifa ou frete não informado pelo Mercado Livre.')}}</span></div></div><div class="promotion-config-note">${{safe(promotionLimits(row))}}. A confirmação abaixo é a única etapa que aplica esta ação no Mercado Livre.</div>${{directReview}}</div><div class="promotion-config-footer"><button type="button" data-promo-config-close>${{directState.preview ? 'Rejeitar e fechar' : 'Fechar'}}</button>${{directState.preview ? '' : leaveAction}}${{dialogPrimaryAction}}</div></dialog></div>`
         : actionControls;
       const rebate = Number(row.discount_meli_boost_amount);
       const rebatePercent = Number(row.discount_meli_boosted_percentage);
@@ -4200,10 +4206,7 @@ def render_dashboard(data):
     }}
     function restorePromotionConfigDialog() {{
       if (!activePromotionConfigKey) return;
-      const dialog = [...document.querySelectorAll('dialog.promotion-config-dialog')].find(candidate => {{
-        const action = candidate.querySelector('[data-promo-campaign]');
-        return action && `${{action.dataset.promoItem}}:${{action.dataset.promoCampaign}}` === activePromotionConfigKey;
-      }});
+      const dialog = [...document.querySelectorAll('dialog.promotion-config-dialog')].find(candidate => candidate.dataset.promoDialogKey === activePromotionConfigKey);
       if (dialog && !dialog.open) dialog.showModal();
     }}
     function promotionStateUpdate(code, patch) {{
@@ -4256,7 +4259,15 @@ def render_dashboard(data):
       promotionCampaignCatalog = {{...promotionCampaignCatalog, loading:true, error:''}};
       renderPromotionCampaignCatalog();
       try {{
-        const data = await promotionApiRequest('/api/promotions/campaigns');
+        let data;
+        try {{
+          data = await promotionApiRequest('/api/promotions/campaigns');
+        }} catch (firstError) {{
+          // Render may answer HTML while agente-ml is waking up. Retry this
+          // read-only request once before showing the diagnostic to the user.
+          await new Promise(resolve => setTimeout(resolve, 800));
+          data = await promotionApiRequest('/api/promotions/campaigns');
+        }}
         promotionCampaignCatalog = {{loading:false, loaded:true, campaigns:Array.isArray(data.campaigns) ? data.campaigns : [], error:''}};
       }} catch (error) {{
         promotionCampaignCatalog = {{loading:false, loaded:true, campaigns:[], error:error.message}};
@@ -4603,8 +4614,11 @@ def render_dashboard(data):
           return;
         }}
         const action = button.dataset.promoOperation || 'join';
+        const rowRoot = button.closest('tr');
+        const editedPrice = Number(rowRoot?.querySelector(`[data-promo-campaign-price="${{index}}"]`)?.value || promotionEffectivePrice(row));
         const body = {{item_id:code, action, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
-      if (action !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = promotionEffectivePrice(row);
+        if (action !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = editedPrice;
+        activePromotionConfigKey = `${{code}}:${{index}}`;
         promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
         try {{
           const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
@@ -4621,6 +4635,7 @@ def render_dashboard(data):
         const price = Number(button.closest('dialog')?.querySelector(`[data-promo-campaign-price="${{index}}"]`)?.value || document.querySelector(`[data-promotion-item="${{code}}"] [data-promo-campaign-price="${{index}}"]`)?.value || 0);
         const body = {{item_id:code, action, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
         if (action !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = price;
+        activePromotionConfigKey = `${{code}}:${{index}}`;
         promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
         try {{
           const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
