@@ -1574,6 +1574,7 @@ def render_dashboard(data):
     .card {{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; box-shadow:0 4px 14px rgba(16,24,40,.04); min-width:0; overflow:hidden; }}
     .kpi small {{ color:var(--muted); display:block; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }}
     .kpi strong {{ display:block; font-size:22px; margin-top:6px; }}
+    .kpi .kpi-secondary {{ display:block; margin-top:8px; color:var(--muted); font-size:12px; line-height:1.4; }}
     .kpi.danger {{ border-color:#fecdca; }}
     .kpi.good {{ border-color:#abefc6; }}
     .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
@@ -1624,11 +1625,38 @@ def render_dashboard(data):
     .top-actions {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }}
     .primary-action {{ background:var(--navy); color:#fff; border-color:var(--navy); white-space:nowrap; }}
     .secondary-action {{ color:var(--navy); background:#fff; border:1px solid var(--line); padding:9px 12px; border-radius:8px; font-weight:800; text-decoration:none; white-space:nowrap; }}
-    .page-nav {{ display:flex; gap:8px; align-items:center; margin:0 0 12px; background:var(--bg); z-index:3; }}
+    .page-nav {{ position:sticky; top:0; display:flex; gap:8px; align-items:center; margin:0 0 12px; padding:10px 0; background:rgba(244,247,251,.96); box-shadow:0 8px 14px -14px rgba(16,32,51,.55); backdrop-filter:blur(8px); z-index:30; }}
     .page-tab {{ background:#fff; border-color:var(--line); color:#344054; }}
     .page-tab.active {{ background:var(--navy); color:#fff; border-color:var(--navy); }}
     .view {{ display:none; }}
     .view.active {{ display:block; }}
+    .finance-layout {{ display:grid; gap:14px; }}
+    .finance-config {{ border:1px solid var(--line); border-radius:10px; padding:14px; background:#f8fbff; }}
+    .finance-config h3 {{ margin:0 0 5px; }}
+    .finance-grid {{ display:grid; grid-template-columns:repeat(4,minmax(170px,1fr)); gap:10px; margin-top:12px; }}
+    .finance-field {{ display:flex; flex-direction:column; gap:5px; font-size:12px; font-weight:800; color:#475467; }}
+    .finance-field[hidden] {{ display:none !important; }}
+    .finance-field input, .finance-field select, .finance-search {{ min-width:0; width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:#101828; }}
+    .finance-sku-toolbar {{ display:flex; justify-content:space-between; align-items:end; gap:12px; flex-wrap:wrap; margin:14px 0 10px; }}
+    .finance-sku-toolbar .finance-field {{ flex:1 1 320px; }}
+    .finance-table-wrap {{ max-height:52vh; overflow:auto; border:1px solid var(--line); border-radius:10px; }}
+    .finance-table {{ width:100%; min-width:760px; border-collapse:collapse; }}
+    .finance-table th {{ position:sticky; top:0; z-index:1; background:#eef3f9; }}
+    .finance-table input {{ width:130px; padding:7px 8px; border:1px solid var(--line); border-radius:7px; text-align:right; }}
+    .finance-status {{ min-height:18px; margin-top:8px; font-weight:700; }}
+    .finance-status.error {{ color:#b42318; }}
+    .finance-status.success {{ color:#067647; }}
+    .finance-table .secondary-action {{ padding:7px 10px; cursor:pointer; }}
+    .finance-profile-badge {{ display:inline-block; padding:4px 7px; border-radius:999px; background:#f2f4f7; color:#475467; font-size:11px; font-weight:800; white-space:nowrap; }}
+    .finance-profile-badge.complete {{ background:#ecfdf3; color:#067647; }}
+    .finance-modal-backdrop {{ position:fixed; inset:0; z-index:90; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(16,24,40,.62); }}
+    .finance-modal-backdrop.open {{ display:flex; }}
+    .finance-modal-shell {{ width:min(1040px,96vw); max-height:92vh; display:flex; flex-direction:column; overflow:hidden; border-radius:14px; background:#fff; box-shadow:0 24px 70px rgba(16,24,40,.32); }}
+    .finance-modal-head {{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px; padding:16px 18px; border-bottom:1px solid var(--line); }}
+    .finance-modal-head h2 {{ margin:0 0 3px; }}
+    .finance-modal-head button {{ width:38px; height:38px; border:1px solid var(--line); border-radius:10px; background:#fff; font-size:24px; cursor:pointer; }}
+    .finance-modal-body {{ overflow:auto; padding:18px; }}
+    .finance-modal-actions {{ display:flex; justify-content:flex-end; gap:9px; padding:13px 18px; border-top:1px solid var(--line); background:#f8fafc; }}
     .abc-panel {{ margin:0; }}
     .abc-head {{ display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:10px; }}
     .abc-controls {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }}
@@ -1658,6 +1686,28 @@ def render_dashboard(data):
     .abc-table {{ width:1280px; table-layout:fixed; }}
     .scroll-frame thead th {{ top:0; }}
     .muted {{ color:var(--muted); font-size:12px; }}
+    .trend {{ margin-top:3px; font-size:11px; font-weight:800; line-height:1.35; white-space:normal; min-width:172px; }}
+    .trend-up {{ color:#067647; }}
+    .trend-down {{ color:#b42318; }}
+    .trend-nd {{ color:#475467; }}
+    .metrics-7d {{ min-width:190px; }}
+    .metrics-7d[data-metrics-tip] {{ cursor:help; border-radius:5px; }}
+    .metrics-7d[data-metrics-tip]:focus-visible {{ outline:2px solid #2563eb; outline-offset:3px; }}
+    .metric-change {{ font-weight:700; white-space:nowrap; }}
+    .metric-change.trend-up {{ color:#00a650; }}
+    .metric-change.trend-down {{ color:#e53945; }}
+    .metrics-float {{ position:fixed; z-index:10000; width:320px; max-width:calc(100vw - 24px); box-sizing:border-box; padding:16px; border:1px solid #e5e7eb; border-radius:9px; background:#fff; color:#253044; box-shadow:0 5px 22px #10182830; font:13px/1.5 Arial,sans-serif; pointer-events:none; }}
+    .metrics-float[hidden] {{ display:none; }}
+    .metrics-float strong {{ display:block; margin-bottom:8px; font-size:13px; }}
+    .metrics-float-period {{ color:#667085; font-size:11px; margin-bottom:8px; }}
+    .metrics-float-grid {{ display:grid; grid-template-columns:1fr auto auto; gap:5px 16px; align-items:center; }}
+    .metrics-float-grid .muted {{ color:#667085; font-size:11px; }}
+    .metrics-float-note {{ margin-top:10px; color:#667085; font-size:11px; }}
+    .metrics-float.promotion-margin-float {{ width:292px; background:#3d3054; border-color:#3d3054; color:#fff; box-shadow:0 8px 24px #10182850; }}
+    .promotion-margin-float .promotion-margin-line {{ display:flex; justify-content:space-between; gap:16px; line-height:1.3; }}
+    .promotion-margin-float .promotion-margin-total {{ margin-top:8px; padding-top:8px; border-top:1px solid #ffffff55; font-weight:800; }}
+    .promotion-margin-float .promotion-margin-note {{ margin-top:9px; padding-top:8px; border-top:1px dashed #ffffff55; font-size:11px; line-height:1.3; }}
+    .promotion-margin-float .promotion-margin-missing {{ color:#e7dcf4; }}
     .copyline {{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }}
     .copybtn {{ border:1px solid var(--line); background:#f8fafc; color:#344054; width:24px; height:24px; padding:0; border-radius:6px; font-size:13px; line-height:1; cursor:pointer; }}
     .copybtn:hover {{ background:#eef4ff; border-color:#b2ccff; }}
@@ -1742,6 +1792,130 @@ def render_dashboard(data):
     .demo-mode-notice {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 12px; padding:11px 14px; border:1px solid #f79009; border-radius:10px; background:#fffaeb; color:#7a2e0e; font-size:13px; }}
     .demo-mode-notice strong {{ letter-spacing:.04em; }}
     .demo-mode-notice a {{ color:#7a2e0e; font-weight:800; }}
+    .promotion-panel {{ margin-top:12px; padding:12px; border:1px solid #b2ddff; border-radius:10px; background:#f5fbff; }}
+    .promotion-panel h4 {{ margin:0 0 8px; font-size:14px; }}
+    .promotion-panel-grid {{ display:grid; grid-template-columns:repeat(2,minmax(240px,1fr)); gap:10px; margin-top:10px; }}
+    .promotion-scope-list {{ grid-template-columns:1fr; }}
+    .promotion-scope-view {{ display:flex; gap:6px; margin:12px 0; }}
+    .promotion-scope-view button {{ width:auto; padding:6px 10px; background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:6px; font-size:12px; }}
+    .promotion-scope-view button[aria-pressed="true"] {{ background:var(--ink); color:#fff; }}
+    .promotion-scope-search {{ display:flex; align-items:flex-end; gap:10px; margin:12px 0 4px; flex-wrap:wrap; }}
+    .promotion-scope-search label {{ display:flex; flex:1 1 330px; flex-direction:column; gap:4px; color:var(--muted); font-size:11px; font-weight:800; }}
+    .promotion-scope-search input {{ width:100%; min-height:38px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); }}
+    .promotion-card-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:8px; margin-top:8px; }}
+    .promotion-campaign-card {{ display:flex; flex-direction:column; gap:3px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--soft); }}
+    button.promotion-campaign-card {{ width:100%; color:var(--ink); text-align:left; cursor:pointer; }}
+    button.promotion-campaign-card[aria-pressed="true"] {{ border-color:#344054; background:#344054; color:#fff; }}
+    button.promotion-campaign-card[aria-pressed="true"] .muted {{ color:#e4e7ec; }}
+    .promotion-hybrid-sku {{ margin-top:10px; padding-top:8px; border-top:1px solid var(--line); }}
+    .promotion-hybrid-sku h6 {{ margin:0 0 6px; font-size:12px; }}
+    .promotion-bulk-toolbar {{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0; padding:9px; border:1px solid var(--line); border-radius:8px; background:var(--soft); }}
+    .promotion-bulk-toolbar label {{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; }}
+    .promotion-bulk-toolbar select {{ min-height:34px; }}
+    .promotion-bulk-toolbar input[type="checkbox"], .promotion-bulk-select {{ appearance:auto; flex:0 0 18px; width:18px; min-width:18px; height:18px; margin:0; padding:0; vertical-align:middle; }}
+    .promotion-listing-select {{ display:flex; align-items:center; gap:8px; min-width:0; }}
+    .promotion-bulk-summary {{ margin:10px 0; padding:11px; border:1px solid #84adff; border-radius:9px; background:#f5f8ff; }}
+    .promotion-recommendation {{ margin:10px 0; padding:12px; border:1px solid #87c99a; border-radius:9px; background:#f2fbf5; }}
+    .promotion-recommendation-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }}
+    .promotion-recommendation-stats {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }}
+    .promotion-recommendation-stats span {{ padding:5px 8px; border:1px solid var(--line); border-radius:999px; background:#fff; font-size:11px; }}
+    .promotion-bulk-summary-head {{ display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; margin-bottom:8px; }}
+    .promotion-bulk-summary-list {{ display:grid; gap:6px; }}
+    .promotion-bulk-summary-row {{ display:grid; grid-template-columns:minmax(150px,1.5fr) minmax(90px,.7fr) minmax(90px,.7fr) minmax(110px,.8fr) auto; align-items:center; gap:8px; padding:8px; border:1px solid var(--line); border-radius:7px; background:#fff; }}
+    .promotion-bulk-status {{ font-weight:800; }}
+    .promotion-bulk-status.ready {{ color:#067647; }}
+    .promotion-bulk-status.error {{ color:#b42318; }}
+    @media (max-width:800px) {{ .promotion-bulk-summary-row {{ grid-template-columns:1fr 1fr; }} }}
+    .promotion-scope-list h5 {{ margin:0 0 3px; font-size:14px; }}
+    .promotion-listing-identity {{ display:flex; align-items:center; gap:8px; min-width:220px; }}
+    .promotion-listing-identity .product-thumbnail {{ flex:0 0 42px; width:42px; height:42px; }}
+    .promotion-listing-name, .promotion-listing-sku {{ font-weight:800; color:var(--ink) !important; white-space:normal; }}
+    .promotion-listing-campaign {{ margin-top:5px !important; padding-top:5px; border-top:1px dashed #d0d5dd; font-weight:700; color:#475467 !important; }}
+    .promotion-inline-actions {{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }}
+    .promotion-action-status {{ display:block; flex-basis:100%; font-size:11px; line-height:1.3; color:#475467; }}
+    .promotion-action-error {{ color:#b42318; font-weight:700; }}
+    .promotion-action-success {{ color:#027a48; font-weight:700; }}
+    .promotion-settings-button {{ width:30px; height:28px; padding:0 !important; border:1px solid #98a2b3; border-radius:5px; color:#344054; background:#fff; font-size:18px !important; line-height:1; cursor:pointer; }}
+    .promotion-config-dialog {{ width:min(760px,calc(100vw - 24px)); max-height:calc(100vh - 32px); padding:0; border:0; border-radius:14px; color:var(--ink); box-shadow:0 18px 55px rgba(16,24,40,.25); overflow:auto; }}
+    .promotion-config-dialog::backdrop {{ background:rgba(16,24,40,.58); }}
+    .promotion-config-head {{ display:flex; justify-content:space-between; align-items:center; padding:17px 22px; border-bottom:1px solid var(--line); }}
+    .promotion-config-head h3 {{ margin:0; font-size:18px; }}
+    .promotion-config-close {{ width:30px; padding:4px; background:#fff; color:#667085; border:0; font-size:22px; cursor:pointer; }}
+    .promotion-config-body {{ padding:20px 24px; }}
+    .promotion-config-product {{ display:flex; align-items:center; gap:12px; padding-bottom:16px; border-bottom:1px dashed var(--line); }}
+    .promotion-config-product b {{ display:block; }}
+    .promotion-config-product .product-thumbnail {{ flex:0 0 48px; width:48px; height:48px; }}
+    .promotion-config-campaign {{ padding:16px 0; text-align:center; font-weight:800; color:#667085; }}
+    .promotion-config-metrics {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:18px; text-align:center; }}
+    .promotion-config-metrics span, .promotion-config-receipt span {{ display:block; font-size:12px; color:#667085; }}
+    .promotion-config-metrics b, .promotion-config-receipt b {{ display:block; margin-top:3px; font-size:18px; }}
+    .promotion-config-editor {{ display:flex; align-items:center; justify-content:space-between; gap:20px; border-top:1px solid var(--line); padding:20px 0; }}
+    .promotion-config-editor label {{ display:block; font-weight:700; }}
+    .promotion-config-editor input {{ display:block; width:160px; margin-top:5px; }}
+    .promotion-config-receipt {{ text-align:center; }}
+    .promotion-config-note {{ font-size:12px; color:#667085; }}
+    .promotion-config-footer {{ display:flex; justify-content:flex-end; gap:8px; padding:15px 22px; border-top:1px solid var(--line); }}
+    .promotion-config-footer button {{ width:auto; padding:7px 12px; }}
+    .promotion-config-footer .secondary-action {{ background:#fff; color:#b42318; border:1px solid #fda29b; }}
+    @media(max-width:600px) {{ .promotion-config-metrics {{ grid-template-columns:1fr; }} .promotion-config-editor {{ align-items:flex-start; flex-direction:column; }} }}
+    .promotion-table-wrap {{ margin-top:10px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#fff; }}
+    .promotion-table {{ width:100%; min-width:1180px; table-layout:fixed; border-collapse:collapse; font-size:12px; }}
+    .promotion-table th {{ padding:9px 8px; background:#f8fafc; color:#667085; font-size:10px; letter-spacing:.03em; text-align:left; text-transform:uppercase; white-space:normal; }}
+    .promotion-table th:nth-child(1) {{ width:25%; }}
+    .promotion-table th:nth-child(2), .promotion-table th:nth-child(3) {{ width:6%; }}
+    .promotion-table th:nth-child(4), .promotion-table th:nth-child(9) {{ width:5%; }}
+    .promotion-table th:nth-child(5), .promotion-table th:nth-child(10) {{ width:8%; }}
+    .promotion-table th:nth-child(6) {{ width:15%; }}
+    .promotion-table th:nth-child(7) {{ width:13%; }}
+    .promotion-table th:nth-child(8) {{ width:9%; }}
+    .promotion-table td {{ padding:9px 8px; border-top:1px solid #eaecf0; vertical-align:top; }}
+    .promotion-table tr.promotion-best-discount {{ background:#f0fdf4; }}
+    .promotion-table tr.promotion-best-subsidy {{ box-shadow:inset 3px 0 0 #12b76a; }}
+    .promotion-table tr.promotion-best-payout {{ box-shadow:inset 3px 0 0 #f79009; }}
+    .promotion-table td.num {{ text-align:right; white-space:normal; }}
+    .promotion-table td, .promotion-table small {{ overflow-wrap:anywhere; }}
+    .promotion-table b {{ display:block; color:var(--ink); }}
+    .promotion-table small {{ display:block; margin-top:2px; color:var(--muted); }}
+    .promotion-margin-value {{ display:inline-block; padding:3px 6px; border-radius:7px; font-weight:800; cursor:help; }}
+    .promotion-margin-value.positive {{ background:#ecfdf3; color:#027a48; }}
+    .promotion-margin-value.negative {{ background:#fef3f2; color:#b42318; }}
+    .promotion-flex-warning {{ display:block; margin-top:4px; padding:3px 5px; border-radius:5px; background:#fff4e5; color:#b54708; font-size:10px; line-height:1.25; font-weight:800; }}
+    .promotion-margin-value:focus-visible {{ outline:2px solid #6941c6; outline-offset:2px; }}
+    .promotion-status {{ display:inline-block; margin-top:4px; padding:2px 6px; border-radius:999px; background:#ecfdf3; color:#027a48; font-size:10px; font-weight:800; text-transform:uppercase; }}
+    .promotion-status.candidate {{ background:#eff8ff; color:#175cd3; }}
+    .promotion-rank {{ display:inline-block; margin-top:4px; padding:2px 6px; border-radius:999px; background:#d1fadf; color:#027a48; font-size:10px; font-weight:800; white-space:nowrap; }}
+    .promotion-table .promotion-form {{ margin:0; min-width:170px; }}
+    .promotion-table .promotion-form input {{ width:104px; }}
+    .promotion-table .promotion-form {{ min-width:0; gap:5px; align-items:center; }}
+    .promotion-table .promotion-form label {{ font-size:10px; }}
+    .promotion-table .promotion-form button, .promotion-table td > button {{ width:auto; min-width:0; padding:5px 8px; border-radius:5px; font-size:11px; font-weight:700; line-height:1.15; white-space:nowrap; }}
+    .promotion-table .promotion-form button.secondary-action, .promotion-table td > button.secondary-action {{ background:#fff; color:#b42318; border:1px solid #fda29b; }}
+    .promotion-price-editor {{ display:flex; flex-direction:column; gap:4px; align-items:stretch; }}
+    .promotion-price-editor span {{ font-size:10px; color:var(--muted); font-weight:800; }}
+    .promotion-price-editor input {{ width:112px; max-width:100%; padding:6px 7px; border:1px solid var(--line); border-radius:6px; text-align:right; font-weight:800; }}
+    .promotion-price-editor .promotion-target-margin {{ border-color:#84adff; background:#f5f8ff; }}
+    .promotion-target-feedback {{ min-height:13px; font-size:10px; line-height:1.25; color:#475467; }}
+    .promotion-target-feedback.error {{ color:#b42318; font-weight:700; }}
+    .promotion-option {{ padding:10px; border:1px solid var(--line); border-radius:9px; background:#fff; }}
+    .promotion-option p {{ margin:5px 0; }}
+    .promotion-discount-breakdown {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin:9px 0; }}
+    .promotion-discount-breakdown > div {{ padding:7px; border-radius:7px; background:#f8fafc; min-width:0; }}
+    .promotion-discount-breakdown span {{ display:block; color:var(--muted); font-size:10px; font-weight:800; }}
+    .promotion-discount-breakdown b {{ display:block; margin-top:3px; color:var(--ink); font-size:12px; overflow-wrap:anywhere; }}
+    .promotion-form {{ display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:8px; }}
+    .promotion-form label {{ display:flex; flex-direction:column; gap:4px; color:var(--muted); font-size:11px; font-weight:800; }}
+    .promotion-form input {{ width:142px; min-width:0; padding:8px; border:1px solid var(--line); border-radius:8px; }}
+    .promotion-form button, .promotion-panel > button {{ padding:9px 12px; border:0; border-radius:8px; background:#102033; color:#fff; font-weight:800; cursor:pointer; }}
+    .promotion-form button[disabled], .promotion-panel > button[disabled] {{ opacity:.55; cursor:wait; }}
+    .promotion-preview {{ margin-top:10px; padding:11px; border:1px solid #fdb022; border-radius:9px; background:#fffaeb; }}
+    .promotion-confirm {{ margin-top:9px; background:#b42318 !important; }}
+    .promotion-processing {{ display:flex; align-items:center; gap:9px; padding:10px 12px; border-radius:10px; background:#eef6ff; color:#174a7c; font-weight:700; }}
+    .promotion-spinner {{ width:17px; height:17px; border:3px solid #bdd7f0; border-top-color:#174a7c; border-radius:50%; animation:promotion-spin .8s linear infinite; flex:0 0 auto; }}
+    @keyframes promotion-spin {{ to {{ transform:rotate(360deg); }} }}
+    .promotion-campaign-counts {{ display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }}
+    .promotion-campaign-counts span {{ padding:3px 7px; border-radius:999px; background:#eef3f8; color:#34495e; font-size:11px; font-weight:700; }}
+    .promotion-success {{ margin-top:10px; padding:10px; border-radius:8px; background:#ecfdf3; color:#027a48; font-weight:800; }}
+    .promotion-error {{ margin-top:10px; padding:10px; border-radius:8px; background:#fef3f2; color:#b42318; font-weight:800; }}
     .daily-chart-card {{ position:relative; overflow:hidden; padding:16px; background:linear-gradient(180deg,#fff 0%,#fbfdff 100%); }}
     .account-daily-chart-card {{ margin:0 0 12px; }}
     .chart-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:14px; flex-wrap:wrap; }}
@@ -1835,6 +2009,8 @@ def render_dashboard(data):
       .detail-modal-body .child-table td::before {{ content:attr(data-label); display:block; margin-bottom:2px; color:var(--muted); font-size:10px; font-weight:800; text-transform:uppercase; }}
       .detail-modal-body .child-table td:nth-child(-n+4), .detail-modal-body .child-table td:last-child {{ grid-column:1/-1; }}
     }}
+    @media (max-width:900px) {{ .finance-grid {{ grid-template-columns:repeat(2,minmax(150px,1fr)); }} }}
+    @media (max-width:700px) {{ .promotion-panel-grid {{ grid-template-columns:1fr; }} .promotion-discount-breakdown {{ grid-template-columns:1fr; }} .promotion-form label, .promotion-form input, .promotion-form button {{ width:100%; }} .page-nav {{ overflow-x:auto; padding-bottom:4px; }} .page-tab {{ flex:0 0 auto; }} .finance-grid {{ grid-template-columns:1fr; }} }}
   </style>
 </head>
 <body>
@@ -1857,15 +2033,16 @@ def render_dashboard(data):
   </header>
   <main>
     {demo_notice}
+    <nav class="page-nav" aria-label="Visoes do dashboard">
+      <button class="page-tab active" data-view="operational" type="button">Operacional</button>
+      <button class="page-tab" data-view="abc" type="button">Curva ABC</button>
+      <button class="page-tab" data-view="promotions" type="button">Promoções</button>
+      <button class="page-tab" data-view="finance" type="button">Custos e impostos</button>
+    </nav>
     {f'<section class="online-notice">{online_notice}</section>' if online_notice else ''}
     {online_period_filter}
     <section class="kpis" id="kpis"></section>
     {account_daily_chart}
-    <nav class="page-nav" aria-label="Visoes do dashboard">
-      <button class="page-tab active" data-view="operational" type="button">Operacional</button>
-      <button class="page-tab" data-view="abc" type="button">Curva ABC</button>
-      <button class="page-tab" data-view="online-beta" type="button">Online Beta</button>
-    </nav>
     <section class="view active" id="view-operational">
       <section class="grid">
         <div class="card">
@@ -1989,7 +2166,72 @@ def render_dashboard(data):
         <div class="scroll-frame" id="onlineBetaTable" style="margin-top:12px"></div>
       </section>
     </section>
+    <section class="view" id="view-promotions">
+      <section class="card">
+        <h2>Central de promoções</h2>
+        <p class="note">As campanhas da conta aparecem automaticamente. Abra uma campanha para ver os anúncios participantes ou elegíveis; a busca abaixo continua disponível para filtrar por SKU, MLB, MLBU ou família.</p>
+        <div class="promotion-option">
+          <h3>Campanhas da conta</h3>
+          <div class="muted">Selecione uma campanha para listar seus anúncios. Nenhuma alteração é aplicada ao abrir ou consultar.</div>
+          <div id="promotionAccountCampaigns" aria-live="polite"><span class="muted">Abra a guia Promoções para carregar as campanhas.</span></div>
+        </div>
+        <form id="promotionGuideForm" class="promotion-form">
+          <label>SKU, MLB, MLBU ou família<input id="promotionGuideMlb" type="text" placeholder="LAZ-2X2, MLB6188463888 ou família" autocomplete="off" required></label>
+          <label>Margem mínima (%)<input id="promotionMarginTarget" type="number" min="0" max="100" step="0.1" value="15"></label>
+          <button type="submit">Consultar promoções</button>
+        </form>
+        <div id="promotionGuideResult" aria-live="polite"></div>
+        <details class="promotion-audit"><summary>Histórico de confirmações</summary><button type="button" id="promotionAuditLoad">Atualizar histórico</button><div id="promotionAuditResult" class="note" aria-live="polite">Abra para consultar as confirmações desta conta.</div></details>
+      </section>
+    </section>
+    <section class="view" id="view-finance">
+      <section class="card finance-layout">
+        <div>
+          <h2>Custos e impostos por SKU</h2>
+          <p class="note">Cadastre cada produto individualmente. Custo, origem e parâmetros fiscais por SKU ficam na base compartilhada com a Inteligência de Vendas e alimentam a margem líquida estimada das promoções.</p>
+        </div>
+        <div>
+          <div class="finance-sku-toolbar">
+            <label class="finance-field">Buscar família, SKU, anúncio ou título<input class="finance-search" id="financeSkuSearch" placeholder="Ex.: família, SCH-447 ou MLB..."></label>
+            <button class="primary-action" id="financeBulkEdit" type="button" disabled>Editar selecionados</button>
+          </div>
+          <div class="finance-table-wrap"><table class="finance-table"><thead><tr><th><input id="financeSelectAll" type="checkbox" aria-label="Selecionar todos os produtos exibidos"></th><th>SKU</th><th>Anúncio</th><th>Família</th><th>Título</th><th class="num">Preço atual</th><th class="num">Custo</th><th>Fiscal do produto</th><th>Ação</th></tr></thead><tbody id="financeSkuRows"></tbody></table></div>
+          <div class="finance-status" id="financeStatus" aria-live="polite"></div>
+        </div>
+      </section>
+    </section>
   </main>
+  <div class="finance-modal-backdrop" id="financeSkuModal" aria-hidden="true">
+    <section class="finance-modal-shell" role="dialog" aria-modal="true" aria-labelledby="financeSkuModalTitle">
+      <header class="finance-modal-head"><div><h2 id="financeSkuModalTitle">Editar produto</h2><div class="muted" id="financeSkuModalSubtitle"></div></div><button type="button" id="financeSkuModalClose" aria-label="Fechar">×</button></header>
+      <div class="finance-modal-body"><div class="finance-grid">
+        <label class="finance-field">Regime tributário<select id="skuFiscalTaxRegime"><option value="simple">Simples Nacional</option><option value="presumed">Lucro Presumido</option><option value="real">Lucro Real</option></select></label>
+        <label class="finance-field">Custo unitário (R$)<input id="skuFiscalCost" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-simple">Imposto do Simples (%)<input id="skuFiscalSimpleTax" type="number" min="0" step="0.01"></label>
+        <label class="finance-field">Custo Flex por pedido (R$)<input id="skuFiscalFlexCost" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-detailed">Origem do produto<select id="skuFiscalOrigin"><option value="unknown">Não informado</option><option value="national">Nacional</option><option value="imported_direct">Importado diretamente</option><option value="imported_domestic">Importado adquirido no Brasil</option></select></label>
+        <label class="finance-field sku-detailed">UF de origem<select id="skuFiscalOriginState"><option value="">Não informado</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select></label>
+        <label class="finance-field sku-detailed">Custo informado<select id="skuFiscalCostBasis"><option value="gross">Bruto, antes dos créditos</option><option value="net">Líquido, créditos já descontados</option></select></label>
+        <label class="finance-field">Origem dos parâmetros<select id="skuFiscalEvidence"><option value="pending">Pendente de validação</option><option value="user_informed">Informado pelo usuário</option><option value="document_confirmed">Confirmado por documento</option></select></label>
+        <label class="finance-field sku-detailed">Preenchimento fiscal<select id="skuFiscalCalculationMode"><option value="automatic">Automático por origem e destino</option><option value="manual">Manual para regra diferenciada</option></select></label>
+        <label class="finance-field sku-detailed">UF de destino<select id="skuFiscalDestinationState"><option value="">Não informado</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select></label>
+        <label class="finance-field sku-detailed">Tipo de venda<select id="skuFiscalSaleType"><option value="b2c">B2C - consumidor final</option><option value="b2b">B2B - empresa contribuinte</option></select></label>
+        <label class="finance-field sku-real">IPI entrada (%)<input id="skuFiscalIpiInput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">ICMS entrada (%)<input id="skuFiscalIcmsInput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">PIS/COFINS entrada (%)<input id="skuFiscalPisInput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">IPI saída (%)<input id="skuFiscalIpiOutput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">ICMS saída (%)<input id="skuFiscalIcmsOutput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">PIS/COFINS saída (%)<input id="skuFiscalPisOutput" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-presumed">Tributos efetivos Presumido (%)<input id="skuFiscalPresumedRate" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-detailed">DIFAL<select id="skuFiscalDifal"><option value="pending">Pendente de validação</option><option value="enabled">Aplicar</option><option value="disabled">Não aplicar - cenário validado</option></select></label>
+        <label class="finance-field sku-detailed">ICMS interno destino (%)<input id="skuFiscalDestinationIcms" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-real">Crédito fiscal sobre frete<select id="skuFiscalFreightCredit"><option value="disabled">Não aproveitar</option><option value="enabled">Aproveitar no Lucro Real</option></select></label>
+        <label class="finance-field sku-real">ICMS crédito do frete (%)<input id="skuFiscalFreightIcms" type="number" min="0" step="0.01"></label>
+        <label class="finance-field sku-detailed">ICMS-ST / antecipação<select id="skuFiscalStDecision"><option value="unknown">Desconhecido</option><option value="included_in_cost">Incluído no custo</option><option value="out_of_scope">Fora do escopo</option></select></label>
+      </div><p class="note">Campos sem comprovação permanecem não informados ou pendentes; zero não será tratado como alíquota comprovada nesta etapa.</p></div>
+      <footer class="finance-modal-actions"><button type="button" class="secondary-action" id="financeSkuModalCancel">Cancelar</button><button type="button" class="primary-action" id="financeSkuModalSave">Salvar produto</button></footer>
+    </section>
+  </div>
   <div class="detail-modal-backdrop" id="detailModal" aria-hidden="true">
     <section class="detail-modal-shell" role="dialog" aria-modal="true" aria-labelledby="detailModalHeading">
       <header class="detail-modal-head">
@@ -2006,6 +2248,7 @@ def render_dashboard(data):
   </a>
   <script>
     const DATA = {payload};
+    const PROMOTION_BULK_ENABLED = DATA.promotionApi?.bulkEnabled === true;
     const allItems = Array.isArray(DATA.items) ? DATA.items : [];
     DATA.decisionItems ??= allItems.filter(item => item && item.sku);
     DATA.adsNoSales ??= allItems.filter(item => Number(item?.investment || 0) > 0 && Number(item?.adsRevenue || 0) <= 0);
@@ -2054,6 +2297,20 @@ def render_dashboard(data):
     const mlbuExpanded = new Set();
     const skuExpanded = new Set();
     const dailyChartMetric = new Map();
+    const promotionState = new Map();
+    const promotionPriceTimers = new Map();
+    let promotionGuideItem = null;
+    let promotionMarginTarget = 15;
+    let promotionCampaignCatalog = {{loading:false, loaded:false, campaigns:[], error:''}};
+    let activePromotionConfigKey = '';
+    let financeProfile = {{
+      costBySku: {{}}, costByKey: {{}}, profitTaxRate: 0, flexCarrierCost: 0,
+      fiscalMode: 'simple', taxRegime: 'real', fiscalProfile: {{}}, fiscalBySku: {{}}
+    }};
+    let financeLoaded = false;
+    let activeFinanceSku = '';
+    let activeFinanceSkus = [];
+    const selectedFinanceSkus = new Set();
     let sortState = {{ key:'revenue', direction:1 }};
     let abcMode = 'hybrid';
     let abcMetric = 'totalRevenue';
@@ -2075,6 +2332,210 @@ def render_dashboard(data):
       adsDependency:'Dependencia de Ads > 50%', priceAboveAvg:'Preco acima da media > 5%', attention:'Requer atencao',
       opportunity:'Oportunidade para anunciar'
     }};
+    const financeField = id => document.getElementById(id);
+    const financeIcmsInternalRates = {{AC:19,AL:20.5,AM:20,AP:18,BA:20.5,CE:20,DF:20,ES:17,GO:19,MA:23,MG:18,MS:17,MT:17,PA:19,PB:20,PE:20.5,PI:22.5,PR:19.5,RJ:20,RN:20,RO:19.5,RR:20,RS:17,SC:17,SE:19,SP:18,TO:20}};
+    const financeDifalDoubleBaseStates = new Set(['AL','BA','ES','GO','MG','PA','PE','PI','PR','RO','RS','SE','TO']);
+    const financeInterstateSevenFrom = new Set(['MG','PR','RJ','RS','SC','SP']);
+    const financeInterstateSevenTo = new Set(['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MS','MT','PA','PB','PE','PI','RN','RO','RR','SE','TO']);
+    const financeNumber = id => {{
+      const value = Number(String(financeField(id)?.value || '').replace(',', '.'));
+      return Number.isFinite(value) && value >= 0 ? value : 0;
+    }};
+    function financeSkuItems() {{
+      const rows = new Map();
+      allItems.forEach(item => {{
+        const sku = String(item?.sku || '').trim();
+        if (!sku) return;
+        const key = sku.toLocaleUpperCase('pt-BR');
+        const prior = rows.get(key);
+        if (!prior || Number(item.totalRevenue || item.revenue || 0) > Number(prior.totalRevenue || prior.revenue || 0)) rows.set(key, item);
+      }});
+      return [...rows.values()].sort((a, b) => String(a.sku).localeCompare(String(b.sku), 'pt-BR'));
+    }}
+    function financeSetStatus(message, kind = '') {{
+      const node = financeField('financeStatus');
+      if (!node) return;
+      node.textContent = message;
+      node.className = `finance-status ${{kind}}`;
+    }}
+    function fillFinanceForm() {{
+      renderFinanceRows();
+    }}
+    function visibleFinanceItems() {{
+      const query = String(financeField('financeSkuSearch')?.value || '').trim().toLocaleLowerCase('pt-BR');
+      return financeSkuItems().filter(item => !query || [item.sku, item.code, item.title, item.familyId, item.familyName]
+        .some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(query)));
+    }}
+    function syncFinanceBulkControls(rows = visibleFinanceItems()) {{
+      const visibleSkus = rows.map(item => String(item.sku || '').trim()).filter(Boolean);
+      const selectedVisible = visibleSkus.filter(sku => selectedFinanceSkus.has(sku));
+      const selectAll = financeField('financeSelectAll');
+      if (selectAll) {{
+        selectAll.checked = visibleSkus.length > 0 && selectedVisible.length === visibleSkus.length;
+        selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleSkus.length;
+      }}
+      const bulk = financeField('financeBulkEdit');
+      if (bulk) {{
+        bulk.disabled = selectedFinanceSkus.size === 0;
+        bulk.textContent = selectedFinanceSkus.size ? `Editar selecionados (${{selectedFinanceSkus.size}})` : 'Editar selecionados';
+      }}
+    }}
+    function renderFinanceRows() {{
+      const target = financeField('financeSkuRows');
+      if (!target) return;
+      const rows = visibleFinanceItems();
+      target.innerHTML = rows.map(item => {{
+        const sku = String(item.sku || '').trim();
+        const value = Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku) ? financeProfile.costBySku[sku] : '';
+        const profile = (financeProfile.fiscalBySku || {{}})[sku] || {{}};
+        const saved = value !== '' || Object.keys(profile).length > 0;
+        const evidencePending = saved && !['user_informed','document_confirmed'].includes(String(profile.evidenceStatus || ''));
+        const status = saved ? (evidencePending ? 'Salvo · validação pendente' : 'Salvo') : 'Não cadastrado';
+        return `<tr><td><input type="checkbox" data-finance-select="${{safe(sku)}}" aria-label="Selecionar ${{safe(sku)}}" ${{selectedFinanceSkus.has(sku) ? 'checked' : ''}}></td><td><b>${{safe(sku)}}</b></td><td>${{safe(item.code || '—')}}</td><td>${{safe(item.familyName || item.familyId || '—')}}</td><td>${{safe(item.title || '—')}}</td><td class="num">${{brl(Number(item.currentPrice || item.lastPrice || 0))}}</td><td class="num">${{value === '' ? 'Não informado' : brl(Number(value))}}</td><td><span class="finance-profile-badge ${{saved ? 'complete' : ''}}">${{status}}</span></td><td><button type="button" class="secondary-action" data-finance-edit="${{safe(sku)}}">Editar</button></td></tr>`;
+      }}).join('') || '<tr><td colspan="9">Nenhum SKU encontrado nesta análise.</td></tr>';
+      syncFinanceBulkControls(rows);
+    }}
+    const skuFiscalOptionalNumber = id => {{
+      const raw = String(financeField(id)?.value || '').trim().replace(',', '.');
+      if (!raw) return null;
+      const value = Number(raw);
+      return Number.isFinite(value) && value >= 0 ? value : null;
+    }};
+    function syncSkuFiscalVisibility() {{
+      const regime = financeField('skuFiscalTaxRegime')?.value || 'simple';
+      const real = regime === 'real';
+      const presumed = regime === 'presumed';
+      document.querySelectorAll('.sku-simple').forEach(node => node.hidden = regime !== 'simple');
+      document.querySelectorAll('.sku-detailed').forEach(node => node.hidden = regime === 'simple');
+      document.querySelectorAll('.sku-real').forEach(node => node.hidden = !real);
+      document.querySelectorAll('.sku-presumed').forEach(node => node.hidden = !presumed);
+    }}
+    function setSkuFiscalNumber(id, value) {{ financeField(id).value = value == null ? '' : value; }}
+    function financeInterstateRate(origin, destination, productOrigin) {{
+      if (!origin || !destination) return null;
+      if (origin === destination) return financeIcmsInternalRates[origin] ?? null;
+      if (String(productOrigin || '').startsWith('imported')) return 4;
+      return financeInterstateSevenFrom.has(origin) && financeInterstateSevenTo.has(destination) ? 7 : 12;
+    }}
+    function syncSkuFiscalAutomaticFields() {{
+      const automatic = financeField('skuFiscalCalculationMode')?.value === 'automatic';
+      const origin = financeField('skuFiscalOriginState')?.value || '';
+      const destination = financeField('skuFiscalDestinationState')?.value || '';
+      const productOrigin = financeField('skuFiscalOrigin')?.value || 'unknown';
+      const output = financeInterstateRate(origin, destination, productOrigin);
+      const destinationRate = financeIcmsInternalRates[destination];
+      if (automatic) {{
+        setSkuFiscalNumber('skuFiscalIcmsOutput', output);
+        setSkuFiscalNumber('skuFiscalDestinationIcms', destinationRate);
+        const regime = financeField('skuFiscalTaxRegime')?.value || 'simple';
+        setSkuFiscalNumber('skuFiscalPisOutput', regime === 'presumed' ? 3.65 : regime === 'real' ? 9.25 : null);
+      }}
+      ['skuFiscalIcmsOutput','skuFiscalDestinationIcms','skuFiscalPisOutput'].forEach(id => {{
+        const node = financeField(id); if (node) node.readOnly = automatic;
+      }});
+    }}
+    function openFinanceSkuModal(skuOrSkus) {{
+      const skus = Array.isArray(skuOrSkus) ? skuOrSkus.filter(Boolean) : [skuOrSkus].filter(Boolean);
+      if (!skus.length) return;
+      const sku = skus[0];
+      const item = financeSkuItems().find(row => String(row.sku || '').trim() === sku) || {{sku}};
+      const profile = (financeProfile.fiscalBySku || {{}})[sku] || {{}};
+      activeFinanceSku = sku;
+      activeFinanceSkus = skus;
+      const bulk = skus.length > 1;
+      financeField('financeSkuModalTitle').textContent = bulk ? `Editar ${{skus.length}} produtos` : `Editar ${{sku}}`;
+      financeField('financeSkuModalSubtitle').textContent = bulk ? 'Os valores salvos serão aplicados somente aos SKUs selecionados.' : `${{item.code || 'Sem MLB'}} · ${{item.title || 'Produto sem título'}}`;
+      financeField('financeSkuModalSave').textContent = bulk ? `Salvar em ${{skus.length}} produtos` : 'Salvar produto';
+      financeField('skuFiscalTaxRegime').value = ['real','presumed','simple'].includes(profile.taxRegime) ? profile.taxRegime : 'simple';
+      setSkuFiscalNumber('skuFiscalCost', Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku) ? financeProfile.costBySku[sku] : null);
+      setSkuFiscalNumber('skuFiscalSimpleTax', profile.simpleTaxRate);
+      setSkuFiscalNumber('skuFiscalFlexCost', profile.flexCarrierCost);
+      financeField('skuFiscalOrigin').value = profile.productOrigin || 'unknown';
+      financeField('skuFiscalOriginState').value = profile.originState || '';
+      financeField('skuFiscalCostBasis').value = profile.costBasis === 'net' ? 'net' : 'gross';
+      financeField('skuFiscalEvidence').value = profile.evidenceStatus || 'pending';
+      financeField('skuFiscalCalculationMode').value = profile.calculationMode === 'automatic' ? 'automatic' : 'manual';
+      financeField('skuFiscalDestinationState').value = profile.destinationState || '';
+      financeField('skuFiscalSaleType').value = profile.saleType === 'b2b' ? 'b2b' : 'b2c';
+      setSkuFiscalNumber('skuFiscalIpiInput', profile.ipiInputRate);
+      setSkuFiscalNumber('skuFiscalIcmsInput', profile.icmsInputRate);
+      setSkuFiscalNumber('skuFiscalPisInput', profile.pisCofinsInputRate);
+      setSkuFiscalNumber('skuFiscalIpiOutput', profile.ipiOutputRate);
+      setSkuFiscalNumber('skuFiscalIcmsOutput', profile.icmsOutputRate);
+      setSkuFiscalNumber('skuFiscalPisOutput', profile.pisCofinsOutputRate);
+      setSkuFiscalNumber('skuFiscalPresumedRate', profile.presumedTaxRate);
+      financeField('skuFiscalDifal').value = profile.difalStatus || 'pending';
+      setSkuFiscalNumber('skuFiscalDestinationIcms', profile.destinationIcmsRate);
+      financeField('skuFiscalFreightCredit').value = profile.freightCreditEnabled === true ? 'enabled' : 'disabled';
+      setSkuFiscalNumber('skuFiscalFreightIcms', profile.freightIcmsCreditRate);
+      financeField('skuFiscalStDecision').value = profile.icmsStDecision || 'unknown';
+      syncSkuFiscalVisibility();
+      syncSkuFiscalAutomaticFields();
+      financeField('financeSkuModal').classList.add('open');
+      financeField('financeSkuModal').setAttribute('aria-hidden', 'false');
+    }}
+    function closeFinanceSkuModal() {{
+      activeFinanceSku = '';
+      activeFinanceSkus = [];
+      financeField('financeSkuModal').classList.remove('open');
+      financeField('financeSkuModal').setAttribute('aria-hidden', 'true');
+    }}
+    async function persistFinanceProfile(successMessage) {{
+      const response = await fetch('/api/finance-profile', {{method:'POST', credentials:'same-origin', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{costProfile:financeProfile, saleCosts:[]}})}});
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Não foi possível salvar.');
+      const stored = payload.profile;
+      if (!stored || typeof stored !== 'object') throw new Error('O servidor não confirmou a leitura dos dados salvos.');
+      financeProfile = {{...financeProfile, ...stored, costBySku:stored.costBySku || {{}}, costByKey:stored.costByKey || {{}}, fiscalProfile:stored.fiscalProfile || {{}}, fiscalBySku:stored.fiscalBySku || {{}}}};
+      financeSetStatus(successMessage, 'success');
+    }}
+    async function saveFinanceSku() {{
+      const skus = activeFinanceSkus.length ? [...activeFinanceSkus] : activeFinanceSku ? [activeFinanceSku] : [];
+      if (!skus.length) return;
+      const cost = skuFiscalOptionalNumber('skuFiscalCost');
+      const costs = {{...(financeProfile.costBySku || {{}})}};
+      const difalStatus = financeField('skuFiscalDifal').value;
+      const profile = {{
+        taxRegime:financeField('skuFiscalTaxRegime').value,
+        simpleTaxRate:skuFiscalOptionalNumber('skuFiscalSimpleTax'),
+        flexCarrierCost:skuFiscalOptionalNumber('skuFiscalFlexCost'),
+        productOrigin:financeField('skuFiscalOrigin').value, originState:financeField('skuFiscalOriginState').value,
+        costBasis:financeField('skuFiscalCostBasis').value, evidenceStatus:financeField('skuFiscalEvidence').value,
+        calculationMode:financeField('skuFiscalCalculationMode').value, destinationState:financeField('skuFiscalDestinationState').value,
+        saleType:financeField('skuFiscalSaleType').value,
+        ipiInputRate:skuFiscalOptionalNumber('skuFiscalIpiInput'), icmsInputRate:skuFiscalOptionalNumber('skuFiscalIcmsInput'), pisCofinsInputRate:skuFiscalOptionalNumber('skuFiscalPisInput'),
+        ipiOutputRate:skuFiscalOptionalNumber('skuFiscalIpiOutput'), icmsOutputRate:skuFiscalOptionalNumber('skuFiscalIcmsOutput'), pisCofinsOutputRate:skuFiscalOptionalNumber('skuFiscalPisOutput'),
+        presumedTaxRate:skuFiscalOptionalNumber('skuFiscalPresumedRate'), difalStatus, difalEnabled:difalStatus === 'enabled' ? true : difalStatus === 'disabled' ? false : null,
+        destinationIcmsRate:skuFiscalOptionalNumber('skuFiscalDestinationIcms'),
+        freightCreditEnabled:financeField('skuFiscalFreightCredit').value === 'enabled',
+        freightIcmsCreditRate:skuFiscalOptionalNumber('skuFiscalFreightIcms'), icmsStDecision:financeField('skuFiscalStDecision').value
+      }};
+      const fiscalBySku = {{...(financeProfile.fiscalBySku || {{}})}};
+      skus.forEach(sku => {{ if (cost == null) delete costs[sku]; else costs[sku] = cost; fiscalBySku[sku] = {{...profile}}; }});
+      financeProfile = {{...financeProfile, costBySku:costs, fiscalBySku}};
+      financeField('financeSkuModalSave').disabled = true;
+      try {{
+        await persistFinanceProfile(skus.length > 1 ? `${{skus.length}} produtos salvos.` : `Produto ${{skus[0]}} salvo.`);
+        skus.forEach(sku => selectedFinanceSkus.delete(sku));
+        closeFinanceSkuModal(); renderFinanceRows();
+      }}
+      catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
+      finally {{ financeField('financeSkuModalSave').disabled = false; }}
+    }}
+    async function loadFinanceProfile() {{
+      if (financeLoaded) return;
+      financeSetStatus('Carregando cadastro financeiro...');
+      try {{
+        const response = await fetch('/api/finance-profile', {{credentials:'same-origin'}});
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Não foi possível carregar os dados.');
+        const stored = payload.profile || payload;
+        financeProfile = {{...financeProfile, ...stored, costBySku:stored.costBySku || {{}}, costByKey:stored.costByKey || {{}}, fiscalProfile:stored.fiscalProfile || {{}}, fiscalBySku:stored.fiscalBySku || {{}}}};
+        financeLoaded = true;
+        fillFinanceForm();
+        financeSetStatus('Cadastro carregado.');
+      }} catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
+    }}
     function actionClass(action) {{ return (action || '').split(' ')[0].replace('/', ''); }}
     function abcClass(value) {{ return `abc abc${{value || 'C'}}`; }}
     const abcMetricLabels = {{
@@ -2547,15 +3008,17 @@ def render_dashboard(data):
       document.getElementById('kpis').innerHTML = [
         ['Produtos analisados', num(k.products), ''],
         ['Receita total', brl(k.revenue), 'good'],
+        ['Devolucoes confirmadas', k.returnsAvailable ? `${{brl(k.returnsAmount || 0)}} · ${{pct(k.returnsRate || 0)}} da receita` : 'N/D', k.returnsAvailable && k.returnsAmount > 0 ? 'danger' : ''],
+        ['Pedidos devolvidos', k.returnsAvailable ? (k.returnsOrdersAvailable ? `${{num(k.returnsOrdersCount || 0)}} de ${{num(k.returnsOrdersTotal || 0)}} · ${{pct(k.returnsOrdersRate || 0)}}` : `${{num(k.returnsOrdersCount || 0)}} · taxa N/D`) : 'N/D', k.returnsAvailable && k.returnsOrdersCount > 0 ? 'danger' : ''],
         ['Receita atribuida ADS', brl(k.adsRevenue), ''],
         ['Receita organica estimada', brl(k.organicRevenue || 0), ''],
         ['Investimento ADS', brl(k.investment), ''],
         ['Base TACOS comercial', brl(k.tacosBaseRevenue || 0), ''],
         ['TACOS geral', pct(k.tacos), k.tacos > .03 ? 'danger' : 'good'],
-        ['ROAS geral', k.roas.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}}), ''],
+        ['ROAS Ads', k.roas.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + 'x', '', k.investment > 0 ? `Faturamento total / investimento Ads: ${{(k.revenue / k.investment).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}x` : 'Faturamento total / investimento Ads: N/D'],
         ['Investiu sem venda ADS', num(k.adsNoSales), k.adsNoSales ? 'danger' : 'good'],
         ['Valor sem venda ADS', brl(k.investmentNoAdsSales), k.investmentNoAdsSales ? 'danger' : 'good']
-      ].map(([label,value,cls]) => `<div class="card kpi ${{cls}}"><small>${{label}}</small><strong>${{value}}</strong></div>`).join('');
+      ].map(([label,value,cls,secondary]) => `<div class="card kpi ${{cls}}"><small>${{label}}</small><strong>${{value}}</strong>${{secondary ? `<span class="kpi-secondary">${{secondary}}</span>` : ''}}</div>`).join('');
     }}
     function renderAlerts() {{
       const k = DATA.kpis;
@@ -2770,7 +3233,7 @@ def render_dashboard(data):
       sources.forEach(source => (source.dailySeries || []).forEach(row => {{
         const date = String(row.date || '');
         if (!date) return;
-        const current = byDate.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, priceFallback:0}};
+        const current = byDate.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, visits:0, priceFallback:0}};
         current.orders += Number(row.orders || 0);
         current.partial = Boolean(current.partial || row.partial);
         current.salesPresent = Boolean(current.salesPresent || row.salesPresent);
@@ -2785,6 +3248,7 @@ def render_dashboard(data):
         current.impressions += Number(row.impressions || 0);
         current.clicks += Number(row.clicks || 0);
         current.adsUnits += Number(row.adsUnits || 0);
+        current.visits += Number(row.visits || 0);
         if (Number(row.lastSalePrice || 0) > 0) current.priceFallback = Number(row.lastSalePrice);
         byDate.set(date, current);
       }}));
@@ -2807,7 +3271,7 @@ def render_dashboard(data):
       const end = new Date(`${{dateTo}}T12:00:00`);
       while (cursor <= end) {{
         const date = cursor.toISOString().slice(0, 10);
-        complete.push(indexed.get(date) || {{date, partial:true, salesPresent:false, adsPresent:false}});
+        complete.push(indexed.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, visits:0, roas:0, tacos:0, price:0, priceFallback:0, partial:true, salesPresent:false, adsPresent:false}});
         cursor.setDate(cursor.getDate() + 1);
       }}
       return complete;
@@ -2816,6 +3280,69 @@ def render_dashboard(data):
       const parsed = new Date(`${{value}}T12:00:00`);
       if (Number.isNaN(parsed.getTime())) return value;
       return new Intl.DateTimeFormat('pt-BR', {{day:'numeric', month:'short'}}).format(parsed).replace(/\\s+de\\s+/g, ' ');
+    }}
+    function observedDailyRevenueFor(item) {{
+      const rawSources = (item.children && item.children.length) ? item.children : [item];
+      const sourcesByCode = new Map();
+      rawSources.forEach((source, index) => {{
+        const code = String(source.code || '').trim();
+        const key = code ? `code:${{code}}` : `row:${{index}}`;
+        if (!sourcesByCode.has(key)) sourcesByCode.set(key, source);
+      }});
+      const byDate = new Map();
+      [...sourcesByCode.values()].forEach(source => (source.dailySeries || []).forEach(row => {{
+        const date = String(row.date || '');
+        if (!/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(date)) return;
+        const current = byDate.get(date) || {{revenue:0, units:0, orders:0, visits:0}};
+        current.revenue += Number(row.revenue || 0);
+        current.units += Number(row.units || 0);
+        current.orders += Number(row.orders || 0);
+        current.visits += Number(row.visits || 0);
+        byDate.set(date, current);
+      }}));
+      return [...byDate.entries()].map(([date, values]) => ({{date, ...values}})).sort((a, b) => a.date.localeCompare(b.date));
+    }}
+    function salesTrendInline(item) {{
+      const byCode = new Map();
+      function visit(source) {{
+        if (source.children && source.children.length) source.children.forEach(visit);
+        else if (source.code && !byCode.has(source.code)) byCode.set(source.code, source.performance7d || {{}});
+      }}
+      visit(item);
+      const sources = [...byCode.values()];
+      const window = sources[0] || {{}};
+      const sameWindow = sources.length > 0 && sources.every(p => p.date_from === window.date_from && p.date_to === window.date_to);
+      function metric(name) {{
+        if (!sameWindow || !sources.every(p => p[name]?.complete === true && Number.isFinite(p[name].previous) && Number.isFinite(p[name].current))) return null;
+        return sources.reduce((sum, p) => ({{previous:sum.previous+p[name].previous, current:sum.current+p[name].current}}), {{previous:0,current:0}});
+      }}
+      const sales = metric('sales'), visits = metric('visits');
+      const fmt = n => n.toLocaleString('pt-BR', {{maximumFractionDigits:1}});
+      function line(label, values) {{
+        if (!values) return `<div>${{label}}: <b>N/D</b> <span class="muted">(histórico incompleto)</span></div>`;
+        const delta = values.previous > 0 ? (values.current / values.previous - 1) * 100 : null;
+        const change = delta === null ? (values.current > 0 ? 'sem base anterior' : 'estável') : `${{delta > 0 ? '▲' : delta < 0 ? '▼' : '—'}} ${{fmt(Math.abs(delta))}}%`;
+        return `<div>${{label}}: <b>${{fmt(values.current)}}</b> <span class="metric-change ${{values.current > values.previous ? 'trend-up' : values.current < values.previous ? 'trend-down' : 'muted'}}">${{change}}</span></div>`;
+      }}
+      let cvr = 'Conversão: <b>N/D</b>';
+      if (sales && visits && visits.current > 0) {{
+        const current = sales.current / visits.current * 100;
+        const previous = visits.previous > 0 ? sales.previous / visits.previous * 100 : null;
+        const delta = previous === null ? null : current - previous;
+        cvr = `Conversão: <b>${{fmt(current)}}%</b> <span class="metric-change ${{delta > 0 ? 'trend-up' : delta < 0 ? 'trend-down' : 'muted'}}">${{delta === null ? '(sem base anterior)' : `${{delta > 0 ? '▲' : delta < 0 ? '▼' : '—'}} ${{fmt(Math.abs(delta))}} pp`}}</span>`;
+      }}
+      const period = window.date_from && window.date_to ? `${{window.current_from}} a ${{window.date_to}} vs ${{window.date_from}} a ${{window.previous_to}}` : '14 dias encerrados necessários';
+      const detail = `${{period}}. Vendas = pedidos; conversão = pedidos / visitas do anúncio. ${{sales ? `Vendas anteriores: ${{fmt(sales.previous)}}. ` : ''}}${{visits ? `Visitas anteriores: ${{fmt(visits.previous)}}.` : ''}}`;
+      const dateLabel = value => /^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$/.test(value || '') ? value.split('-').reverse().join('/') : 'N/D';
+      function tipRow(label, values, percent=false) {{
+        const previous = values && values.previous !== null ? fmt(values.previous) + (percent ? '%' : '') : 'N/D';
+        const delta = !values || values.previous === null ? null : percent ? values.current-values.previous : values.previous > 0 ? (values.current/values.previous-1)*100 : values.current === 0 ? 0 : null;
+        const change = delta === null ? 'N/D' : `${{delta > 0 ? '▲' : delta < 0 ? '▼' : '—'}} ${{fmt(Math.abs(delta))}}${{percent ? ' pp' : '%'}}`;
+        return `<span>${{label}}</span><b>${{previous}}</b><span class="metric-change ${{delta > 0 ? 'trend-up' : delta < 0 ? 'trend-down' : 'muted'}}">${{change}}</span>`;
+      }}
+      const conversion = sales && visits && visits.current > 0 ? {{current:sales.current/visits.current*100, previous:visits.previous > 0 ? sales.previous/visits.previous*100 : null}} : null;
+      const tip = `<strong>Em comparação ao período anterior:</strong><div class="metrics-float-period">Atual: ${{dateLabel(window.current_from)}} a ${{dateLabel(window.date_to)}}<br>Anterior: ${{dateLabel(window.date_from)}} a ${{dateLabel(window.previous_to)}}</div><div class="metrics-float-grid"><span></span><span class="muted">Anterior</span><span class="muted">Variação</span>${{tipRow('Visitas',visits)}}${{tipRow('Vendas',sales)}}${{tipRow('Conversão',conversion,true)}}</div><div class="metrics-float-note">Vendas = pedidos. Conversão = pedidos ÷ visitas do anúncio. N/D indica histórico incompleto ou ausência de base para comparação.</div>`;
+      return `<div class="metrics-7d" tabindex="0" aria-label="Comparação de desempenho dos últimos 7 dias" data-metrics-tip="${{encodeURIComponent(tip)}}">${{line('Vendas 7d', sales)}}${{line('Visitas', visits)}}<div>${{cvr}}</div></div>`;
     }}
     function chartLongDate(value) {{
       const parsed = new Date(`${{value}}T12:00:00`);
@@ -3110,6 +3637,1388 @@ def render_dashboard(data):
         <div class="listing-fact"><span class="muted">Última venda do conjunto</span><b>${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : 'Não informada'}}</b></div>
       </div></div>`;
     }}
+    function promotionDate(offsetDays) {{
+      const value = new Date();
+      value.setUTCDate(value.getUTCDate() + offsetDays);
+      return value.toISOString().slice(0, 10);
+    }}
+    function promotionMoney(value) {{
+      const number = Number(value || 0);
+      return number > 0 ? brl(number) : 'Nao informado';
+    }}
+    function promotionLimits(row) {{
+      const parts = [];
+      if (Number(row.min_discounted_price || 0) > 0) parts.push(`minimo ${{brl(Number(row.min_discounted_price))}}`);
+      if (Number(row.max_discounted_price || 0) > 0) parts.push(`maximo ${{brl(Number(row.max_discounted_price))}}`);
+      if (Number(row.suggested_discounted_price || 0) > 0) parts.push(`sugestao adicional da API ${{brl(Number(row.suggested_discounted_price))}}`);
+      return parts.length ? parts.join(' | ') : 'O Mercado Livre validara o limite na previa.';
+    }}
+    function promotionEffectivePrice(row, item = null) {{
+      const preview = Number(row.preview_price);
+      if (Number.isFinite(preview) && preview > 0) return preview;
+      const price = Number(row.price);
+      if (Number.isFinite(price) && price > 0) return price;
+      const suggested = Number(row.suggested_discounted_price);
+      if (Number.isFinite(suggested) && suggested > 0) return suggested;
+      return Number(item?.suggestedTestPrice || 0);
+    }}
+    function promotionQuoteMatchesPrice(row, price) {{
+      const quotePrice = Number(row.receipt_quote?.price);
+      return row.receipt_quote?.available === true && Number.isFinite(quotePrice) && Number.isFinite(price) && Math.abs(quotePrice - price) <= 0.01;
+    }}
+    function promotionDiscountBreakdown(row) {{
+      const original = Number(row.original_price);
+      const price = Number(row.price);
+      const totalRaw = row.discount_percentage;
+      const sellerRaw = row.seller_percentage;
+      const meliRaw = row.meli_percentage;
+      const boostAmountRaw = row.discount_meli_boost_amount;
+      const boostPercentRaw = row.discount_meli_boosted_percentage;
+      const totalAmount = Number.isFinite(original) && Number.isFinite(price) && original > 0 && price > 0 && original > price
+        ? original - price : null;
+      const totalPercent = totalAmount !== null ? (totalAmount / original) * 100 : Number(totalRaw);
+      const sellerPercent = Number(sellerRaw);
+      const meliPercent = Number(meliRaw);
+      const hasSeller = sellerRaw !== null && sellerRaw !== undefined && sellerRaw !== '' && Number.isFinite(sellerPercent) && sellerPercent >= 0;
+      const hasMeli = meliRaw !== null && meliRaw !== undefined && meliRaw !== '' && Number.isFinite(meliPercent) && meliPercent >= 0;
+      const percent = value => `${{value.toLocaleString('pt-BR', {{minimumFractionDigits:0, maximumFractionDigits:2}})}}%`;
+      const amountFromPercent = value => Number.isFinite(original) && original > 0 ? brl(original * value / 100) : 'N/D';
+      const total = totalAmount !== null || (totalRaw !== null && totalRaw !== undefined && totalRaw !== '' && Number.isFinite(totalPercent) && totalPercent >= 0)
+        ? `${{totalAmount !== null ? brl(totalAmount) + ' | ' : ''}}${{percent(totalPercent)}}`
+        : 'N/D';
+      const seller = hasSeller ? `${{amountFromPercent(sellerPercent)}} | ${{percent(sellerPercent)}}` : 'N/D';
+      const meli = hasMeli ? `${{amountFromPercent(meliPercent)}} | ${{percent(meliPercent)}}` : 'N/D';
+      const boostAmount = Number(boostAmountRaw);
+      const boostPercent = Number(boostPercentRaw);
+      const hasBoostAmount = boostAmountRaw !== null && boostAmountRaw !== undefined && boostAmountRaw !== '' && Number.isFinite(boostAmount) && boostAmount > 0;
+      const hasBoostPercent = boostPercentRaw !== null && boostPercentRaw !== undefined && boostPercentRaw !== '' && Number.isFinite(boostPercent) && boostPercent > 0;
+      const hasBoost = row.boosted_offer === true || hasBoostAmount || hasBoostPercent;
+      const boostParts = [];
+      if (hasBoostAmount) boostParts.push(brl(boostAmount));
+      if (hasBoostPercent) boostParts.push(percent(boostPercent));
+      const boost = hasBoost ? (boostParts.length ? boostParts.join(' | ') : 'Informado pelo Mercado Livre') : 'N/D';
+      return `<div class="promotion-discount-breakdown"><div><span>Desconto total</span><b>${{total}}</b></div><div><span>Parte do vendedor</span><b>${{seller}}</b></div><div><span>Parte Mercado Livre</span><b>${{meli}}</b></div><div><span>Rebate nas tarifas ML</span><b>${{boost}}</b></div></div>`;
+    }}
+    function promotionPreviewHtml(item, state) {{
+      if (!state.preview) return '';
+      const summary = state.preview.summary || {{}};
+      const action = String(summary.action || 'join');
+      const period = summary.start_date ? `<div>Periodo: <b>${{safe(summary.start_date)}} a ${{safe(summary.finish_date)}}</b></div>` : '';
+      const campaign = summary.promotion_name || summary.promotion_id ? `<div>Promocao: <b>${{safe(summary.promotion_name || summary.promotion_id)}}</b></div>` : '';
+      const price = Number(summary.deal_price || 0) > 0 ? `<div>Preço atual: ${{promotionMoney(summary.current_price)}} | preço promocional: <b>${{promotionMoney(summary.deal_price)}}</b> | desconto: ${{Number(summary.discount_percent || 0).toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</div>` : '';
+      const labels = {{remove:'Confirmar saída da promoção', update:'Confirmar alteração no Mercado Livre', replace:'Confirmar substituição do desconto', create_campaign:'Confirmar criação da campanha', create:'Confirmar criação do desconto', join:'Confirmar participação no Mercado Livre'}};
+      const processing = state.confirmation?.status === 'processing';
+      return `<div class="promotion-preview"><b>Prévia pronta; nenhuma alteração foi aplicada.</b>
+        <div>Operação: <b>${{safe(summary.operation_label || action)}}</b></div>${{price}}${{campaign}}${{period}}
+        ${{processing ? `<div class="promotion-processing" role="status"><span class="promotion-spinner" aria-hidden="true"></span><span>Solicitação enviada. Consultando a confirmação no Mercado Livre… tentativa ${{num(state.confirmation.attempt || 1)}}.</span></div>` : `<button class="promotion-confirm" type="button" data-promo-confirm="${{safe(item.code)}}">${{safe(labels[action] || 'Confirmar operação no Mercado Livre')}}</button>`}}
+      </div>`;
+    }}
+    function promotionWriteAccessHtml(data) {{
+      const access = data?.promotion_write_access || {{}};
+      if (access.allowed === false) {{
+        return `<div class="promotion-error"><b>Ações bloqueadas para esta conta.</b><br>${{safe(access.reason || 'A conexão atual não possui autorização de escrita em Ofertas e Promoções. Reconecte a conta no Mercado Livre com a permissão de leitura e escrita.')}}</div>`;
+      }}
+      if (access.allowed === null || access.status === 'unknown') {{
+        return `<div class="muted">A autorização de escrita não pôde ser confirmada preventivamente. Você ainda pode gerar a prévia; antes de aplicar, o Mercado Livre validará a permissão e exibirá o motivo se recusá-la.</div>`;
+      }}
+      return '<div class="promotion-success">Esta conta possui autorização de escrita em Ofertas e Promoções.</div>';
+    }}
+    function promotionValueCell(value, originalPrice) {{
+      if (value == null || value === '') return '<span class="muted">N/D</span>';
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric < 0) return '<span class="muted">—</span>';
+      const percent = `${{numeric.toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%`;
+      const amount = Number.isFinite(originalPrice) && originalPrice > 0 ? brl(originalPrice * numeric / 100) : '';
+      return `<b>${{percent}}</b>${{amount ? `<small>${{amount}}</small>` : ''}}`;
+    }}
+    function promotionTotalCell(row) {{
+      const original = Number(row.original_price);
+      const price = promotionEffectivePrice(row);
+      if (Number.isFinite(original) && Number.isFinite(price) && original > price && price > 0) {{
+        const percent = (original - price) / original * 100;
+        return `<b>${{percent.toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</b><small>${{brl(original - price)}}</small>`;
+      }}
+      return promotionValueCell(row.discount_percentage, original);
+    }}
+    function promotionFriendlyType(row) {{
+      const type = String(row.promotion_type || '').toUpperCase();
+      const labels = {{
+        LIGHTNING:'Oferta relâmpago', PRICE_DISCOUNT:'Desconto por porcentagem',
+        SELLER_CAMPAIGN:'Campanha do vendedor', MARKETPLACE_CAMPAIGN:'Campanha Mercado Livre',
+        DEAL:'Oferta especial', SELLER_COUPON_CAMPAIGN:'Cupom do vendedor'
+      }};
+      return labels[type] || 'Promoção';
+    }}
+    function promotionDisplayName(row) {{
+      const name = String(row.name || '').trim();
+      const type = String(row.promotion_type || '').trim();
+      return !name || name.toUpperCase() === type.toUpperCase() ? promotionFriendlyType(row) : name;
+    }}
+    function promotionDateLabel(value) {{
+      const match = String(value || '').match(/^(\\d{{4}})-(\\d{{2}})-(\\d{{2}})/);
+      return match ? `${{match[3]}}/${{match[2]}}/${{match[1]}}` : 'Não informado';
+    }}
+    function promotionPeriod(row) {{
+      return `Início: ${{promotionDateLabel(row.start_date)}} · Encerramento: ${{promotionDateLabel(row.finish_date)}}`;
+    }}
+    function promotionStatusLabel(row) {{
+      const status = String(row.status || '').toLowerCase();
+      if (status === 'started' || status === 'active') return 'Ativa';
+      if (['scheduled','programmed','pending'].includes(status)) return 'Programada';
+      if (status === 'candidate') return 'Elegível';
+      return status ? 'Disponível' : 'Status não informado';
+    }}
+    function promotionStatusClass(row) {{
+      const status = String(row.status || '').toLowerCase();
+      return status === 'started' || status === 'active' ? '' : 'candidate';
+    }}
+    function promotionSameOpportunity(left, right) {{
+      const leftId = String(left?.promotion_id || left?.campaign_id || '');
+      const rightId = String(right?.promotion_id || right?.campaign_id || '');
+      const leftType = String(left?.promotion_type || '').toUpperCase();
+      const rightType = String(right?.promotion_type || '').toUpperCase();
+      const leftOffer = String(left?.offer_id || '');
+      const rightOffer = String(right?.offer_id || '');
+      const leftFallback = `${{leftType}}|${{String(left?.name || '')}}|${{String(left?.start_date || '')}}|${{String(left?.finish_date || '')}}`;
+      const rightFallback = `${{rightType}}|${{String(right?.name || '')}}|${{String(right?.start_date || '')}}|${{String(right?.finish_date || '')}}`;
+      return (leftId && rightId ? leftId === rightId : leftFallback === rightFallback)
+        && (!leftType || !rightType || leftType === rightType)
+        && (!leftOffer || !rightOffer || leftOffer === rightOffer);
+    }}
+    function promotionPayoutScore(row, item) {{
+      const price = promotionEffectivePrice(row, item);
+      const rebate = Number(row.discount_meli_boost_amount || 0);
+      return (Number.isFinite(price) ? price : 0) + (Number.isFinite(rebate) ? rebate : 0);
+    }}
+    function promotionRankRows(item, rows) {{
+      const normalized = rows.map((row, index) => {{
+        const allocation = promotionDiscountAllocation(row);
+        return {{row, index, total:Number(allocation.total), subsidy:Number(allocation.meli), rebate:Number(row.discount_meli_boost_amount), payout:promotionReceiptValue(row)}};
+      }});
+      const highestDiscount = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.total) ? entry.total : 0));
+      const highestSubsidy = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.subsidy) ? entry.subsidy : 0));
+      const highestPayout = Math.max(0, ...normalized.map(entry => Number.isFinite(entry.payout) ? entry.payout : 0));
+      return normalized.sort((a, b) =>
+        (b.payout - a.payout) || (b.total - a.total) || (b.subsidy - a.subsidy) || (b.rebate - a.rebate) || a.index - b.index
+      ).map(entry => ({{...entry, bestPayout:entry.payout > 0 && entry.payout === highestPayout, bestDiscount:entry.total > 0 && entry.total === highestDiscount, bestSubsidy:entry.subsidy > 0 && entry.subsidy === highestSubsidy}}));
+    }}
+    function promotionTotalCellValue(row) {{
+      const original = Number(row.original_price);
+      const price = promotionEffectivePrice(row);
+      if (Number.isFinite(original) && Number.isFinite(price) && original > price && price > 0) return (original - price) / original * 100;
+      const percentage = Number(row.discount_percentage);
+      return Number.isFinite(percentage) ? percentage : 0;
+    }}
+    function promotionDiscountAllocation(row) {{
+      const total = promotionTotalCellValue(row);
+      const sellerRaw = row.seller_percentage;
+      const meliRaw = row.meli_percentage;
+      let seller = sellerRaw == null || sellerRaw === '' ? null : Number(sellerRaw);
+      let meli = meliRaw == null || meliRaw === '' ? null : Number(meliRaw);
+      let sellerDerived = false;
+      let meliDerived = false;
+      let sellerEstimatedFromTotal = false;
+      if (!Number.isFinite(seller)) seller = null;
+      if (!Number.isFinite(meli)) meli = null;
+      if (seller == null && meli != null && Number.isFinite(total)) {{ seller = Math.max(0, total - meli); sellerDerived = true; }}
+      if (meli == null && seller != null && Number.isFinite(total)) {{ meli = Math.max(0, total - seller); meliDerived = true; }}
+      if (seller == null && meli == null && Number.isFinite(total) && total > 0) {{
+        seller = total;
+        sellerDerived = true;
+        sellerEstimatedFromTotal = true;
+      }}
+      return {{total, seller, meli, sellerDerived, meliDerived, sellerEstimatedFromTotal}};
+    }}
+    function promotionAllocationCell(value, original, derived, derivedLabel) {{
+      const cell = promotionValueCell(value, original);
+      return derived ? `${{cell}}<small>${{safe(derivedLabel || 'Calculado pelo total')}}</small>` : cell;
+    }}
+    function promotionReceiptValue(row) {{
+      if (!promotionQuoteMatchesPrice(row, promotionEffectivePrice(row))) return -Infinity;
+      const value = Number(row.receipt_quote?.receipt_before_cost_tax);
+      return row.receipt_quote?.available === true && Number.isFinite(value) ? value : -Infinity;
+    }}
+    function promotionReceiptCell(row) {{
+      const quote = row.receipt_quote || {{}};
+      if (quote.available !== true) return `<span class="muted">Não calculado</span><small>${{safe(quote.reason || 'Cotação indisponível.')}}</small>`;
+      const effectivePrice = promotionEffectivePrice(row);
+      if (!promotionQuoteMatchesPrice(row, effectivePrice)) return `<span class="muted">Não calculado</span><small>Cotação recebida para ${{brl(Number(quote.price || 0))}}, diferente do preço da oferta ${{brl(effectivePrice)}}; gere uma prévia antes de aplicar.</small>`;
+      const price = Number(quote.price || 0);
+      const fee = Number(quote.sale_fee || 0);
+      const shipping = Number(quote.shipping_cost || 0);
+      const rebate = Number(quote.rebate || 0);
+      const receipt = Number(quote.receipt_before_cost_tax || 0);
+      return `<b>${{brl(receipt)}}</b><small>${{brl(price)}} − tarifa ${{brl(fee)}} − frete ${{brl(shipping)}}${{rebate > 0 ? ` + rebate ${{brl(rebate)}}` : ''}}</small><small>${{safe(quote.label || 'Antes de custo e imposto')}}</small>`;
+    }}
+    function promotionDifalValue(price, profile, icmsOutputRate) {{
+      if (profile?.difalEnabled !== true || profile?.saleType === 'b2b') return 0;
+      const origin = String(profile?.originState || '');
+      const destination = String(profile?.destinationState || '');
+      const internalRate = Number(profile?.destinationIcmsRate);
+      if (!origin || !destination || origin === destination || !Number.isFinite(internalRate)) return 0;
+      const interstateRate = Number(icmsOutputRate);
+      if (!Number.isFinite(interstateRate)) return 0;
+      const interstate = interstateRate / 100;
+      const internal = internalRate / 100;
+      if (financeDifalDoubleBaseStates.has(destination)) {{
+        const firstBase = price - price * interstate;
+        const secondBase = firstBase / (1 - internal);
+        return Math.max(0, secondBase * internal - price * interstate);
+      }}
+      return Math.max(0, price * (internal - interstate));
+    }}
+    function promotionFlexPolicy(price, quote) {{
+      const apiWeight = Number(quote?.billable_weight_kg);
+      const weightTrusted = quote?.billable_weight_unit === 'kg' && Number.isFinite(apiWeight) && apiWeight > 0;
+      const weightEstimated = !weightTrusted;
+      const weight = weightEstimated ? 2 : apiWeight;
+      const fullBonus = weight <= .5 ? 9.89 : (weight <= 5 ? 10.89 : 14.89);
+      const weightBand = weight <= .5 ? 'até 0,5 kg' : (weight <= 5 ? '0,5 a 5 kg' : 'mais de 5 kg');
+      let fixedFee = 0;
+      let bonus = 0;
+      let priceBand = '';
+      if (price < 19) {{ fixedFee = 6.25; bonus = fullBonus; priceBand = 'abaixo de R$ 19'; }}
+      else if (price < 49) {{ fixedFee = 6.65; bonus = fullBonus; priceBand = 'R$ 19 a R$ 48,99'; }}
+      else if (price < 79) {{ fixedFee = 7.75; bonus = fullBonus; priceBand = 'R$ 49 a R$ 78,99'; }}
+      else {{
+        if (typeof quote?.seller_reputation_green !== 'boolean')
+          return {{available:false, reason:'Reputação do vendedor não confirmada pelo Mercado Livre.'}};
+        bonus = quote.seller_reputation_green ? fullBonus * .10 : 0;
+        priceBand = quote.seller_reputation_green ? 'a partir de R$ 79 com reputação verde' : 'a partir de R$ 79 sem bônus Flex';
+      }}
+      const apiWeightSource = quote?.billable_weight_source === 'item_package'
+        ? 'peso da embalagem do anúncio na API' : 'peso faturável da cotação na API (normalizado para kg)';
+      return {{available:true, distance:'média distância', weight, weightBand, weightEstimated,
+        weightSource:weightEstimated ? 'faixa intermediária estimada' : apiWeightSource,
+        fullBonus, fixedFee, bonus, priceBand}};
+    }}
+    function promotionFinancialResult(row, item) {{
+      const quote = row.receipt_quote || {{}};
+      const price = Number(quote.price);
+      const receipt = Number(quote.receipt_before_cost_tax);
+      const fee = Number(quote.sale_fee);
+      const freight = Number(quote.shipping_cost);
+      const rebate = Number(quote.rebate || 0);
+      const sku = String(item?.sku || '').trim();
+      const hasCost = sku && Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku);
+      const cost = hasCost ? Number(financeProfile.costBySku[sku]) : NaN;
+      const profile = (financeProfile.fiscalBySku || {{}})[sku];
+      if (!promotionQuoteMatchesPrice(row, promotionEffectivePrice(row, item)) || ![price,receipt,fee,freight,rebate,cost].every(Number.isFinite) || !profile)
+        return {{available:false}};
+      const legacyRegime = ['simple','presumed','real'].includes(financeProfile.taxRegime) ? financeProfile.taxRegime : null;
+      const regime = ['simple','presumed','real'].includes(profile.taxRegime) ? profile.taxRegime : legacyRegime;
+      const flexCarrierCost = Number(profile.flexCarrierCost ?? financeProfile.flexCarrierCost ?? 0);
+      if (!regime || !Number.isFinite(flexCarrierCost)) return {{available:false}};
+      const flexQuote = row.flex_receipt_quote || {{}};
+      const flexActive = Boolean(row.flex_receipt_quote);
+      const flexQuoteMatches = flexQuote.available === true && Math.abs(Number(flexQuote.price) - price) <= 0.01;
+      const flexPolicyQuote = flexQuoteMatches ? flexQuote : quote;
+      const flexPolicy = flexActive && flexCarrierCost > 0
+        ? promotionFlexPolicy(price, flexPolicyQuote)
+        : {{available:false, reason:flexCarrierCost > 0 ? 'Anúncio sem Flex ativo.' : 'Custo do transportador Flex não informado.'}};
+      const flexReady = flexActive && flexCarrierCost > 0 && flexPolicy.available;
+      const flexNetCost = flexReady ? flexCarrierCost + flexPolicy.fixedFee - flexPolicy.bonus : NaN;
+      const noFlexScenario = {{flexActive, flexAvailable:false, flexCarrierCost, flexPendingReason:flexPolicy.reason || ''}};
+      if (regime === 'simple') {{
+        const simpleTaxRate = Number(profile.simpleTaxRate ?? financeProfile.profitTaxRate);
+        if (!Number.isFinite(simpleTaxRate)) return {{available:false}};
+        const rate = simpleTaxRate / 100;
+        const tax = price * rate;
+        const profit = receipt - cost - tax;
+        const flexProfit = flexReady ? profit + freight - flexNetCost : NaN;
+        return {{available:true, price, receipt, cost, tax, difal:0, profit, margin:price > 0 ? profit / price * 100 : 0,
+          credits:0, debits:tax, fee, freight, rebate, mode:'simple', ...noFlexScenario,
+          flexAvailable:flexReady, flexProfit, flexMargin:flexReady && price > 0 ? flexProfit / price * 100 : NaN,
+          flexFee:fee, flexFixedFee:flexReady ? flexPolicy.fixedFee : NaN, flexBonus:flexReady ? flexPolicy.bonus : NaN,
+          flexWeight:flexReady ? flexPolicy.weight : NaN, flexWeightBand:flexReady ? flexPolicy.weightBand : '',
+          flexWeightEstimated:flexReady ? flexPolicy.weightEstimated : false, flexWeightSource:flexReady ? flexPolicy.weightSource : '',
+          flexPriceBand:flexReady ? flexPolicy.priceBand : '', flexDistance:flexReady ? flexPolicy.distance : '', flexNetCost,
+          flexIgnoredShippingCost:flexReady ? freight : NaN}};
+      }}
+      const rate = key => {{ const value = Number(profile[key]); return Number.isFinite(value) ? value / 100 : 0; }};
+      const grossCost = profile.costBasis !== 'net';
+      const real = regime === 'real';
+      const inputIpi = grossCost ? cost * rate('ipiInputRate') : 0;
+      const inputIcmsProduct = grossCost ? cost * rate('icmsInputRate') : 0;
+      const inputPisCost = real && grossCost ? cost * rate('pisCofinsInputRate') : 0;
+      const outputIpi = price * rate('ipiOutputRate');
+      const outputIcms = price * rate('icmsOutputRate');
+      const outputPisBase = Math.max(0, price - outputIpi - outputIcms);
+      const outputPis = outputPisBase * rate('pisCofinsOutputRate');
+      const presumedTax = regime === 'presumed' ? price * rate('presumedTaxRate') : 0;
+      const difal = promotionDifalValue(price, profile, Number(profile.icmsOutputRate));
+      const detailedScenario = (scenarioReceipt, scenarioFreight, carrierCost = 0, scenarioFee = fee, scenarioRebate = rebate) => {{
+        const commissionFiscalBase = Math.max(0, scenarioFee - scenarioRebate);
+        const inputPisCommission = real ? commissionFiscalBase * rate('pisCofinsInputRate') : 0;
+        const freightCredit = real && profile.freightCreditEnabled === true;
+        const inputPisFreight = freightCredit ? scenarioFreight * rate('pisCofinsInputRate') : 0;
+        const inputIcmsFreight = freightCredit ? scenarioFreight * rate('freightIcmsCreditRate') : 0;
+        const netIpi = Math.max(0, outputIpi - inputIpi);
+        const netIcms = Math.max(0, outputIcms - inputIcmsProduct - inputIcmsFreight);
+        const netPis = Math.max(0, outputPis - inputPisCost - inputPisCommission - inputPisFreight);
+        const tax = netIpi + netIcms + netPis + presumedTax;
+        return {{tax, profit:scenarioReceipt - cost - tax - difal - carrierCost,
+          credits:inputIpi + inputIcmsProduct + inputIcmsFreight + inputPisCost + inputPisCommission + inputPisFreight}};
+      }};
+      const traditional = detailedScenario(receipt, freight);
+      const tax = traditional.tax;
+      const profit = traditional.profit;
+      const flexProfit = flexReady ? profit + freight - flexNetCost : NaN;
+      return {{available:true, price, receipt, cost, tax, difal, profit, margin:price > 0 ? profit / price * 100 : 0,
+        credits:traditional.credits, debits:outputIpi + outputIcms + outputPis + presumedTax,
+        fee, freight, rebate, mode:'detailed', ...noFlexScenario, flexAvailable:flexReady,
+        flexProfit, flexMargin:flexReady && price > 0 ? flexProfit / price * 100 : NaN,
+        flexFee:fee, flexFixedFee:flexReady ? flexPolicy.fixedFee : NaN, flexBonus:flexReady ? flexPolicy.bonus : NaN,
+        flexWeight:flexReady ? flexPolicy.weight : NaN, flexWeightBand:flexReady ? flexPolicy.weightBand : '',
+        flexWeightEstimated:flexReady ? flexPolicy.weightEstimated : false, flexWeightSource:flexReady ? flexPolicy.weightSource : '',
+        flexPriceBand:flexReady ? flexPolicy.priceBand : '', flexDistance:flexReady ? flexPolicy.distance : '', flexNetCost,
+        flexIgnoredShippingCost:flexReady ? freight : NaN}};
+    }}
+    function promotionMarginCell(row, item) {{
+      const quote = row.receipt_quote || {{}};
+      const price = Number(quote.price);
+      const receipt = Number(quote.receipt_before_cost_tax);
+      if (quote.available !== true || !Number.isFinite(price) || price <= 0 || !Number.isFinite(receipt))
+        return '<span class="muted">N/D</span>';
+      if (!promotionQuoteMatchesPrice(row, promotionEffectivePrice(row, item)))
+        return '<span class="muted">N/D</span><small>Cotação divergente; gere uma prévia atualizada.</small>';
+      const fee = Number(quote.sale_fee);
+      const freight = Number(quote.shipping_cost);
+      const rebate = Number(quote.rebate || 0);
+      if (![fee, freight, rebate].every(Number.isFinite)) return '<span class="muted">N/D</span>';
+      const percentage = (receipt / price * 100).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
+      const line = (label, value) => `<div class="promotion-margin-line"><span>${{label}}</span><b>${{value}}</b></div>`;
+      const result = promotionFinancialResult(row, item);
+      if (result.available) {{
+        const margin = result.margin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
+        const flexMargin = result.flexAvailable ? result.flexMargin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}}) : '';
+        const flexWarning = result.flexAvailable && result.flexMargin < promotionMarginTarget;
+        const flexScenario = result.flexAvailable ? `<div class="promotion-margin-note"><b>Cenário consultivo Flex · média distância${{result.flexWeightEstimated ? ' · estimado' : ''}}</b>${{line('Tarifa de venda', '−' + brl(result.flexFee))}}${{line('Frete tradicional', 'Desconsiderado')}}${{line(`Taxa Flex · ${{result.flexPriceBand}}`, '−' + brl(result.flexFixedFee))}}${{line(`Bônus ML · ${{result.flexWeightBand}}`, '+' + brl(result.flexBonus))}}${{line('Transportador Flex informado', '−' + brl(result.flexCarrierCost))}}${{line('Custo líquido Flex', '−' + brl(result.flexNetCost))}}${{line('Resultado com Flex', brl(result.flexProfit))}}${{line('Margem com Flex', flexMargin + '%')}}Cálculo validado pela regra da calculadora: substitui o frete normal por transportador + taxa Flex − bônus do Mercado Livre. Peso usado: ${{result.flexWeight.toLocaleString('pt-BR',{{maximumFractionDigits:3}})}} kg (${{safe(result.flexWeightSource)}}).${{result.flexWeightEstimated ? ' Como a API não informou o peso faturável, foi usada a faixa intermediária de 0,5 a 5 kg; o valor é consultivo.' : ''}}</div>` : (result.flexActive ? `<div class="promotion-margin-note"><b>Flex ativo</b> ${{safe(result.flexPendingReason || 'Configure o custo do transportador Flex para calcular o cenário consultivo.')}}</div>` : '');
+        const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}${{line('Custo do produto', '−' + brl(result.cost))}}${{line('Débitos fiscais', '−' + brl(result.debits))}}${{line('Créditos fiscais aproveitados', '+' + brl(result.credits))}}${{result.difal > 0 ? line('DIFAL', '−' + brl(result.difal)) : line('DIFAL', brl(0))}}<div class="promotion-margin-total">${{line('Lucro líquido estimado', brl(result.profit))}}</div><div class="promotion-margin-note">Margem líquida estimada: ${{margin}}%. Rebate, tarifa e frete vêm da cotação da oportunidade; custo e parâmetros fiscais vêm do SKU. O Flex não compõe esta margem.</div>${{flexScenario}}`;
+        return `<span class="promotion-margin-value ${{result.profit < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small>${{flexWarning ? `<span class="promotion-flex-warning">⚠ Flex ativo: margem ${{flexMargin}}%, abaixo da meta de ${{promotionMarginTarget.toLocaleString('pt-BR')}}%</span>` : (result.flexActive && !result.flexAvailable ? '<small>Flex ativo · cálculo pendente</small>' : '')}}</span>`;
+      }}
+      const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{line('Custo do produto', 'Não informado')}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line('Saldo antes de custo e imposto', brl(receipt))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. A margem de contribuição real depende do custo e do imposto cadastrados; estes não foram assumidos como zero.</div>`;
+      return `<span class="promotion-margin-value ${{receipt < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small></span>`;
+    }}
+    function promotionTableRow(item, entry, allowAction, listing = null, selection = null) {{
+      const {{row:sourceRow, index, payout, bestPayout, bestDiscount, bestSubsidy}} = entry;
+      // Campaign/group views keep a snapshot of each opportunity. Prefer the live
+      // per-MLB row so an edited preview price survives the following re-render.
+      const liveRows = listing ? (promotionState.get(item.code)?.data?.promotions || []) : [];
+      const liveRow = listing ? liveRows.find(candidate => promotionSameOpportunity(candidate, sourceRow)) : null;
+      const row = liveRow || sourceRow;
+      const original = Number(row.original_price || item.currentPrice || item.lastPrice || 0);
+      const allocation = promotionDiscountAllocation(row);
+      const price = promotionEffectivePrice(row, item);
+      const status = String(row.status || 'status não informado');
+      const active = ['started', 'active'].includes(status.toLowerCase());
+      const quoteConsistent = row.receipt_quote?.available !== true || promotionQuoteMatchesPrice(row, price);
+      const canJoin = allowAction && row.can_join === true && !active && quoteConsistent;
+      const canUpdate = allowAction && row.can_update === true && active && quoteConsistent;
+      const canRemove = allowAction && row.can_leave === true && active;
+      const actionControls = canJoin || canUpdate
+        ? `<div class="promotion-form"><button type="button" title="Gerar prévia para revisar antes da confirmação" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Alterar' : 'Participar'}}</button>${{canRemove ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>` : ''}}</div>`
+        : (canRemove
+          ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>`
+          : `<span class="muted">${{safe(!quoteConsistent ? 'Cotação divergente; gere uma prévia atualizada antes de aplicar.' : row.read_only_reason || 'Somente leitura')}}</span>`);
+      const quote = row.receipt_quote || {{}};
+      const receipt = quote.available === true ? brl(Number(quote.receipt_before_cost_tax || 0)) : 'Não calculado';
+      const primaryAction = canJoin || canUpdate ? `<button type="button" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Alterar' : 'Participar'}}</button>` : '';
+      const leaveAction = canRemove ? `<button type="button" class="secondary-action" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>` : '';
+      const directState = listing ? (promotionState.get(item.code) || {{}}) : {{}};
+      const directAction = canJoin
+        ? `<button type="button" data-promo-direct="${{index}}" data-promo-operation="join" data-promo-item="${{safe(item.code)}}"${{directState.loading ? ' disabled' : ''}}>${{directState.loading ? 'Participando...' : 'Participar'}}</button>`
+        : (canUpdate
+          ? `<button type="button" data-promo-direct="${{index}}" data-promo-operation="update" data-promo-item="${{safe(item.code)}}"${{directState.loading ? ' disabled' : ''}}>${{directState.loading ? 'Alterando...' : 'Alterar'}}</button>`
+          : (canRemove ? `<button type="button" class="secondary-action" data-promo-direct="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}"${{directState.loading ? ' disabled' : ''}}>${{directState.loading ? 'Saindo...' : 'Sair'}}</button>` : ''));
+      const directFeedback = directState.loading
+        ? '<span class="promotion-action-status">Processando no Mercado Livre...</span>'
+        : (directState.error
+          ? `<span class="promotion-action-status promotion-action-error">${{safe(directState.error)}}</span>`
+          : (directState.result ? '<span class="promotion-action-status promotion-action-success">Ação confirmada. Lista atualizada.</span>' : ''));
+      const directReview = listing ? `${{promotionPreviewHtml(item, directState)}}${{directState.error ? `<div class="promotion-error">${{safe(directState.error)}}</div>` : ''}}${{directState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}` : '';
+      const dialogPrimaryAction = directState.preview ? '' : primaryAction;
+      const action = listing && (canJoin || canUpdate || canRemove)
+        ? `<div class="promotion-inline-actions">${{directAction}}<button type="button" class="promotion-settings-button" data-promo-config-open aria-label="Configurar promoção de ${{safe(item.code)}}" title="Configurar promoção">⚙</button>${{directFeedback}}<dialog class="promotion-config-dialog" data-promo-dialog-key="${{safe(item.code)}}:${{index}}" aria-label="Configurar promoção de ${{safe(item.code)}}"><div class="promotion-config-head"><h3>${{directState.preview ? 'Revise e confirme a promoção' : canUpdate ? 'Alterar promoção' : canJoin ? 'Participar da promoção' : 'Sair da promoção'}}</h3><button type="button" class="promotion-config-close" data-promo-config-close aria-label="Fechar">×</button></div><div class="promotion-config-body"><div class="promotion-config-product">${{productImage({{thumbnailUrl:listing.thumbnailUrl,title:listing.title}})}}<div><b>${{safe(listing.title)}}</b><span>${{safe(listing.code)}}${{listing.sku ? ` · SKU ${{safe(listing.sku)}}` : ''}}</span></div></div><div class="promotion-config-campaign">${{safe(promotionDisplayName(row))}} · ${{safe(promotionPeriod(row))}}</div><div class="promotion-config-metrics"><div><span>Preço original</span><b>${{original > 0 ? brl(original) : '—'}}</b></div><div><span>Preço promocional sugerido</span><b>${{price > 0 ? brl(price) : '—'}}</b></div><div><span>Subsídio Mercado Livre</span><b>${{allocation.meli == null ? 'N/D' : `${{allocation.meli.toLocaleString('pt-BR',{{maximumFractionDigits:2}})}}%${{allocation.meliDerived ? ' (calculado)' : ''}}`}}</b></div></div><div class="promotion-config-editor">${{primaryAction && row.action_mode !== 'join_fixed_offer' ? `<label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label>` : `<div class="promotion-config-note">${{primaryAction ? 'Preço definido pela campanha.' : 'A saída não altera o preço nesta prévia.'}}</div>`}}<div class="promotion-config-receipt"><span>Você recebe (estim.)</span><b>${{receipt}}</b><span>${{quote.available === true ? 'Antes de custo e imposto' : safe(quote.reason || 'Tarifa ou frete não informado pelo Mercado Livre.')}}</span></div></div><div class="promotion-config-note">${{safe(promotionLimits(row))}}. A confirmação abaixo é a única etapa que aplica esta ação no Mercado Livre.</div>${{directReview}}</div><div class="promotion-config-footer"><button type="button" data-promo-config-close>${{directState.preview ? 'Rejeitar e fechar' : 'Fechar'}}</button>${{directState.preview ? '' : leaveAction}}${{dialogPrimaryAction}}</div></dialog></div>`
+        : actionControls;
+      const rebate = Number(row.discount_meli_boost_amount);
+      const rebatePercent = Number(row.discount_meli_boosted_percentage);
+      const rebateText = Number.isFinite(rebate) && rebate > 0 ? `<b>${{brl(rebate)}}</b>${{Number.isFinite(rebatePercent) && rebatePercent > 0 ? `<small>${{rebatePercent.toLocaleString('pt-BR', {{maximumFractionDigits:2}})}}%</small>` : ''}}` : '<span class="muted">—</span>';
+      const classes = `${{bestPayout ? 'promotion-best-payout ' : ''}}${{bestDiscount ? 'promotion-best-discount ' : ''}}${{bestSubsidy ? 'promotion-best-subsidy' : ''}}`;
+      const payoutBadge = bestPayout ? '<span class="promotion-rank">Maior recebimento estimado</span>' : '';
+      const discountBadge = bestDiscount ? '<span class="promotion-rank">Maior desconto</span>' : '';
+      const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
+      const bulkEnabled = typeof PROMOTION_BULK_ENABLED !== 'undefined' && PROMOTION_BULK_ENABLED;
+      const selectionControl = bulkEnabled && selection ? `<input class="promotion-bulk-select" type="checkbox" data-promo-bulk-select="${{safe(selection.key)}}" data-promo-scope-key="${{safe(selection.scopeKey)}}"${{selection.checked ? ' checked' : ''}} aria-label="Selecionar ${{safe(item.code)}} para prévia coletiva">` : '';
+      const identity = listing ? `<div class="promotion-listing-select">${{selectionControl}}<div class="promotion-listing-identity">${{productImage({{thumbnailUrl:listing.thumbnailUrl, title:listing.title}})}}<div><b>${{safe(listing.code)}}</b><small class="promotion-listing-name">${{safe(listing.title)}}</small>${{listing.sku ? `<small class="promotion-listing-sku">SKU ${{safe(listing.sku)}}</small>` : ''}}${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}<small class="promotion-listing-campaign">${{safe(promotionDisplayName(row))}}</small><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span></div></div></div>` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
+      const editablePrice = (canJoin || canUpdate) && row.action_mode !== 'join_fixed_offer';
+      const minimumPrice = Number(row.min_discounted_price);
+      const maximumPrice = Number(row.max_discounted_price);
+      const priceLimits = `${{Number.isFinite(minimumPrice) && minimumPrice > 0 ? ` min="${{minimumPrice}}"` : ' min="0.01"'}}${{Number.isFinite(maximumPrice) && maximumPrice > 0 ? ` max="${{maximumPrice}}"` : ''}}`;
+      const financial = promotionFinancialResult(row, item);
+      const currentMargin = financial.available && Number.isFinite(financial.margin) ? financial.margin : null;
+      const priceCell = editablePrice
+        ? `<div class="promotion-price-editor"><label><span>Preço promocional</span><input type="number"${{priceLimits}} step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"></label><label><span>Margem desejada (%)</span><input class="promotion-target-margin" type="number" min="-99" max="99" step="0.01" value="${{currentMargin == null ? '' : currentMargin.toFixed(2)}}" data-promo-target-margin="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"${{currentMargin == null ? ' disabled' : ''}}></label><span class="promotion-target-feedback" data-promo-target-feedback="${{index}}">${{currentMargin == null ? 'Cadastre custo e impostos para calcular por margem.' : 'Altere o preço ou informe a margem desejada.'}}</span><small>Preço sugerido; edite para recalcular antes de aprovar</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></div>`
+        : `<b>${{price > 0 ? brl(price) : '—'}}</b><small>${{active ? 'Preço promocional ativo' : 'Preço da oportunidade retornado pela API'}}</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small>`;
+      return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionAllocationCell(allocation.meli, original, allocation.meliDerived)}}${{subsidyBadge}}</td><td class="num">${{promotionAllocationCell(allocation.seller, original, allocation.sellerDerived, allocation.sellerEstimatedFromTotal ? 'Estimado pelo total; subsídio ML não informado' : '')}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b><small>Preço original</small></td><td class="num">${{priceCell}}</td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{promotionMarginCell(row, item)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
+    }}
+    function promotionTableHtml(item, rows, allowAction = false) {{
+      const ranked = promotionRankRows(item, rows);
+      const listing = allowAction ? {{
+        code:item.code, title:item.title || item.name || item.code,
+        sku:item.sku || '', mlbu:item.userProductId || '', thumbnailUrl:item.thumbnailUrl || ''
+      }} : null;
+      const body = ranked.map(entry => promotionTableRow(item, entry, allowAction, listing)).join('');
+      if (!body) return '<div class="detail-modal-empty">Nenhuma campanha elegível retornada.</div>';
+      return `<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Promoção e período</th><th>Subsídio ML</th><th>Desconto vendedor</th><th>Desconto total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div>`;
+    }}
+    function promotionScopeLabel(item) {{
+      return item.detailScope === 'family' ? 'família' : item.detailScope === 'mlbu' ? 'variação/MLBU' : item.detailScope === 'sku' ? 'SKU' : item.detailScope === 'campaign' ? 'campanha' : 'grupo';
+    }}
+    function promotionScopeItems(item) {{
+      const sources = (item.children && item.children.length) ? item.children : [item];
+      const seen = new Set();
+      return sources.filter(source => {{
+        const code = String(source.code || '').toUpperCase();
+        if (!/^MLB[0-9]+$/.test(code) || seen.has(code)) return false;
+        seen.add(code);
+        return true;
+      }});
+    }}
+    function promotionScopeKey(item) {{
+      if (item.promotionGuide) return `scope:guide:${{item.detailScope}}:${{item.detailId}}`;
+      return `scope:${{detailKey(item)}}`;
+    }}
+    function promotionCampaignGroups(results) {{
+      const groups = new Map();
+      results.forEach(result => {{
+        if (!result.data) return;
+        (result.data.promotions || []).forEach((row, index) => {{
+          const type = String(row.promotion_type || '').toUpperCase();
+          const id = String(row.promotion_id || row.campaign_id || '').trim();
+          const name = promotionDisplayName(row);
+          const key = id ? `${{type}}:id:${{id}}` : `${{type}}:name:${{name.toLocaleLowerCase('pt-BR')}}:${{row.start_date || ''}}:${{row.finish_date || ''}}`;
+          if (!groups.has(key)) groups.set(key, {{key, name, row, listings:[]}});
+          groups.get(key).listings.push({{code:result.code, title:result.data.item?.title || result.code, mlbu:result.data.item?.user_product_id || '', row, index}});
+        }});
+      }});
+      return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    }}
+    function promotionVisibleListings(state) {{
+      const visibleResults = (state.results || []).filter(result => promotionMatchesScopeSearch(result, state.scopeSearch));
+      const selectedCampaignKey = String(state.campaignKey || '');
+      return promotionCampaignGroups(visibleResults)
+        .filter(group => !selectedCampaignKey || group.key === selectedCampaignKey)
+        .flatMap(group => group.listings.map(listing => ({{
+          ...listing,
+          campaignKey:group.key,
+          campaignName:group.name,
+          selectionKey:`${{group.key}}|${{listing.code}}|${{listing.index}}`
+        }})));
+    }}
+    function promotionScopeBulkToolbarHtml(state, scopeKey) {{
+      if (!PROMOTION_BULK_ENABLED) return '';
+      const listings = promotionVisibleListings(state);
+      const selected = new Set(state.selectedListingKeys || []);
+      const visibleKeys = listings.map(listing => listing.selectionKey);
+      const selectedCount = visibleKeys.filter(selectionKey => selected.has(selectionKey)).length;
+      return `<div class="promotion-bulk-toolbar" data-promo-bulk-group="visible"><label><input type="checkbox" data-promo-bulk-all-visible data-promo-scope-key="${{safe(scopeKey)}}"${{selectedCount === visibleKeys.length && visibleKeys.length ? ' checked' : ''}}> Selecionar os ${{num(visibleKeys.length)}} anúncios desta visão</label><label>Ação<select data-promo-bulk-operation><option value="join">Participar</option><option value="update">Alterar</option><option value="remove">Sair</option></select></label><button type="button" data-promo-bulk-preview-visible data-promo-scope-key="${{safe(scopeKey)}}"${{selectedCount ? '' : ' disabled'}}>Gerar ${{num(selectedCount)}} prévia(s)</button><span class="muted">Atua somente nos itens carregados e visíveis pelo filtro atual; nenhuma alteração é aplicada nesta etapa.</span></div>`;
+    }}
+    function promotionMatchesScopeSearch(result, query) {{
+      const needle = String(query || '').trim().toLocaleUpperCase('pt-BR');
+      if (!needle) return true;
+      const item = result.data?.item || {{}};
+      return [result.code, item.seller_sku, item.user_product_id, item.title]
+        .some(value => String(value || '').toLocaleUpperCase('pt-BR').includes(needle));
+    }}
+    function promotionSkuGroups(results, sources) {{
+      const sourceByCode = new Map(sources.map(source => [String(source.code || '').toUpperCase(), source]));
+      const groups = new Map();
+      results.forEach(result => {{
+        const source = sourceByCode.get(String(result.code || '').toUpperCase()) || {{}};
+        const sku = String(source.sku || result.data?.item?.seller_sku || 'SKU não informado').trim() || 'SKU não informado';
+        if (!groups.has(sku)) groups.set(sku, {{sku, results:[]}});
+        groups.get(sku).results.push(result);
+      }});
+      return [...groups.values()].sort((a, b) => a.sku.localeCompare(b.sku, 'pt-BR'));
+    }}
+    function promotionBulkRunUpdate(scopeKey, selectionKey, patch) {{
+      const state = promotionState.get(scopeKey) || {{}};
+      const bulkRun = state.bulkRun || {{items:[]}};
+      const items = (bulkRun.items || []).map(item => item.selectionKey === selectionKey ? {{...item, ...patch}} : item);
+      promotionStateUpdate(scopeKey, {{bulkRun:{{...bulkRun, items}}}});
+    }}
+    function promotionBulkSummaryHtml(state, scopeKey) {{
+      if (!PROMOTION_BULK_ENABLED) return '';
+      const run = state.bulkRun;
+      if (!run?.items?.length) return '';
+      const ready = run.items.filter(item => item.status === 'ready').length;
+      const errors = run.items.filter(item => item.status === 'error').length;
+      const pending = run.items.length - ready - errors;
+      const readyKeys = new Set(run.items.filter(item => item.status === 'ready').map(item => item.selectionKey));
+      const approvedKeys = new Set((run.approvedSelectionKeys || []).filter(key => readyKeys.has(key)));
+      const stagedKeys = new Set((run.confirmation?.selectionKeys || []).filter(key => readyKeys.has(key)));
+      const executionSuccess = run.items.filter(item => item.executionStatus === 'success').length;
+      const executionErrors = run.items.filter(item => item.executionStatus === 'error').length;
+      const executionRunning = run.items.filter(item => item.executionStatus === 'running').length;
+      const executionPending = run.items.filter(item => item.executionStatus === 'pending').length;
+      const actionLabel = run.operation === 'join' ? 'Participar' : run.operation === 'update' ? 'Alterar' : 'Sair';
+      const rows = run.items.map(item => {{
+        const status = item.executionStatus === 'success' ? 'Aplicada' : item.executionStatus === 'error' ? 'Falhou' : item.executionStatus === 'running' ? `Consultando (${{item.executionAttempt || 1}}/30)` : item.executionStatus === 'pending' ? 'Aguardando Mercado Livre' : item.status === 'ready' ? 'Prévia pronta' : item.status === 'error' ? 'Impedido' : 'Preparando';
+        const statusClass = item.executionStatus === 'success' ? 'ready' : item.executionStatus === 'error' ? 'error' : item.status;
+        const margin = Number.isFinite(item.margin) ? `${{brl(item.profit)}} · ${{item.margin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}%` : 'Margem N/D';
+        const approval = item.executionStatus === 'success'
+          ? `<span class="muted">Confirmada no Mercado Livre</span>`
+          : item.executionStatus === 'pending'
+          ? `<span class="muted">Solicitação já enviada; consulte novamente sem reenviar.</span>`
+          : item.status === 'ready'
+          ? `<label><input type="checkbox" data-promo-bulk-approve="${{safe(item.selectionKey)}}" data-promo-scope-key="${{safe(scopeKey)}}"${{approvedKeys.has(item.selectionKey) ? ' checked' : ''}}> Aprovar para execução</label>`
+          : `<span class="muted">${{safe(item.error || '')}}</span>`;
+        const error = ['error','pending'].includes(item.executionStatus) ? `<span class="muted">${{safe(item.executionError || 'Falha não informada')}}</span>` : '';
+        return `<div class="promotion-bulk-summary-row"><div><b>${{safe(item.code)}}</b><small>${{safe(item.sku || 'SKU não informado')}} · ${{safe(item.title || '')}}</small></div><div><span class="muted">Ação</span><b>${{safe(actionLabel)}}</b></div><div><span class="muted">Preço</span><b>${{item.price > 0 ? brl(item.price) : '—'}}</b></div><div><span class="muted">Resultado estimado</span><b>${{margin}}</b></div><div><span class="promotion-bulk-status ${{statusClass}}">${{status}}</span>${{error}}${{approval}}</div></div>`;
+      }}).join('');
+      const allReadyApproved = ready > 0 && approvedKeys.size === ready;
+      const executionCandidates = executionErrors > 0
+        ? run.items.filter(item => stagedKeys.has(item.selectionKey) && item.executionStatus === 'error').length
+        : run.items.filter(item => stagedKeys.has(item.selectionKey) && !['success','pending'].includes(item.executionStatus)).length;
+      const executionLabel = executionErrors > 0 ? `Repetir ${{executionCandidates}} falha(s)` : `Executar ${{executionCandidates}} promoção(ões)`;
+      const executionSummary = executionSuccess || executionErrors || executionRunning || executionPending ? `${{executionSuccess}} aplicada(s), ${{executionErrors}} falha(s), ${{executionRunning}} em consulta e ${{executionPending}} aguardando retorno.` : 'Nenhuma promoção foi aplicada.';
+      const execution = stagedKeys.size ? `<div class="promotion-success"><b>Lote revisado:</b> ${{stagedKeys.size}} promoção(ões) autorizada(s). ${{executionSummary}}</div>${{executionCandidates && !executionRunning ? `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-execution-ack data-promo-scope-key="${{safe(scopeKey)}}"${{run.executionAcknowledged ? ' checked' : ''}}> Confirmo a aplicação destas promoções no Mercado Livre</label><button class="promotion-confirm" type="button" data-promo-bulk-execute data-promo-scope-key="${{safe(scopeKey)}}"${{run.executionAcknowledged ? '' : ' disabled'}}>${{executionLabel}}</button><span class="muted">Execução sequencial por MLB; falhas não interrompem nem repetem os itens já confirmados.</span></div>` : ''}}` : '';
+      const controls = executionSuccess || executionErrors || executionRunning || executionPending ? '' : `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-approve-all data-promo-scope-key="${{safe(scopeKey)}}"${{allReadyApproved ? ' checked' : ''}}${{ready ? '' : ' disabled'}}> Aprovar todas as prévias válidas</label><button type="button" data-promo-bulk-stage-confirm data-promo-scope-key="${{safe(scopeKey)}}"${{approvedKeys.size ? '' : ' disabled'}}>Confirmar ${{approvedKeys.size}} para próxima etapa</button><span class="muted">Esta confirmação apenas forma o lote; ainda não envia nada ao Mercado Livre.</span></div>`;
+      return `<div class="promotion-bulk-summary"><div class="promotion-bulk-summary-head"><div><b>Resumo das prévias coletivas</b><div class="muted">${{safe(run.campaignName || 'Campanha')}} · revise cada MLB antes de formar o lote.</div></div><div><b>${{ready}} pronta(s)</b> · ${{errors}} impedida(s) · ${{pending}} em processamento</div></div>${{controls}}${{execution}}<div class="promotion-bulk-summary-list">${{rows}}</div></div>`;
+    }}
+    function promotionMarginRecommendations(results, sources, target, campaignKey = '', query = '') {{
+      const sourceByCode = new Map(sources.map(source => [String(source.code || '').toUpperCase(), source]));
+      const groups = promotionCampaignGroups(results.filter(result => promotionMatchesScopeSearch(result, query)));
+      const candidates = [];
+      let blocked = 0;
+      let belowTarget = 0;
+      let unavailable = 0;
+      groups.filter(group => !campaignKey || group.key === campaignKey).forEach(group => group.listings.forEach(listing => {{
+        const source = sourceByCode.get(listing.code) || {{}};
+        const active = ['started','active'].includes(String(listing.row.status || '').toLowerCase());
+        if (active || listing.row.can_join !== true) {{ unavailable += 1; return; }}
+        const financial = promotionFinancialResult(listing.row, source);
+        if (!financial.available) {{ blocked += 1; return; }}
+        if (financial.margin < target) {{ belowTarget += 1; return; }}
+        candidates.push({{
+          code:listing.code, campaignKey:group.key, campaignName:group.name, index:listing.index,
+          selectionKey:`${{group.key}}|${{listing.code}}|${{listing.index}}`,
+          receipt:financial.receipt, profit:financial.profit, margin:financial.margin,
+          flexActive:financial.flexActive === true,
+          flexAvailable:financial.flexAvailable === true,
+          flexMargin:financial.flexAvailable ? financial.flexMargin : null
+        }});
+      }}));
+      const bestByListing = new Map();
+      candidates.forEach(candidate => {{
+        const current = bestByListing.get(candidate.code);
+        if (!current || candidate.receipt > current.receipt || (candidate.receipt === current.receipt && candidate.profit > current.profit))
+          bestByListing.set(candidate.code, candidate);
+      }});
+      const recommended = [...bestByListing.values()].sort((a, b) => b.receipt - a.receipt || b.profit - a.profit || a.code.localeCompare(b.code));
+      const flexAlerts = recommended.filter(candidate => candidate.flexActive && candidate.flexAvailable && candidate.flexMargin < target).length;
+      const flexPending = recommended.filter(candidate => candidate.flexActive && !candidate.flexAvailable).length;
+      return {{recommended, qualifying:candidates.length, blocked, belowTarget, unavailable, flexAlerts, flexPending}};
+    }}
+    function promotionRecommendationHtml(recommendation, scopeKey, target, campaignKey, selectedListingKeys = []) {{
+      if (!PROMOTION_BULK_ENABLED) return '';
+      const count = recommendation.recommended.length;
+      const selected = new Set(selectedListingKeys || []);
+      const selectedRecommended = recommendation.recommended.filter(item => selected.has(item.selectionKey)).length;
+      const context = campaignKey ? 'na campanha selecionada' : 'entre as campanhas carregadas';
+      return `<div class="promotion-recommendation"><div class="promotion-recommendation-head"><div><b>Seleção consultiva por margem</b><div class="muted">Analisa oportunidades com ação Participar disponível, usa envio tradicional e escolhe, para cada MLB, o maior valor líquido recebido ${{context}}. Flex aparece apenas como alerta e não reprova a promoção.</div></div><div><button type="button" data-promo-recommend data-promo-scope-key="${{safe(scopeKey)}}"${{count ? '' : ' disabled'}}>Selecionar ${{num(count)}} recomendada(s)</button> <button type="button" data-promo-recommend-preview data-promo-scope-key="${{safe(scopeKey)}}"${{selectedRecommended ? '' : ' disabled'}}>Gerar ${{num(selectedRecommended)}} prévia(s) consultiva(s)</button></div></div><div class="promotion-recommendation-stats"><span><b>${{num(count)}}</b> recomendada(s)</span><span><b>${{num(recommendation.qualifying)}}</b> acima de ${{target.toLocaleString('pt-BR')}}%</span><span><b>${{num(recommendation.belowTarget)}}</b> abaixo da meta</span><span><b>${{num(recommendation.blocked)}}</b> sem cálculo completo</span><span><b>${{num(recommendation.unavailable)}}</b> sem ação Participar</span><span><b>${{num(recommendation.flexAlerts)}}</b> alerta(s) Flex abaixo da meta</span><span><b>${{num(recommendation.flexPending)}}</b> Flex pendente(s)</span></div><div class="muted" style="margin-top:8px">Selecionar apenas marca as linhas. Gerar prévias consulta e assina cada proposta individualmente, mas não confirma nem aplica nenhuma promoção.</div></div>`;
+    }}
+    function promotionScopePanelHtml(item) {{
+      const sources = promotionScopeItems(item);
+      const key = promotionScopeKey(item);
+      const state = promotionState.get(key) || {{}};
+      const label = promotionScopeLabel(item);
+      if (state.loading) return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consultando ${{num(sources.length)}} anúncio(s) individualmente...</div></div>`;
+      if (!state.results) return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta em lote de ${{num(sources.length)}} MLB(s). Cada ação fica vinculada ao MLB exibido na própria linha e é enviada ao clicar no botão correspondente.</div><button type="button" data-promo-load-scope="${{safe(key)}}" data-promo-scope-codes="${{safe(sources.map(source => String(source.code || '').toUpperCase()).join(','))}}">Consultar promoções da ${{safe(label)}}</button>${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
+      const view = state.view || 'hybrid';
+      const searchQuery = String(state.scopeSearch || '');
+      const visibleResults = state.results.filter(result => promotionMatchesScopeSearch(result, searchQuery));
+      const selector = `<div class="promotion-scope-search"><label>Filtrar anúncios carregados<input type="search" value="${{safe(searchQuery)}}" placeholder="SKU, MLB, MLBU ou título" data-promo-scope-search data-promo-scope-key="${{safe(key)}}"></label><span class="muted">${{num(visibleResults.length)}} de ${{num(state.results.length)}} carregados correspondem ao filtro.</span></div><div class="promotion-scope-view" aria-label="Visualizar promoções por"><button type="button" data-promo-scope-view="campaign" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'campaign'}}">Campanha</button><button type="button" data-promo-scope-view="sku" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'sku'}}">SKU</button><button type="button" data-promo-scope-view="hybrid" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'hybrid'}}">Híbrida</button><button type="button" data-promo-scope-view="listing" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{view === 'listing'}}">Anúncio/variação</button></div>`;
+      const allCampaignGroups = promotionCampaignGroups(state.results);
+      const campaignGroups = promotionCampaignGroups(visibleResults);
+      const selectedCampaignKey = String(state.campaignKey || '');
+      const selectedListingKeys = new Set(state.selectedListingKeys || []);
+      const bulkSummary = promotionBulkSummaryHtml(state, key);
+      const recommendation = promotionMarginRecommendations(state.results, sources, promotionMarginTarget, selectedCampaignKey, searchQuery);
+      const recommendationHtml = promotionRecommendationHtml(recommendation, key, promotionMarginTarget, selectedCampaignKey, state.selectedListingKeys || []);
+      const scopeBulkToolbar = promotionScopeBulkToolbarHtml(state, key);
+      const campaignInventory = `<div class="promotion-option"><h5>Campanhas encontradas neste grupo</h5><div class="muted">Selecione uma campanha para ver somente os anúncios vinculados a ela.</div><div class="promotion-card-grid"><button type="button" class="promotion-campaign-card" data-promo-campaign-filter="" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{!selectedCampaignKey}}"><b>Todas as campanhas</b><span class="muted">${{num(allCampaignGroups.length)}} campanha(s)</span></button>${{allCampaignGroups.map(group => `<button type="button" class="promotion-campaign-card" data-promo-campaign-filter="${{safe(group.key)}}" data-promo-scope-key="${{safe(key)}}" aria-pressed="${{selectedCampaignKey === group.key}}"><b>${{safe(group.name)}}</b><span class="muted">${{safe(promotionStatusLabel(group.row))}} · ${{num(group.listings.length)}} anúncio(s) carregado(s)</span><span class="muted">${{safe(promotionPeriod(group.row))}}</span></button>`).join('')}}</div></div>`;
+      const results = visibleResults.map(result => {{
+        const title = result.data?.item?.title || result.code;
+        if (result.error) return `<div class="promotion-option"><b>${{safe(result.code)}}</b><p class="muted">${{safe(title)}}</p><div class="promotion-error">${{safe(result.error)}}</div></div>`;
+        const sourceItem = sources.find(candidate => String(candidate.code || '').toUpperCase() === result.code) || {{}};
+        const source = {{...item, ...sourceItem, code:result.code, currentPrice:result.data?.item?.price || item.currentPrice}};
+        const individualState = promotionState.get(result.code) || {{}};
+        const listingRows = promotionVisibleListings(state).filter(listing => listing.code === result.code).map(listing => {{
+          const entry = {{row:listing.row, index:listing.index, payout:promotionReceiptValue(listing.row), bestPayout:false, bestDiscount:false, bestSubsidy:false}};
+          return promotionTableRow(source, entry, true, {{...listing, sku:source.sku || result.data?.item?.seller_sku || '', thumbnailUrl:source.thumbnailUrl || ''}}, {{key:listing.selectionKey, scopeKey:key, checked:selectedListingKeys.has(listing.selectionKey)}});
+        }}).join('');
+        const table = listingRows ? `<div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Anúncio/variação</th><th>Subsídio ML</th><th>Desconto vendedor</th><th>Desconto total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{listingRows}}</tbody></table></div>` : '<div class="detail-modal-empty">Nenhuma campanha corresponde ao filtro atual.</div>';
+        return `<div class="promotion-option" data-promotion-item="${{safe(result.code)}}"><b>${{safe(result.code)}}</b><p class="muted">Ação sempre será aplicada somente neste MLB: ${{safe(title)}}</p>${{promotionWriteAccessHtml(result.data)}}${{table}}${{promotionPreviewHtml(source, individualState)}}${{individualState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}${{individualState.error ? `<div class="promotion-error">${{safe(individualState.error)}}</div>` : ''}}</div>`;
+      }}).join('');
+      const byCampaign = campaignGroups.filter(group => !selectedCampaignKey || group.key === selectedCampaignKey).map(group => {{
+        const listings = group.listings.sort((a, b) => (a.mlbu || '').localeCompare(b.mlbu || '', 'pt-BR') || a.code.localeCompare(b.code, 'pt-BR'));
+        const body = listings.map(listing => {{
+          const sourceItem = sources.find(source => String(source.code).toUpperCase() === listing.code) || {{}};
+          listing = {{...listing, sku:sourceItem.sku || '', thumbnailUrl:sourceItem.thumbnailUrl || '', mlbu:sourceItem.userProductId || listing.mlbu}};
+          const source = {{...item, code:listing.code, currentPrice:state.results.find(result => result.code === listing.code)?.data?.item?.price || item.currentPrice}};
+          const individualState = promotionState.get(listing.code) || {{}};
+          const entry = {{row:listing.row, index:listing.index, payout:promotionReceiptValue(listing.row), bestPayout:false, bestDiscount:false, bestSubsidy:false}};
+          const selectionKey = `${{group.key}}|${{listing.code}}|${{listing.index}}`;
+          return promotionTableRow(source, entry, true, listing, {{key:selectionKey, scopeKey:key, checked:selectedListingKeys.has(selectionKey)}});
+        }}).join('');
+        return `<div class="promotion-option"><h5>${{safe(group.name)}}</h5><div class="muted">${{safe(promotionPeriod(group.row))}} · ${{num(listings.length)}} anúncio(s)</div><div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Anúncio/variação</th><th>Subsídio ML</th><th>Desconto vendedor</th><th>Desconto total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{body}}</tbody></table></div></div>`;
+      }}).join('') || '<div class="detail-modal-empty">Nenhuma campanha retornada para os anúncios consultados.</div>';
+      const bySku = promotionSkuGroups(visibleResults, sources).map(group => {{
+        const skuResults = group.results.filter(result => result.data);
+        const campaignCards = promotionCampaignGroups(skuResults).map(campaign => `<div class="promotion-campaign-card"><b>${{safe(campaign.name)}}</b><span class="muted">${{num(campaign.listings.length)}} anúncio(s)</span></div>`).join('');
+        const listingPanels = skuResults.map(result => {{
+          const sourceItem = sources.find(source => String(source.code || '').toUpperCase() === result.code) || {{}};
+          const source = {{...item, ...sourceItem, code:result.code, currentPrice:result.data?.item?.price || item.currentPrice}};
+          const rows = promotionVisibleListings(state).filter(listing => listing.code === result.code).map(listing => {{
+            const entry = {{row:listing.row, index:listing.index, payout:promotionReceiptValue(listing.row), bestPayout:false, bestDiscount:false, bestSubsidy:false}};
+            return promotionTableRow(source, entry, true, {{...listing, sku:group.sku, thumbnailUrl:source.thumbnailUrl || ''}}, {{key:listing.selectionKey, scopeKey:key, checked:selectedListingKeys.has(listing.selectionKey)}});
+          }}).join('');
+          return `<div class="promotion-hybrid-sku"><h6>${{safe(result.code)}} · ${{safe(result.data?.item?.title || '')}}</h6><div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Anúncio/variação</th><th>Subsídio ML</th><th>Desconto vendedor</th><th>Desconto total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{rows}}</tbody></table></div></div>`;
+        }}).join('');
+        const errors = group.results.filter(result => result.error).map(result => `<div class="promotion-error">${{safe(result.code)}}: ${{safe(result.error)}}</div>`).join('');
+        return `<div class="promotion-option"><h5>SKU ${{safe(group.sku)}}</h5><div class="promotion-card-grid">${{campaignCards || '<span class="muted">Nenhuma campanha encontrada.</span>'}}</div>${{listingPanels}}${{errors}}</div>`;
+      }}).join('');
+      const hybrid = campaignGroups.filter(group => !selectedCampaignKey || group.key === selectedCampaignKey).map(group => {{
+        const skuMap = new Map();
+        group.listings.forEach(listing => {{
+          const source = sources.find(candidate => String(candidate.code || '').toUpperCase() === listing.code) || {{}};
+          const sku = String(source.sku || 'SKU não informado');
+          if (!skuMap.has(sku)) skuMap.set(sku, []);
+          skuMap.get(sku).push({{...listing, source}});
+        }});
+        const skuBlocks = [...skuMap.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')).map(([sku, listings]) => {{
+          const rows = listings.map(listing => {{
+            const source = {{...item, ...listing.source, code:listing.code, currentPrice:state.results.find(result => result.code === listing.code)?.data?.item?.price || item.currentPrice}};
+            const entry = {{row:listing.row, index:listing.index, payout:promotionReceiptValue(listing.row), bestPayout:false, bestDiscount:false, bestSubsidy:false}};
+            const selectionKey = `${{group.key}}|${{listing.code}}|${{listing.index}}`;
+            return promotionTableRow(source, entry, true, {{...listing, sku, thumbnailUrl:listing.source.thumbnailUrl || ''}}, {{key:selectionKey, scopeKey:key, checked:selectedListingKeys.has(selectionKey)}});
+          }}).join('');
+          return `<div class="promotion-hybrid-sku"><h6>SKU ${{safe(sku)}} · ${{num(listings.length)}} anúncio(s)</h6><div class="promotion-table-wrap"><table class="promotion-table"><thead><tr><th>Anúncio/variação</th><th>Subsídio ML</th><th>Desconto vendedor</th><th>Desconto total</th><th>Preço original</th><th>Preço promocional</th><th>Você recebe (estim.)</th><th>MC parcial</th><th>Rebate ML</th><th>Ação</th></tr></thead><tbody>${{rows}}</tbody></table></div></div>`;
+        }}).join('');
+        return `<div class="promotion-option"><h5>${{safe(group.name)}}</h5><div class="muted">${{safe(promotionPeriod(group.row))}} · campanha → SKU → MLB</div>${{skuBlocks}}</div>`;
+      }}).join('') || '<div class="detail-modal-empty">Nenhuma campanha retornada para os anúncios consultados.</div>';
+      const failures = visibleResults.filter(result => result.error).map(result => `<div class="promotion-error">${{safe(result.code)}}: ${{safe(result.error)}}</div>`).join('');
+      const accessNotices = state.results.filter(result => result.data).map(result => {{
+        const access = result.data?.promotion_write_access || {{}};
+        return access.allowed === false || access.status === 'unknown' || access.allowed === null
+          ? `<div class="promotion-option"><b>${{safe(result.code)}}</b>${{promotionWriteAccessHtml(result.data)}}</div>`
+          : '';
+      }}).join('');
+      const content = view === 'campaign' ? byCampaign : view === 'sku' ? bySku : view === 'hybrid' ? hybrid : results;
+      const loaded = Number(state.results.length || 0);
+      const total = Number(state.sourceTotal || loaded);
+      const pagination = item.detailScope === 'campaign'
+        ? `<div class="promotion-bulk-toolbar"><span><b>${{num(loaded)}}</b> anúncio(s) carregado(s)${{total > loaded ? ` de ${{num(total)}}` : ''}}.</span>${{state.nextSearchAfter ? `<button type="button" data-promo-campaign-more data-promo-scope-key="${{safe(key)}}"${{state.loadingMore ? ' disabled' : ''}}>${{state.loadingMore ? 'Carregando...' : 'Carregar próximos anúncios'}}</button>` : ''}}</div>`
+        : '';
+      return `<div class="promotion-panel"><h4>Promoções da ${{safe(label)}}</h4><div class="muted">Consulta concluída por MLB. Preços, subsídios e ações são individuais para cada anúncio.</div>${{campaignInventory}}${{selector}}${{pagination}}${{scopeBulkToolbar}}${{recommendationHtml}}${{bulkSummary}}<div class="promotion-panel-grid promotion-scope-list">${{accessNotices}}${{content}}${{failures}}</div></div>`;
+    }}
+    function promotionPanelHtml(item) {{
+      const code = String(item.code || '').toUpperCase();
+      const state = promotionState.get(code) || {{}};
+      if (state.loading) return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promocoes do Mercado Livre</h4><div class="muted">Consultando elegibilidade e limites atuais...</div></div>`;
+      if (!state.data) return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promocoes do Mercado Livre</h4><div class="muted">Consulte as campanhas elegiveis e os limites atuais antes de gerar uma previa.</div><button type="button" data-promo-load="${{safe(code)}}">Consultar promocoes</button>${{state.error ? `<div class="promotion-error">${{safe(state.error)}}</div>` : ''}}</div>`;
+      const data = state.data;
+      const campaigns = promotionTableHtml(item, data.promotions || [], true);
+      const customAllowed = data.can_create_price_discount === true;
+      const custom = `<div class="promotion-option"><b>Criar desconto proprio</b><p class="muted">Desconto individual: minimo 5%, menor que 80% e duracao maxima de 14 dias.</p>${{customAllowed
+        ? `<div class="promotion-form"><label>Preco promocional<input type="number" min="0.01" step="0.01" value="${{Number(item.suggestedTestPrice || 0) || ''}}" data-promo-custom-price></label><label>Inicio<input type="date" value="${{promotionDate(0)}}" data-promo-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-finish></label><button type="button" data-promo-custom="${{safe(code)}}">Criar desconto</button></div>`
+        : `<div class="muted">Indisponivel: ${{safe(data.price_discount_read_only_reason || 'o anuncio nao atende aos requisitos atuais')}}.</div>`}}</div>`;
+      const sellerCampaign = `<div class="promotion-option"><b>Criar campanha do vendedor</b><p class="muted">Cria uma campanha flexível de até 14 dias. Após confirmá-la, atualize as oportunidades e escolha o preço para incluir este anúncio.</p><div class="promotion-form"><label>Nome<input type="text" maxlength="80" data-promo-campaign-name></label><label>Início<input type="date" value="${{promotionDate(0)}}" data-promo-campaign-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-campaign-finish></label><button type="button" data-promo-create-campaign="${{safe(code)}}">Gerar prévia da campanha</button></div></div>`;
+      return `<div class="promotion-panel" data-promotion-item="${{safe(code)}}"><h4>Promoções do Mercado Livre</h4><div class="muted">Conta e anúncio validados: ${{safe(data.item?.title || code)}}; preço atual ${{promotionMoney(data.item?.price)}}. Clique em Participar, Alterar ou Sair para abrir a revisão local antes da aplicação no Mercado Livre.</div>${{promotionWriteAccessHtml(data)}}${{campaigns}}<div class="promotion-panel-grid">${{custom}}${{sellerCampaign}}</div></div>`;
+    }}
+    async function promotionApiRequest(path, method = 'GET', body = null) {{
+      const options = {{ method, headers: {{'Accept':'application/json'}} }};
+      if (method !== 'GET') {{
+        options.headers['Content-Type'] = 'application/json';
+        options.headers['X-Promotion-CSRF'] = DATA.promotionApi?.csrfToken || '';
+        options.body = JSON.stringify(body || {{}});
+      }}
+      const response = await fetch(path, options);
+      const payload = await response.json().catch(() => ({{}}));
+      if (!response.ok || payload.ok === false) {{
+        const contractDetail = payload.error === 'agent_response_not_json'
+          ? ` Código: ${{payload.error}}; agente HTTP ${{payload.upstream_status || response.status}}; tipo ${{payload.upstream_content_type || 'indisponível'}}.`
+          : '';
+        const error = new Error(`${{payload.message || payload.error || `Falha HTTP ${{response.status}}`}}${{contractDetail}}`);
+        error.code = payload.error || '';
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
+      }}
+      return payload;
+    }}
+    function promotionConfirmationMatches(data, preview) {{
+      const summary = preview?.summary || {{}};
+      const action = String(summary.action || 'join').toLowerCase();
+      const promotionId = String(summary.promotion_id || '');
+      const promotionType = String(summary.promotion_type || '').toUpperCase();
+      const expectedPrice = Number(summary.deal_price || 0);
+      const rows = Array.isArray(data?.promotions) ? data.promotions : [];
+      const matchesIdentity = row => (!promotionId || String(row.promotion_id || '') === promotionId)
+        && (!promotionType || String(row.promotion_type || '').toUpperCase() === promotionType);
+      if (action === 'remove') return !rows.some(row => matchesIdentity(row) && ['started','active','pending','programmed','scheduled'].includes(String(row.status || '').toLowerCase()));
+      return rows.some(row => {{
+        if (!matchesIdentity(row) || !['started','active','pending','programmed','scheduled'].includes(String(row.status || '').toLowerCase())) return false;
+        const observedPrice = Number(row.price || row.deal_price || 0);
+        return !(expectedPrice > 0 && observedPrice > 0) || Math.abs(expectedPrice - observedPrice) <= 0.01;
+      }});
+    }}
+    function promotionMergeFreshData(previousData, freshData) {{
+      const previousRows = Array.isArray(previousData?.promotions) ? previousData.promotions : [];
+      const freshRows = Array.isArray(freshData?.promotions) ? freshData.promotions : [];
+      return {{...freshData, promotions:freshRows.map(fresh => {{
+        const previous = previousRows.find(candidate => promotionSameOpportunity(candidate, fresh)) || {{}};
+        return {{...previous, ...fresh, preview_price:null, target_margin:null, name:fresh.name || previous.name, start_date:fresh.start_date || previous.start_date, finish_date:fresh.finish_date || previous.finish_date}};
+      }})}};
+    }}
+    function promotionPropagateFreshData(code, freshData) {{
+      const normalized = String(code || '').toUpperCase();
+      promotionState.forEach((state, key) => {{
+        if (!Array.isArray(state.results)) return;
+        let changed = false;
+        const results = state.results.map(result => {{
+          if (String(result.code || '').toUpperCase() !== normalized) return result;
+          changed = true;
+          return {{...result, data:promotionMergeFreshData(result.data || {{}}, freshData)}};
+        }});
+        if (changed) promotionState.set(key, {{...state, results}});
+      }});
+      return promotionMergeFreshData(promotionState.get(code)?.data || {{}}, freshData);
+    }}
+    async function waitForPromotionConfirmation(code, preview, onAttempt = null) {{
+      const maxAttempts = 30;
+      let lastError = null;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {{
+        if (onAttempt) onAttempt(attempt, maxAttempts);
+        if (attempt > 1) await new Promise(resolve => setTimeout(resolve, 2000));
+        try {{
+          const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
+          if (promotionConfirmationMatches(data, preview)) return {{confirmed:true, data, attempt, maxAttempts}};
+        }} catch (error) {{
+          lastError = error;
+        }}
+      }}
+      return {{confirmed:false, attempt:maxAttempts, maxAttempts, error:lastError}};
+    }}
+    async function pollPromotionConfirmation(code, preview, firstResult = null) {{
+      const outcome = await waitForPromotionConfirmation(code, preview, (attempt, maxAttempts) => {{
+        promotionStateUpdate(code, {{loading:false, confirmation:{{status:'processing', attempt, maxAttempts}}, error:'', result:null}});
+      }});
+      if (outcome.confirmed) {{
+        activePromotionConfigKey = null;
+        const freshData = promotionPropagateFreshData(code, outcome.data);
+        promotionStateUpdate(code, {{loading:false, data:freshData, preview:null, result:firstResult || {{ok:true}}, confirmation:{{status:'approved', attempt:outcome.attempt}}, error:''}});
+        loadPromotionAudit();
+        return true;
+      }}
+      promotionStateUpdate(code, {{loading:false, confirmation:{{status:'pending', attempt:outcome.attempt}}, error:'A solicitação continua aguardando confirmação do Mercado Livre. Não envie novamente; consulte o estado mais tarde.'}});
+      return false;
+    }}
+    function restorePromotionConfigDialog() {{
+      if (!activePromotionConfigKey) return;
+      const dialog = [...document.querySelectorAll('dialog.promotion-config-dialog')].find(candidate => candidate.dataset.promoDialogKey === activePromotionConfigKey);
+      if (dialog && !dialog.open) dialog.showModal();
+    }}
+    function promotionStateUpdate(code, patch) {{
+      promotionState.set(code, {{...(promotionState.get(code) || {{}}), ...patch}});
+      renderTable();
+      if (activeDetailKey) renderDetailModal();
+      if (promotionGuideItem && (code === promotionGuideItem.code || code === promotionScopeKey(promotionGuideItem) || promotionScopeItems(promotionGuideItem).some(item => item.code === code))) renderPromotionGuide();
+      restorePromotionConfigDialog();
+    }}
+    function resolvePromotionGuideItem(raw, items) {{
+      const query = String(raw || '').trim().toUpperCase();
+      if (!query) return {{error:'Informe um SKU, MLB, MLBU ou código de família.'}};
+      const exactSku = items.filter(item => String(item.sku || '').trim().toUpperCase() === query);
+      if (exactSku.length) return {{item:{{promotionGuide:true, detailScope:'sku', detailId:query, code:`SKU:${{query}}`, sku:query, children:exactSku}}}};
+      const digits = query.replace(/^(?:MLBU|MLB|FAM[IÍ]LIA|FAMILY)\\s*[-:#]?\\s*/i, '');
+      if (!/^[0-9]+$/.test(digits)) return {{error:'SKU não encontrado na análise atual. Confira o código exato ou informe MLB, MLBU ou família.'}};
+      const family = query.startsWith('MLB') ? [] : items.filter(item => String(item.familyId || '') === digits);
+      const mlbu = query.startsWith('MLB') && !query.startsWith('MLBU') ? [] : items.filter(item => String(item.userProductId || '') === digits);
+      if (query.startsWith('MLBU') && !mlbu.length || /^(?:FAM[IÍ]LIA|FAMILY)/.test(query) && !family.length)
+        return {{error:'Esse grupo não foi encontrado nos anúncios da análise atual.'}};
+      if (family.length) return {{item:{{promotionGuide:true, detailScope:'family', detailId:digits, code:digits, children:family}}}};
+      if (mlbu.length) return {{item:{{promotionGuide:true, detailScope:'mlbu', detailId:digits, code:digits, children:mlbu}}}};
+      const code = `MLB${{digits}}`;
+      const direct = items.find(item => String(item.code || '').trim().toUpperCase() === code);
+      return {{item:direct ? {{...direct}} : {{code}}}};
+    }}
+    function renderPromotionCampaignCatalog() {{
+      const target = document.getElementById('promotionAccountCampaigns');
+      if (!target) return;
+      if (promotionCampaignCatalog.loading) {{
+        target.innerHTML = '<div class="muted">Carregando campanhas diretamente do Mercado Livre...</div>';
+        return;
+      }}
+      if (promotionCampaignCatalog.error) {{
+        target.innerHTML = `<div class="promotion-error">${{safe(promotionCampaignCatalog.error)}}</div><button type="button" data-promo-catalog-retry>Tentar novamente</button>`;
+        return;
+      }}
+      if (!promotionCampaignCatalog.loaded) {{
+        target.innerHTML = '<span class="muted">Abra a guia Promoções para carregar as campanhas.</span>';
+        return;
+      }}
+      if (!promotionCampaignCatalog.campaigns.length) {{
+        target.innerHTML = '<div class="detail-modal-empty">O Mercado Livre não retornou campanhas para esta conta.</div>';
+        return;
+      }}
+      target.innerHTML = `<div class="promotion-card-grid">${{promotionCampaignCatalog.campaigns.map(campaign => {{
+        const eligible = campaign.eligible_count == null ? 'N/D' : num(campaign.eligible_count);
+        const participating = campaign.participating_count == null ? 'N/D' : num(campaign.participating_count);
+        return `<button type="button" class="promotion-campaign-card" data-account-promotion-id="${{safe(campaign.promotion_id)}}" data-account-promotion-type="${{safe(campaign.promotion_type)}}" aria-pressed="false"><b>${{safe(campaign.name || promotionFriendlyType(campaign))}}</b><span class="promotion-status ${{promotionStatusClass(campaign)}}">${{safe(promotionStatusLabel(campaign))}}</span><span class="promotion-campaign-counts"><span>Elegíveis: ${{eligible}}</span><span>Participando: ${{participating}}</span></span><span class="muted">${{safe(promotionPeriod(campaign))}}</span></button>`;
+      }}).join('')}}</div>`;
+    }}
+    async function loadPromotionCampaignCatalog(force = false) {{
+      if (promotionCampaignCatalog.loading || (promotionCampaignCatalog.loaded && !force)) return;
+      promotionCampaignCatalog = {{...promotionCampaignCatalog, loading:true, error:''}};
+      renderPromotionCampaignCatalog();
+      try {{
+        let data;
+        try {{
+          data = await promotionApiRequest('/api/promotions/campaigns');
+        }} catch (firstError) {{
+          // Render may answer HTML while agente-ml is waking up. Retry this
+          // read-only request once before showing the diagnostic to the user.
+          await new Promise(resolve => setTimeout(resolve, 800));
+          data = await promotionApiRequest('/api/promotions/campaigns');
+        }}
+        promotionCampaignCatalog = {{loading:false, loaded:true, campaigns:Array.isArray(data.campaigns) ? data.campaigns : [], error:''}};
+      }} catch (error) {{
+        promotionCampaignCatalog = {{loading:false, loaded:true, campaigns:[], error:error.message}};
+      }}
+      renderPromotionCampaignCatalog();
+    }}
+    async function openPromotionAccountCampaign(button) {{
+      const promotionId = String(button.dataset.accountPromotionId || '');
+      const promotionType = String(button.dataset.accountPromotionType || '');
+      const campaign = promotionCampaignCatalog.campaigns.find(candidate => String(candidate.promotion_id) === promotionId && String(candidate.promotion_type) === promotionType);
+      if (!campaign) return;
+      button.disabled = true;
+      const originalLabel = button.innerHTML;
+      button.innerHTML = `<b>${{safe(campaign.name || promotionId)}}</b><span class="muted">Carregando anúncios...</span>`;
+      try {{
+        const data = await promotionApiRequest(`/api/promotions/campaign-items?promotion_id=${{encodeURIComponent(promotionId)}}&promotion_type=${{encodeURIComponent(promotionType)}}`);
+        const page = promotionCampaignPage(data, campaign);
+        promotionGuideItem = {{promotionGuide:true, detailScope:'campaign', detailId:`${{promotionType}}:${{promotionId}}`, campaignId:promotionId, campaignType:promotionType, code:`CAMPAIGN:${{promotionType}}:${{promotionId}}`, title:campaign.name || promotionId, children:page.children}};
+        const key = promotionScopeKey(promotionGuideItem);
+        promotionState.set(key, {{loading:false, results:page.results, error:'', view:'campaign', campaignKey:'', nextSearchAfter:data.next_search_after || '', sourceTotal:Number(data.source_total || page.results.length), loadingMore:false}});
+        renderPromotionGuide();
+        document.getElementById('promotionGuideResult')?.scrollIntoView({{behavior:'smooth', block:'start'}});
+      }} catch (error) {{
+        const target = document.getElementById('promotionGuideResult');
+        if (target) target.innerHTML = `<div class="promotion-error">${{safe(error.message)}}</div>`;
+      }} finally {{
+        button.disabled = false;
+        button.innerHTML = originalLabel;
+      }}
+    }}
+    function promotionCampaignPage(data, campaign) {{
+      const children = [];
+      const results = [];
+      (Array.isArray(data.items) ? data.items : []).forEach(entry => {{
+          const code = String(entry.item_id || '').toUpperCase();
+          if (!/^MLB[0-9]+$/.test(code) || !entry.promotion) return;
+          const known = allItems.find(item => String(item.code || '').toUpperCase() === code) || {{}};
+          const remote = entry.item && typeof entry.item === 'object' ? entry.item : {{}};
+          const campaignMeli = campaign.meli_percentage;
+          const campaignSeller = campaign.seller_percentage;
+          const row = {{
+            ...entry.promotion,
+            name:campaign.name || entry.promotion.name || entry.promotion.promotion_type,
+            meli_percentage:entry.promotion.meli_percentage ?? campaignMeli,
+            seller_percentage:entry.promotion.seller_percentage ?? campaignSeller,
+            discount_allocation_source:'campaign_catalog',
+          }};
+          const currentPrice = Number(known.currentPrice || remote.price || row.original_price || row.price || 0);
+          const source = {{...known, code, title:known.title || remote.title || code, currentPrice, thumbnailUrl:known.thumbnailUrl || remote.thumbnail || '', sku:known.sku || remote.seller_sku || '', userProductId:known.userProductId || remote.user_product_id || ''}};
+          children.push(source);
+          const itemData = {{ok:true, item:{{id:code, title:source.title, price:currentPrice, thumbnail:source.thumbnailUrl, seller_sku:source.sku, user_product_id:source.userProductId}}, promotions:[row], promotion_write_access:data.promotion_write_access || {{allowed:null, status:'unknown'}}}};
+          promotionState.set(code, {{...(promotionState.get(code) || {{}}), loading:false, data:itemData, error:''}});
+          results.push({{code, data:itemData}});
+      }});
+      return {{children, results}};
+    }}
+    async function loadMorePromotionCampaign(button) {{
+      if (!promotionGuideItem || promotionGuideItem.detailScope !== 'campaign') return;
+      const key = button.dataset.promoScopeKey || promotionScopeKey(promotionGuideItem);
+      const state = promotionState.get(key) || {{}};
+      if (!state.nextSearchAfter || state.loadingMore) return;
+      promotionState.set(key, {{...state, loadingMore:true}});
+      renderPromotionGuide();
+      try {{
+        const campaign = promotionCampaignCatalog.campaigns.find(candidate => String(candidate.promotion_id) === String(promotionGuideItem.campaignId) && String(candidate.promotion_type) === String(promotionGuideItem.campaignType)) || {{name:promotionGuideItem.title}};
+        const data = await promotionApiRequest(`/api/promotions/campaign-items?promotion_id=${{encodeURIComponent(promotionGuideItem.campaignId)}}&promotion_type=${{encodeURIComponent(promotionGuideItem.campaignType)}}&search_after=${{encodeURIComponent(state.nextSearchAfter)}}`);
+        const page = promotionCampaignPage(data, campaign);
+        const existing = new Set((state.results || []).map(result => result.code));
+        const newResults = page.results.filter(result => !existing.has(result.code));
+        const childCodes = new Set((promotionGuideItem.children || []).map(item => String(item.code || '').toUpperCase()));
+        promotionGuideItem.children = [...(promotionGuideItem.children || []), ...page.children.filter(item => !childCodes.has(String(item.code || '').toUpperCase()))];
+        promotionState.set(key, {{...state, results:[...(state.results || []), ...newResults], nextSearchAfter:data.next_search_after || '', sourceTotal:Number(data.source_total || state.sourceTotal || 0), loadingMore:false, error:''}});
+      }} catch (error) {{
+        promotionState.set(key, {{...state, loadingMore:false, error:error.message}});
+      }}
+      renderPromotionGuide();
+    }}
+    function renderPromotionGuide() {{
+      const target = document.getElementById('promotionGuideResult');
+      if (!target || !promotionGuideItem) return;
+      const item = promotionGuideItem;
+      const state = promotionState.get(item.code) || {{}};
+      target.innerHTML = item.detailScope
+        ? promotionScopePanelHtml(item)
+        : promotionPanelHtml({{...item, currentPrice:state.data?.item?.price || item.currentPrice || 0}});
+      activatePromotionPanels();
+    }}
+    function promotionAuditHtml(entries) {{
+      if (!entries.length) return '<p>Nenhuma confirmação registrada nesta conta pelo Dash Ads.</p>';
+      return `<div class="scroll-frame"><table><thead><tr><th>Data</th><th>MLB</th><th>Resultado</th><th>Auditoria do agente</th></tr></thead><tbody>${{entries.map(entry => `<tr><td>${{safe(new Date(Number(entry.created_at || 0) * 1000).toLocaleString('pt-BR'))}}</td><td>${{safe(entry.item_id)}}</td><td>${{entry.status === 'success' ? 'Confirmada' : 'Falhou'}}${{entry.idempotent ? ' (repetição segura)' : ''}}</td><td>${{safe(entry.agent_audit_id || 'N/D')}}</td></tr>`).join('')}}</tbody></table></div>`;
+    }}
+    async function loadPromotionAudit() {{
+      const target = document.getElementById('promotionAuditResult');
+      target.textContent = 'Carregando histórico...';
+      try {{
+        const data = await promotionApiRequest('/api/promotions/audit');
+        target.innerHTML = promotionAuditHtml(data.entries || []);
+      }} catch (error) {{ target.innerHTML = `<p class="promotion-error">${{safe(error.message)}}</p>`; }}
+    }}
+    async function promotionRunCollectivePreview(scopeKey, jobs, campaignName, operation = 'join') {{
+      if (!jobs.length) return;
+      const runItems = jobs.map(job => {{
+        const financial = promotionFinancialResult(job.row, job.source);
+        return {{selectionKey:job.selectionKey, code:job.code, title:job.title, sku:job.source.sku || '', action:operation,
+          price:promotionEffectivePrice(job.row, job.source), profit:financial.available ? financial.profit : null,
+          margin:financial.available ? financial.margin : null, status:'pending', error:''}};
+      }});
+      promotionStateUpdate(scopeKey, {{bulkRun:{{groupKey:'collective', campaignName, operation, items:runItems, approvedSelectionKeys:[], confirmation:null}}}});
+      const pending = [...jobs];
+      const worker = async () => {{
+        while (pending.length) {{
+          const job = pending.shift();
+          const row = job.row || {{}};
+          const active = ['started','active'].includes(String(row.status || '').toLowerCase());
+          const allowed = (operation === 'join' && row.can_join === true && !active)
+            || (operation === 'update' && row.can_update === true && active)
+            || (operation === 'remove' && row.can_leave === true && active);
+          if (!allowed) {{
+            const error = `A ação selecionada (${{operation === 'join' ? 'Participar' : operation === 'update' ? 'Alterar' : 'Sair'}}) não está disponível para este anúncio.`;
+            promotionStateUpdate(job.code, {{loading:false, preview:null, error}});
+            promotionBulkRunUpdate(scopeKey, job.selectionKey, {{status:'error', error}});
+            continue;
+          }}
+          const body = {{item_id:job.code, action:operation, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
+          if (operation !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = promotionEffectivePrice(row, job.source);
+          promotionStateUpdate(job.code, {{loading:true, error:'', preview:null, result:null}});
+          try {{
+            const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
+            promotionStateUpdate(job.code, {{loading:false, preview, error:''}});
+            promotionBulkRunUpdate(scopeKey, job.selectionKey, {{status:'ready', error:''}});
+          }} catch (error) {{
+            promotionStateUpdate(job.code, {{loading:false, preview:null, error:error.message}});
+            promotionBulkRunUpdate(scopeKey, job.selectionKey, {{status:'error', error:error.message}});
+          }}
+        }}
+      }};
+      await Promise.all(Array.from({{length:Math.min(3, pending.length)}}, worker));
+    }}
+    async function promotionRequoteEditedPrice(input) {{
+      const code = input.dataset.promoItem;
+      const index = Number(input.dataset.promoCampaignPrice);
+      const action = input.dataset.promoOperation || 'join';
+      const price = Number(input.value || 0);
+      if (!input.checkValidity() || !Number.isFinite(price) || price <= 0) {{ input.reportValidity(); return; }}
+      const state = promotionState.get(code) || {{}};
+      const rows = [...(state.data?.promotions || [])];
+      const row = rows[index];
+      if (!row) return;
+      rows[index] = {{...row, preview_price:price,
+        receipt_quote:{{available:false, reason:'Atualizando tarifa, frete e recebimento para o preço informado...'}}}};
+      const data = {{...(state.data || {{}}), promotions:rows}};
+      const body = {{item_id:code, action, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id, deal_price:price}};
+      promotionStateUpdate(code, {{loading:true, data, error:'', preview:null, result:null}});
+      try {{
+        const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
+        const latest = promotionState.get(code) || {{}};
+        const updatedRows = [...(latest.data?.promotions || [])];
+        const updated = updatedRows[index] || row;
+        updatedRows[index] = {{...updated, preview_price:price,
+          receipt_quote:preview.summary?.receipt_quote || {{available:false, reason:'O Mercado Livre não retornou a cotação deste preço.'}},
+          flex_receipt_quote:preview.summary?.flex_receipt_quote || updated.flex_receipt_quote}};
+        promotionStateUpdate(code, {{loading:false, data:{{...(latest.data || {{}}), promotions:updatedRows}}, preview, error:''}});
+      }} catch (error) {{
+        const latest = promotionState.get(code) || {{}};
+        const updatedRows = [...(latest.data?.promotions || [])];
+        updatedRows[index] = {{...(updatedRows[index] || row), preview_price:price,
+          receipt_quote:{{available:false, reason:error.message}}}};
+        promotionStateUpdate(code, {{loading:false, data:{{...(latest.data || {{}}), promotions:updatedRows}}, preview:null, error:error.message}});
+      }}
+    }}
+    async function promotionPreviewAtPrice(code, row, action, price, item) {{
+      const body = {{item_id:code, action, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id, deal_price:price}};
+      const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
+      const quotedRow = {{...row, preview_price:price,
+        receipt_quote:preview.summary?.receipt_quote || {{available:false, reason:'O Mercado Livre não retornou a cotação deste preço.'}},
+        flex_receipt_quote:preview.summary?.flex_receipt_quote || row.flex_receipt_quote}};
+      return {{preview, quotedRow, financial:promotionFinancialResult(quotedRow, item)}};
+    }}
+    async function promotionRequoteTargetMargin(input) {{
+      const code = input.dataset.promoItem;
+      const index = Number(input.dataset.promoTargetMargin);
+      const action = input.dataset.promoOperation || 'join';
+      const target = Number(input.value);
+      const feedback = input.closest('.promotion-price-editor')?.querySelector(`[data-promo-target-feedback="${{index}}"]`);
+      if (!input.checkValidity() || !Number.isFinite(target)) {{ input.reportValidity(); return; }}
+      const state = promotionState.get(code) || {{}};
+      const rows = [...(state.data?.promotions || [])];
+      const row = rows[index];
+      if (!row) return;
+      const apiItem = state.data?.item || {{}};
+      const item = {{code, sku:apiItem.seller_sku || apiItem.sku || '', currentPrice:apiItem.price || row.original_price || 0}};
+      const minimum = Number(row.min_discounted_price);
+      const maximum = Number(row.max_discounted_price);
+      let low = Number.isFinite(minimum) && minimum > 0 ? minimum : 0.01;
+      let high = Number.isFinite(maximum) && maximum > 0 ? maximum : Number(row.original_price || item.currentPrice || 0);
+      if (!(high >= low)) {{
+        if (feedback) {{ feedback.textContent = 'O Mercado Livre não informou uma faixa de preço válida para esta oportunidade.'; feedback.classList.add('error'); }}
+        return;
+      }}
+      input.disabled = true;
+      if (feedback) {{ feedback.textContent = 'Calculando o preço para a margem desejada…'; feedback.classList.remove('error'); }}
+      promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
+      try {{
+        const evaluated = new Map();
+        const evaluate = async value => {{
+          const price = Math.round(Math.max(low, Math.min(high, value)) * 100) / 100;
+          const key = price.toFixed(2);
+          if (!evaluated.has(key)) evaluated.set(key, await promotionPreviewAtPrice(code, row, action, price, item));
+          return {{price, ...evaluated.get(key)}};
+        }};
+        let lower = await evaluate(low);
+        let upper = await evaluate(high);
+        if (!lower.financial.available || !upper.financial.available) throw new Error('Custo, impostos ou cotação insuficientes para calcular o preço pela margem.');
+        if (lower.financial.margin > upper.financial.margin) throw new Error('A margem não evoluiu de forma previsível dentro da faixa permitida; ajuste o preço manualmente.');
+        const minMargin = Math.min(lower.financial.margin, upper.financial.margin);
+        const maxMargin = Math.max(lower.financial.margin, upper.financial.margin);
+        if (target < minMargin - 0.01 || target > maxMargin + 0.01) {{
+          throw new Error(`Margem de ${{target.toLocaleString('pt-BR')}}% fora da faixa permitida. Nesta promoção, a margem calculável vai de ${{minMargin.toLocaleString('pt-BR',{{minimumFractionDigits:2,maximumFractionDigits:2}})}}% a ${{maxMargin.toLocaleString('pt-BR',{{minimumFractionDigits:2,maximumFractionDigits:2}})}}%.`);
+        }}
+        let best = Math.abs(lower.financial.margin - target) <= Math.abs(upper.financial.margin - target) ? lower : upper;
+        for (let attempt = 0; attempt < 8 && high - low > 0.01; attempt += 1) {{
+          const marginSpan = upper.financial.margin - lower.financial.margin;
+          const interpolated = marginSpan > 0.0001
+            ? lower.price + (target - lower.financial.margin) * (upper.price - lower.price) / marginSpan
+            : (low + high) / 2;
+          const middle = await evaluate(interpolated <= low || interpolated >= high ? (low + high) / 2 : interpolated);
+          if (!middle.financial.available) throw new Error('O Mercado Livre não retornou cotação completa durante o cálculo da margem.');
+          if (Math.abs(middle.financial.margin - target) < Math.abs(best.financial.margin - target)) best = middle;
+          if (Math.abs(middle.financial.margin - target) <= 0.02) break;
+          if (middle.financial.margin < target) {{ low = middle.price + 0.01; lower = middle; }}
+          else {{ high = middle.price - 0.01; upper = middle; }}
+        }}
+        const latest = promotionState.get(code) || {{}};
+        const updatedRows = [...(latest.data?.promotions || [])];
+        updatedRows[index] = {{...(updatedRows[index] || row), ...best.quotedRow, target_margin:target}};
+        promotionStateUpdate(code, {{loading:false, data:{{...(latest.data || {{}}), promotions:updatedRows}}, preview:best.preview, error:''}});
+      }} catch (error) {{
+        promotionStateUpdate(code, {{loading:false, preview:null, error:error.message}});
+      }}
+    }}
+    function activatePromotionPanels() {{
+      document.querySelectorAll('[data-promo-config-open]').forEach(button => button.addEventListener('click', () => {{
+        const dialog = button.parentElement.querySelector('dialog');
+        const action = dialog?.querySelector('[data-promo-campaign]');
+        activePromotionConfigKey = action ? `${{action.dataset.promoItem}}:${{action.dataset.promoCampaign}}` : '';
+        dialog?.showModal();
+      }}));
+      document.querySelectorAll('[data-promo-config-close]').forEach(button => button.addEventListener('click', () => {{ activePromotionConfigKey = ''; button.closest('dialog')?.close(); }}));
+      document.querySelectorAll('[data-promo-campaign-price]').forEach(input => input.addEventListener('input', () => {{
+        const timerKey = `${{input.dataset.promoItem}}:${{input.dataset.promoCampaignPrice}}`;
+        clearTimeout(promotionPriceTimers.get(timerKey));
+        promotionPriceTimers.set(timerKey, setTimeout(() => {{ promotionPriceTimers.delete(timerKey); promotionRequoteEditedPrice(input); }}, 650));
+      }}));
+      document.querySelectorAll('[data-promo-target-margin]').forEach(input => input.addEventListener('change', () => promotionRequoteTargetMargin(input)));
+      document.querySelectorAll('[data-promo-scope-view]').forEach(button => button.addEventListener('click', () => {{
+        promotionStateUpdate(button.dataset.promoScopeKey, {{view:button.dataset.promoScopeView}});
+      }}));
+      document.querySelectorAll('[data-promo-scope-search]').forEach(input => input.addEventListener('input', () => {{
+        promotionStateUpdate(input.dataset.promoScopeKey, {{scopeSearch:input.value || ''}});
+      }}));
+      document.querySelectorAll('[data-promo-campaign-filter]').forEach(button => button.addEventListener('click', () => {{
+        promotionStateUpdate(button.dataset.promoScopeKey, {{campaignKey:button.dataset.promoCampaignFilter || '', view:'campaign'}});
+      }}));
+      document.querySelectorAll('[data-promo-campaign-more]').forEach(button => button.addEventListener('click', () => loadMorePromotionCampaign(button)));
+      document.querySelectorAll('[data-promo-bulk-select]').forEach(input => input.addEventListener('change', () => {{
+        const state = promotionState.get(input.dataset.promoScopeKey) || {{}};
+        const selected = new Set(state.selectedListingKeys || []);
+        if (input.checked) selected.add(input.dataset.promoBulkSelect); else selected.delete(input.dataset.promoBulkSelect);
+        promotionStateUpdate(input.dataset.promoScopeKey, {{selectedListingKeys:[...selected]}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-all]').forEach(input => input.addEventListener('change', () => {{
+        const key = input.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const selected = new Set(state.selectedListingKeys || []);
+        const visibleResults = (state.results || []).filter(result => promotionMatchesScopeSearch(result, state.scopeSearch));
+        const group = promotionCampaignGroups(visibleResults).find(candidate => candidate.key === input.dataset.promoBulkAll);
+        (group?.listings || []).forEach(listing => {{
+          const selectionKey = `${{group.key}}|${{listing.code}}|${{listing.index}}`;
+          if (input.checked) selected.add(selectionKey); else selected.delete(selectionKey);
+        }});
+        promotionStateUpdate(key, {{selectedListingKeys:[...selected]}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-all-visible]').forEach(input => input.addEventListener('change', () => {{
+        const key = input.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const selected = new Set(state.selectedListingKeys || []);
+        promotionVisibleListings(state).forEach(listing => {{
+          if (input.checked) selected.add(listing.selectionKey); else selected.delete(listing.selectionKey);
+        }});
+        promotionStateUpdate(key, {{selectedListingKeys:[...selected]}});
+      }}));
+      document.querySelectorAll('[data-promo-recommend]').forEach(button => button.addEventListener('click', () => {{
+        const key = button.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const sources = promotionGuideItem ? promotionScopeItems(promotionGuideItem) : [];
+        const recommendation = promotionMarginRecommendations(state.results || [], sources, promotionMarginTarget, String(state.campaignKey || ''), String(state.scopeSearch || ''));
+        promotionStateUpdate(key, {{selectedListingKeys:recommendation.recommended.map(item => item.selectionKey)}});
+      }}));
+      document.querySelectorAll('[data-promo-recommend-preview]').forEach(button => button.addEventListener('click', async () => {{
+        const key = button.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const sources = promotionGuideItem ? promotionScopeItems(promotionGuideItem) : [];
+        const sourceByCode = new Map(sources.map(source => [String(source.code || '').toUpperCase(), source]));
+        const recommendation = promotionMarginRecommendations(state.results || [], sources, promotionMarginTarget, String(state.campaignKey || ''), String(state.scopeSearch || ''));
+        const selected = new Set(state.selectedListingKeys || []);
+        const listingByKey = new Map();
+        promotionCampaignGroups((state.results || []).filter(result => promotionMatchesScopeSearch(result, state.scopeSearch))).forEach(group => group.listings.forEach(listing => {{
+          const selectionKey = `${{group.key}}|${{listing.code}}|${{listing.index}}`;
+          listingByKey.set(selectionKey, {{...listing, selectionKey, campaignName:group.name}});
+        }}));
+        const jobs = recommendation.recommended.filter(item => selected.has(item.selectionKey)).map(item => {{
+          const listing = listingByKey.get(item.selectionKey);
+          return listing ? {{...listing, source:sourceByCode.get(listing.code) || {{}}}} : null;
+        }}).filter(Boolean);
+        button.disabled = true;
+        await promotionRunCollectivePreview(key, jobs, 'Recomendações por margem', 'join');
+      }}));
+      document.querySelectorAll('[data-promo-bulk-preview]').forEach(button => button.addEventListener('click', async () => {{
+        const key = button.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const group = promotionCampaignGroups(state.results || []).find(candidate => candidate.key === button.dataset.promoBulkPreview);
+        const selected = new Set(state.selectedListingKeys || []);
+        const operation = button.closest('[data-promo-bulk-group]')?.querySelector('[data-promo-bulk-operation]')?.value || 'join';
+        const jobs = (group?.listings || []).filter(listing => selected.has(`${{group.key}}|${{listing.code}}|${{listing.index}}`));
+        if (!jobs.length) return;
+        const sources = promotionGuideItem ? promotionScopeItems(promotionGuideItem) : [];
+        const previewJobs = jobs.map(listing => {{
+          const source = sources.find(candidate => String(candidate.code || '').toUpperCase() === listing.code) || {{}};
+          const row = (promotionState.get(listing.code)?.data?.promotions || [])[listing.index] || listing.row || {{}};
+          return {{...listing, row, source, selectionKey:`${{group.key}}|${{listing.code}}|${{listing.index}}`}};
+        }});
+        button.disabled = true;
+        await promotionRunCollectivePreview(key, previewJobs, group.name, operation);
+      }}));
+      document.querySelectorAll('[data-promo-bulk-preview-visible]').forEach(button => button.addEventListener('click', async () => {{
+        const key = button.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const selected = new Set(state.selectedListingKeys || []);
+        const operation = button.closest('[data-promo-bulk-group]')?.querySelector('[data-promo-bulk-operation]')?.value || 'join';
+        const sources = promotionGuideItem ? promotionScopeItems(promotionGuideItem) : [];
+        const jobs = promotionVisibleListings(state).filter(listing => selected.has(listing.selectionKey)).map(listing => {{
+          const source = sources.find(candidate => String(candidate.code || '').toUpperCase() === listing.code) || {{}};
+          const row = (promotionState.get(listing.code)?.data?.promotions || []).find(candidate => promotionSameOpportunity(candidate, listing.row)) || listing.row || {{}};
+          return {{...listing, row, source}};
+        }});
+        if (!jobs.length) return;
+        const viewLabel = {{campaign:'Campanha', sku:'SKU', hybrid:'Híbrida', listing:'Anúncio/variação'}}[state.view || 'hybrid'];
+        button.disabled = true;
+        await promotionRunCollectivePreview(key, jobs, `${{viewLabel}} · itens visíveis`, operation);
+      }}));
+      document.querySelectorAll('[data-promo-bulk-approve]').forEach(input => input.addEventListener('change', () => {{
+        const key = input.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const bulkRun = state.bulkRun || {{items:[]}};
+        const approved = new Set(bulkRun.approvedSelectionKeys || []);
+        if (input.checked) approved.add(input.dataset.promoBulkApprove); else approved.delete(input.dataset.promoBulkApprove);
+        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, approvedSelectionKeys:[...approved], confirmation:null}}}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-approve-all]').forEach(input => input.addEventListener('change', () => {{
+        const key = input.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const bulkRun = state.bulkRun || {{items:[]}};
+        const readyKeys = (bulkRun.items || []).filter(item => item.status === 'ready').map(item => item.selectionKey);
+        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, approvedSelectionKeys:input.checked ? readyKeys : [], confirmation:null}}}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-stage-confirm]').forEach(button => button.addEventListener('click', () => {{
+        const key = button.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const bulkRun = state.bulkRun || {{items:[]}};
+        const readyKeys = new Set((bulkRun.items || []).filter(item => item.status === 'ready').map(item => item.selectionKey));
+        const selectionKeys = (bulkRun.approvedSelectionKeys || []).filter(selectionKey => readyKeys.has(selectionKey));
+        if (!selectionKeys.length) return;
+        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, approvedSelectionKeys:selectionKeys, confirmation:{{selectionKeys, confirmedAt:Date.now()}}, executionAcknowledged:false}}}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-execution-ack]').forEach(input => input.addEventListener('change', () => {{
+        const key = input.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const bulkRun = state.bulkRun || {{items:[]}};
+        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, executionAcknowledged:input.checked}}}});
+      }}));
+      document.querySelectorAll('[data-promo-bulk-execute]').forEach(button => button.addEventListener('click', async () => {{
+        const key = button.dataset.promoScopeKey;
+        const state = promotionState.get(key) || {{}};
+        const bulkRun = state.bulkRun || {{items:[]}};
+        if (!bulkRun.executionAcknowledged || !bulkRun.confirmation?.selectionKeys?.length) return;
+        const stagedKeys = new Set(bulkRun.confirmation.selectionKeys);
+        const hasFailures = (bulkRun.items || []).some(item => stagedKeys.has(item.selectionKey) && item.executionStatus === 'error');
+        const candidates = (bulkRun.items || []).filter(item => stagedKeys.has(item.selectionKey) && (hasFailures ? item.executionStatus === 'error' : !['success','pending'].includes(item.executionStatus)));
+        button.disabled = true;
+        promotionStateUpdate(key, {{bulkRun:{{...bulkRun, executionAcknowledged:false}}}});
+        for (const item of candidates) {{
+          const itemState = promotionState.get(item.code) || {{}};
+          const previewToken = itemState.preview?.preview_token;
+          if (!previewToken) {{ promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'error', executionError:'Prévia ausente ou expirada. Gere uma nova prévia antes de executar.'}}); continue; }}
+          const preview = itemState.preview;
+          promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionAttempt:1, executionError:''}});
+          try {{
+            const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:item.code, preview_token:previewToken}});
+            const outcome = await waitForPromotionConfirmation(item.code, preview, attempt => promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionAttempt:attempt, executionError:''}}));
+            if (outcome.confirmed) {{
+              const freshData = promotionPropagateFreshData(item.code, outcome.data);
+              promotionStateUpdate(item.code, {{loading:false, data:freshData, preview:null, result, error:''}});
+              promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'success', executionAttempt:outcome.attempt, executionError:''}});
+            }} else {{
+              promotionStateUpdate(item.code, {{loading:false, confirmation:{{status:'pending', attempt:outcome.attempt}}, error:'Solicitação enviada; confirmação ainda pendente no Mercado Livre. Não reenvie.'}});
+              promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'pending', executionAttempt:outcome.attempt, executionError:'Solicitação enviada; confirmação ainda pendente. Não será reenviada automaticamente.'}});
+            }}
+          }} catch (error) {{
+            if (['promotion_confirmation_unverified','promotion_removal_unverified','campaign_confirmation_unverified','confirmation_in_progress','confirmation_state_unknown'].includes(String(error.code || ''))) {{
+              const outcome = await waitForPromotionConfirmation(item.code, preview, attempt => promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionAttempt:attempt, executionError:''}}));
+              if (outcome.confirmed) {{
+                const freshData = promotionPropagateFreshData(item.code, outcome.data);
+                promotionStateUpdate(item.code, {{loading:false, data:freshData, preview:null, result:{{ok:true}}, error:''}});
+                promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'success', executionAttempt:outcome.attempt, executionError:''}});
+              }} else {{
+                promotionStateUpdate(item.code, {{loading:false, confirmation:{{status:'pending', attempt:outcome.attempt}}, error:'Solicitação enviada; confirmação ainda pendente no Mercado Livre. Não reenvie.'}});
+                promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'pending', executionAttempt:outcome.attempt, executionError:'Solicitação enviada; confirmação ainda pendente. Não será reenviada automaticamente.'}});
+              }}
+            }} else {{
+              promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'error', executionError:`Promoção recusada: ${{error.message}}`}});
+            }}
+          }}
+        }}
+        loadPromotionAudit();
+      }}));
+      document.querySelectorAll('[data-promo-load]').forEach(button => button.addEventListener('click', async () => {{
+        const code = button.dataset.promoLoad;
+        promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
+        try {{
+          const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
+          promotionStateUpdate(code, {{loading:false, data, error:''}});
+        }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
+      }}));
+      document.querySelectorAll('[data-promo-load-scope]').forEach(button => button.addEventListener('click', async () => {{
+        const key = button.dataset.promoLoadScope;
+        const codes = [...new Set(String(button.dataset.promoScopeCodes || '').split(',').map(code => code.trim().toUpperCase()).filter(code => /^MLB\\d+$/.test(code)))];
+        if (!codes.length) {{ promotionStateUpdate(key, {{loading:false, results:[], error:'Nenhum MLB individual foi encontrado neste grupo.'}}); return; }}
+        promotionStateUpdate(key, {{loading:true, results:null, error:''}});
+        const pending = [...codes];
+        const results = [];
+        const worker = async () => {{
+          while (pending.length) {{
+            const code = pending.shift();
+            try {{ const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`); promotionStateUpdate(code, {{loading:false, data, error:''}}); results.push({{code, data}}); }}
+            catch (error) {{ results.push({{code, error:error.message}}); }}
+          }}
+        }};
+        await Promise.all(Array.from({{length:Math.min(3, pending.length)}}, worker));
+        results.sort((a, b) => a.code.localeCompare(b.code, 'pt-BR'));
+        promotionStateUpdate(key, {{loading:false, results, error:''}});
+      }}));
+      document.querySelectorAll('[data-promo-direct]').forEach(button => button.addEventListener('click', async () => {{
+        const code = button.dataset.promoItem;
+        const state = promotionState.get(code) || {{}};
+        const index = Number(button.dataset.promoDirect);
+        const row = (state.data?.promotions || [])[index];
+        if (!row) {{
+          promotionStateUpdate(code, {{loading:false, error:'A oportunidade foi atualizada ou expirou. Consulte as promoções novamente antes de tentar a ação.', preview:null, result:null}});
+          return;
+        }}
+        const action = button.dataset.promoOperation || 'join';
+        const rowRoot = button.closest('tr');
+        const editedPrice = Number(rowRoot?.querySelector(`[data-promo-campaign-price="${{index}}"]`)?.value || promotionEffectivePrice(row));
+        const body = {{item_id:code, action, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
+        if (action !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = editedPrice;
+        activePromotionConfigKey = `${{code}}:${{index}}`;
+        promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
+        try {{
+          const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
+          promotionStateUpdate(code, {{loading:false, preview, result:null, error:''}});
+        }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
+      }}));
+      document.querySelectorAll('[data-promo-campaign]').forEach(button => button.addEventListener('click', async () => {{
+        const code = button.dataset.promoItem;
+        const state = promotionState.get(code) || {{}};
+        const index = Number(button.dataset.promoCampaign);
+        const row = (state.data?.promotions || [])[index];
+        if (!row) {{ promotionStateUpdate(code, {{loading:false, error:'A oportunidade foi atualizada ou expirou. Consulte as promoções novamente antes de tentar a ação.', preview:null, result:null}}); return; }}
+        const action = button.dataset.promoOperation || 'join';
+        const price = Number(button.closest('dialog')?.querySelector(`[data-promo-campaign-price="${{index}}"]`)?.value || document.querySelector(`[data-promotion-item="${{code}}"] [data-promo-campaign-price="${{index}}"]`)?.value || 0);
+        const body = {{item_id:code, action, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
+        if (action !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = price;
+        activePromotionConfigKey = `${{code}}:${{index}}`;
+        promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
+        try {{
+          const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
+          promotionStateUpdate(code, {{loading:false, preview, result:null, error:''}});
+        }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
+      }}));
+      document.querySelectorAll('[data-promo-create-campaign]').forEach(button => button.addEventListener('click', async () => {{
+        const code = button.dataset.promoCreateCampaign;
+        const root = document.querySelector(`[data-promotion-item="${{code}}"]`);
+        const body = {{item_id:code, action:'create_campaign', promotion_type:'SELLER_CAMPAIGN', name:root.querySelector('[data-promo-campaign-name]').value, start_date:root.querySelector('[data-promo-campaign-start]').value, finish_date:root.querySelector('[data-promo-campaign-finish]').value}};
+        promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
+        try {{ const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body); promotionStateUpdate(code, {{loading:false, preview, error:''}}); }}
+        catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
+      }}));
+      document.querySelectorAll('[data-promo-custom]').forEach(button => button.addEventListener('click', async () => {{
+        const code = button.dataset.promoCustom;
+        const root = document.querySelector(`[data-promotion-item="${{code}}"]`);
+        const body = {{item_id:code, promotion_type:'PRICE_DISCOUNT', deal_price:Number(root.querySelector('[data-promo-custom-price]').value || 0), start_date:root.querySelector('[data-promo-start]').value, finish_date:root.querySelector('[data-promo-finish]').value}};
+        promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
+        try {{
+          const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
+          promotionStateUpdate(code, {{loading:false, preview, error:''}});
+        }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
+      }}));
+      document.querySelectorAll('[data-promo-confirm]').forEach(button => button.addEventListener('click', async () => {{
+        const code = button.dataset.promoConfirm;
+        const state = promotionState.get(code) || {{}};
+        if (!state.preview?.preview_token) return;
+        const preview = state.preview;
+        promotionStateUpdate(code, {{loading:true, confirmation:{{status:'processing', attempt:1, maxAttempts:30}}, error:'', result:null}});
+        try {{
+          const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:code, preview_token:preview.preview_token}});
+          await pollPromotionConfirmation(code, preview, result);
+        }} catch (error) {{
+          if (['promotion_confirmation_unverified','promotion_removal_unverified','campaign_confirmation_unverified','confirmation_in_progress','confirmation_state_unknown'].includes(String(error.code || ''))) {{
+            await pollPromotionConfirmation(code, preview);
+          }} else {{
+            promotionStateUpdate(code, {{loading:false, confirmation:{{status:'rejected', reason:error.message}}, error:`Promoção recusada: ${{error.message}}`}});
+          }}
+        }}
+      }}));
+    }}
     function pricingPreviewBlock(item) {{
       const change = Number(item.priceChangePct || 0);
       const hasSignal = item.pricingSignal === 'indicio_alta_preco_com_interrupcao' && Number(item.suggestedTestPrice || 0) > 0;
@@ -3119,7 +5028,15 @@ def render_dashboard(data):
       const suggestion = hasSignal
         ? `Teste sugerido: ${{brl(item.suggestedTestPrice)}}. O valor preserva 60% do aumento observado e deve ser validado com margem, tarifa e frete.`
         : 'Nenhum preco de teste foi calculado.';
-      return `<div class="detail-block detail-block-wide price-signal"><span class="readonly-badge">PREVIA SOMENTE LEITURA</span><h3>Hipotese de preco e promocao</h3><p>${{safe(analysis)}}</p><p><b>${{safe(suggestion)}}</b></p><div class="muted">Elegibilidade de promocao: nao consultada pelo cache atual. Esta etapa nao cria promocao, nao altera preco e nao envia comandos ao Mercado Livre.</div></div>`;
+      const exactMlb = /^MLB\\d+$/.test(String(item.code || '').toUpperCase());
+      const grouped = Boolean(item.detailScope);
+      const hasGroupMlbs = promotionScopeItems(item).length > 0;
+      const enabled = DATA.promotionApi?.enabled === true && (exactMlb || (grouped && hasGroupMlbs));
+      const mode = enabled ? '<span class="readonly-badge">BETA TRANSACIONAL COM CONFIRMACAO</span>' : '<span class="readonly-badge">ANALISE INFORMATIVA</span>';
+      const action = enabled
+        ? (grouped ? promotionScopePanelHtml(item) : promotionPanelHtml(item))
+        : `<div class="muted">A promoção online exige o beta, uma conta selecionada e ao menos um anúncio MLB individual no grupo.</div>`;
+      return `<div class="detail-block detail-block-wide price-signal">${{mode}}<h3>Hipotese de preco e promocao</h3><p>${{safe(analysis)}}</p><p><b>${{safe(suggestion)}}</b></p>${{action}}</div>`;
     }}
     function detailEvidence(item) {{
       const evidence = [
@@ -3139,11 +5056,7 @@ def render_dashboard(data):
         + listBlock('Causas mais provaveis', item.diagnosisHypotheses)
         + listBlock('O que fazer agora', item.testOrder);
       }}
-      if (activeDetailTab === 'promotions') {{
-        return item.detailScope
-          ? '<div class="detail-modal-empty">Promoções são consultadas somente no anúncio MLB individual. Abra uma condição de venda para avaliar elegibilidade e gerar a prévia.</div>'
-          : pricingPreviewBlock(item);
-      }}
+      if (activeDetailTab === 'promotions') return pricingPreviewBlock(item);
       const campaigns = campaignChildren(item);
       return campaigns || '<div class="detail-modal-empty">Nenhum detalhamento adicional de publicidade foi encontrado para este item.</div>';
     }}
@@ -3200,6 +5113,7 @@ def render_dashboard(data):
         renderDetailModal();
       }}));
       activateDailyCharts();
+      activatePromotionPanels();
     }}
     function openDetailModal(key) {{
       activeDetailKey = key;
@@ -3574,6 +5488,7 @@ def render_dashboard(data):
       }}
       if (metricsAnchor && metricsAnchor !== anchor) metricsAnchor.removeAttribute('aria-describedby');
       metricsAnchor = anchor;
+      metricsFloat.className = 'metrics-float' + (anchor.hasAttribute('data-promotion-margin-tip') ? ' promotion-margin-float' : '');
       metricsFloat.innerHTML = decodeURIComponent(anchor.dataset.metricsTip);
       metricsFloat.hidden = false;
       anchor.setAttribute('aria-describedby', metricsFloat.id);
@@ -3637,6 +5552,8 @@ def render_dashboard(data):
       }}
       helpMeta.textContent = `${{num(rows.length)}} registro(s) no filtro atual`;
       applyTableZoom();
+      activateDailyCharts();
+      activatePromotionPanels();
       document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {{
         const value = button.dataset.copy;
         try {{ await navigator.clipboard.writeText(value); }} catch (error) {{ const input = document.createElement('textarea'); input.value = value; document.body.appendChild(input); input.select(); document.execCommand('copy'); input.remove(); }}
@@ -3747,8 +5664,66 @@ def render_dashboard(data):
         document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
         button.classList.add('active');
         document.getElementById(`view-${{button.dataset.view}}`).classList.add('active');
+        try {{ localStorage.setItem('dashboardAdsActiveView', button.dataset.view); }} catch (error) {{}}
+        if (button.dataset.view === 'finance') loadFinanceProfile();
+        if (button.dataset.view === 'promotions') loadPromotionCampaignCatalog();
       }});
     }});
+    document.getElementById('financeSkuSearch').addEventListener('input', renderFinanceRows);
+    document.getElementById('financeSelectAll').addEventListener('change', event => {{
+      visibleFinanceItems().forEach(item => {{
+        const sku = String(item.sku || '').trim();
+        if (!sku) return;
+        if (event.target.checked) selectedFinanceSkus.add(sku); else selectedFinanceSkus.delete(sku);
+      }});
+      renderFinanceRows();
+    }});
+    document.getElementById('financeBulkEdit').addEventListener('click', () => openFinanceSkuModal([...selectedFinanceSkus].sort((a, b) => a.localeCompare(b, 'pt-BR'))));
+    document.getElementById('financeSkuRows').addEventListener('change', event => {{
+      const checkbox = event.target.closest('[data-finance-select]');
+      if (!checkbox) return;
+      if (checkbox.checked) selectedFinanceSkus.add(checkbox.dataset.financeSelect); else selectedFinanceSkus.delete(checkbox.dataset.financeSelect);
+      syncFinanceBulkControls();
+    }});
+    document.getElementById('financeSkuRows').addEventListener('click', event => {{
+      const button = event.target.closest('[data-finance-edit]');
+      if (button) openFinanceSkuModal(button.dataset.financeEdit);
+    }});
+    document.getElementById('financeSkuModalClose').addEventListener('click', closeFinanceSkuModal);
+    document.getElementById('financeSkuModalCancel').addEventListener('click', closeFinanceSkuModal);
+    document.getElementById('financeSkuModalSave').addEventListener('click', saveFinanceSku);
+    document.getElementById('financeSkuModal').addEventListener('click', event => {{ if (event.target.id === 'financeSkuModal') closeFinanceSkuModal(); }});
+    document.getElementById('skuFiscalTaxRegime').addEventListener('change', () => {{ syncSkuFiscalVisibility(); syncSkuFiscalAutomaticFields(); }});
+    ['skuFiscalCalculationMode','skuFiscalOrigin','skuFiscalOriginState','skuFiscalDestinationState'].forEach(id => {{
+      document.getElementById(id).addEventListener('change', syncSkuFiscalAutomaticFields);
+    }});
+    document.getElementById('promotionMarginTarget').addEventListener('input', event => {{
+      const value = Number(event.target.value);
+      promotionMarginTarget = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 15;
+      if (promotionGuideItem) renderPromotionGuide();
+    }});
+    document.getElementById('promotionGuideForm').addEventListener('submit', event => {{
+      event.preventDefault();
+      const raw = document.getElementById('promotionGuideMlb').value;
+      const target = document.getElementById('promotionGuideResult');
+      const resolved = resolvePromotionGuideItem(raw, allItems);
+      if (resolved.error) {{
+        target.innerHTML = `<p class="promotion-error">${{safe(resolved.error)}}</p>`;
+        return;
+      }}
+      promotionGuideItem = resolved.item;
+      const key = promotionGuideItem.detailScope ? promotionScopeKey(promotionGuideItem) : promotionGuideItem.code;
+      promotionState.set(key, {{}});
+      renderPromotionGuide();
+      target.querySelector('[data-promo-load-scope], [data-promo-load]')?.click();
+    }});
+    document.getElementById('promotionAccountCampaigns').addEventListener('click', event => {{
+      const retry = event.target.closest('[data-promo-catalog-retry]');
+      if (retry) {{ loadPromotionCampaignCatalog(true); return; }}
+      const campaign = event.target.closest('[data-account-promotion-id]');
+      if (campaign) openPromotionAccountCampaign(campaign);
+    }});
+    document.getElementById('promotionAuditLoad').addEventListener('click', loadPromotionAudit);
     document.getElementById('contextSelect').addEventListener('change', event => {{
       currentContext = event.target.value;
       sortState = defaultTableSort();
@@ -3807,7 +5782,12 @@ def render_dashboard(data):
     document.addEventListener('keydown', event => {{
       if (event.key === 'Escape' && activeDetailKey) closeDetailModal();
     }});
-    renderKpis(); activateAccountDailyChart(); renderAbc(); renderAlerts(); renderTable(); renderOnlineBeta();
+    renderKpis(); activateAccountDailyChart(); renderAbc(); renderAlerts(); renderTable(); renderOnlineBeta(); loadFinanceProfile();
+    try {{
+      const savedView = localStorage.getItem('dashboardAdsActiveView');
+      const savedButton = savedView ? document.querySelector(`button[data-view="${{savedView}}"]`) : null;
+      if (savedButton) savedButton.click();
+    }} catch (error) {{}}
   </script>
 </body>
 </html>"""

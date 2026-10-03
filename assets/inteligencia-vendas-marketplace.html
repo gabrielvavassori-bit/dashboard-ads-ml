@@ -131,6 +131,14 @@
     }
     .section-title { margin: 0; font-size: 16px; }
     .section-body { padding: 16px; }
+    .fiscal-config { margin: 0 0 14px; border: 1px solid var(--line); border-radius: 8px; background: #f8fbff; }
+    .fiscal-config summary { cursor: pointer; padding: 12px 14px; font-weight: 800; color: var(--blue); }
+    .fiscal-config-body { padding: 0 14px 14px; }
+    .fiscal-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; }
+    .fiscal-field { display: grid; gap: 5px; min-width: 0; }
+    .fiscal-field label { color: var(--muted); font-size: 12px; font-weight: 700; }
+    .fiscal-field .control { width: 100%; min-width: 0; }
+    .fiscal-note { margin: 10px 0 0; padding: 9px 10px; border-radius: 7px; background: #fff8e8; color: #7a4b00; font-size: 12px; }
 
     .dropzone {
       border: 2px dashed #aebbd0;
@@ -521,8 +529,12 @@
       .grid-2 { grid-template-columns: 1fr; }
       .chart-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .monthly-chart-layout { grid-template-columns: 1fr; }
+      .fiscal-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
       .monthly-chart-scroll svg { height: 380px; min-height: 380px; }
       .monthly-pie-legend.cols-2 { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .fiscal-grid { grid-template-columns: 1fr; }
     }
 
     @media print {
@@ -747,8 +759,8 @@
               </div>
             </div>
             <div class="filters">
-              <label class="muted">Aliquota (%)</label>
-              <input class="control" id="profitTaxInput" type="number" min="0" step="0.01" value="0" style="width:110px">
+              <span id="simpleTaxField"><label class="muted">Aliquota simples (%)</label>
+              <input class="control" id="profitTaxInput" type="number" min="0" step="0.01" value="0" style="width:110px"></span>
               <label class="muted">Flex por pedido (R$)</label>
               <input class="control" id="profitFlexInput" type="number" min="0" step="0.01" value="0" style="width:125px">
               <button class="btn" id="exportCostTemplateBtn">Exportar custos</button>
@@ -832,7 +844,7 @@
     const DB_NAME = 'un_clic_marketplace_intelligence_v1';
     const DB_VERSION = 4;
     const MONTHS = { janeiro:0, fevereiro:1, marco:2, 'março':2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
-    const state = { sales: [], financialSales: [], neverSoldListings: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, flexCarrierCost: 0, costBySku: {}, costByKey: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', remoteFinancialsLoaded: false, remoteFinancialRange: '', financialLoadError: '', financialLoadPending: false, governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
+    const state = { sales: [], financialSales: [], neverSoldListings: [], imports: [], events: [], pendingImports: [], group: 'sku', searchScope: 'code', search: '', monthlyMetric: 'units', avgMode: 'monthly', monthlyGroup: 'sku', monthlySearchScope: 'code', monthlySearch: '', monthlyAlertTab: 'risk', dashboardMetric: 'revenue', dashboardGranularity: 'day', dashboardWindow: '30d', dashboardCurveGroup: 'hybrid', dashboardCurveMode: 'mixed', reportWindow: '30d', reportDateStart: '', reportDateEnd: '', globalSearchScope: 'code', globalSearch: '', noSalesGroup: 'sku', noSalesDays: 30, noSalesMode: 'active', dashboardSkuPage: 1, selectedMonthlySku: '', tableSort: { dashboard_sku: { index: 1, dir: 'desc' } }, planStatus: {}, planJournal: [], profitGroup: 'sku', profitSearchScope: 'code', profitSearch: '', profitTaxRate: 0, flexCarrierCost: 0, costBySku: {}, costByKey: {}, fiscalMode: 'simple', taxRegime: 'simple', fiscalProfile: {}, fiscalBySku: {}, profitWindow: '30d', selectedProfitKey: '', profitDateStart: '', profitDateEnd: '', noSalesRejected: {}, onlineNotice: '', remoteFinancialsLoaded: false, remoteFinancialRange: '', financialLoadError: '', financialLoadPending: false, governance: { ok: false, consulted_files: [], required_files: [], rule_catalog: [], knowledge_catalog: [], project_decisions: [], affected_rules: [], blocked_count: 0, altered_behavior_count: 0 }, governanceRegistrations: [] };
     let db;
     let remoteFinanceSyncTimer = null;
     let remoteFinanceRetryTimer = null;
@@ -953,6 +965,42 @@
     function clientCostProfileId() {
       return `cost_profile:${normKey($('clientName')?.value || 'CLIENTE_TESTE')}`;
     }
+    const fiscalFieldMap = {
+      fiscalCostBasis: 'costBasis', fiscalEvidence: 'evidenceStatus',
+      fiscalIpiInput: 'ipiInputRate', fiscalIcmsInput: 'icmsInputRate',
+      fiscalPisInput: 'pisCofinsInputRate', fiscalIpiOutput: 'ipiOutputRate',
+      fiscalIcmsOutput: 'icmsOutputRate', fiscalPisOutput: 'pisCofinsOutputRate',
+      fiscalPresumedRate: 'presumedTaxRate', fiscalDifal: 'difalMode',
+      fiscalDestinationIcms: 'destinationIcmsRate', fiscalStDecision: 'stDecision'
+    };
+    function syncFiscalForm() {
+      const detailed = state.fiscalMode === 'detailed';
+      const regime = ['real', 'presumed'].includes(state.taxRegime) ? state.taxRegime : 'real';
+      if ($('fiscalMode')) $('fiscalMode').value = detailed ? 'detailed' : 'simple';
+      if ($('taxRegime')) $('taxRegime').value = regime;
+      document.querySelectorAll('.fiscal-detailed').forEach((node) => { node.style.display = detailed ? '' : 'none'; });
+      document.querySelectorAll('.fiscal-real').forEach((node) => { node.style.display = detailed && regime === 'real' ? '' : 'none'; });
+      document.querySelectorAll('.fiscal-presumed').forEach((node) => { node.style.display = detailed && regime === 'presumed' ? '' : 'none'; });
+      if ($('simpleTaxField')) $('simpleTaxField').style.display = detailed ? 'none' : '';
+      const profile = state.fiscalProfile && typeof state.fiscalProfile === 'object' ? state.fiscalProfile : {};
+      Object.entries(fiscalFieldMap).forEach(([id, key]) => {
+        const node = $(id);
+        if (node) node.value = profile[key] ?? (node.tagName === 'SELECT' ? node.options[0]?.value || '' : '');
+      });
+      if ($('fiscalConfigSummary')) $('fiscalConfigSummary').textContent = detailed ? `- ${regime === 'real' ? 'Lucro Real' : 'Lucro Presumido'}` : '- Percentual simples';
+    }
+    function readFiscalForm() {
+      state.fiscalMode = $('fiscalMode')?.value === 'detailed' ? 'detailed' : 'simple';
+      state.taxRegime = state.fiscalMode === 'detailed' && $('taxRegime')?.value === 'presumed' ? 'presumed' : (state.fiscalMode === 'detailed' ? 'real' : 'simple');
+      const profile = {};
+      Object.entries(fiscalFieldMap).forEach(([id, key]) => {
+        const node = $(id);
+        if (!node) return;
+        profile[key] = node.classList.contains('fiscal-number') ? Math.max(0, Number(node.value || 0)) : node.value;
+      });
+      state.fiscalProfile = profile;
+      syncFiscalForm();
+    }
     async function loadClientCostProfile() {
       const payload = await getOne('meta', clientCostProfileId());
       if (!payload || typeof payload !== 'object') return;
@@ -960,15 +1008,24 @@
       state.costByKey = payload.costByKey && typeof payload.costByKey === 'object' ? payload.costByKey : {};
       state.profitTaxRate = Number.isFinite(Number(payload.profitTaxRate)) ? Math.max(0, Number(payload.profitTaxRate)) : 0;
       state.flexCarrierCost = Number.isFinite(Number(payload.flexCarrierCost)) ? Math.max(0, Number(payload.flexCarrierCost)) : 0;
+      state.fiscalMode = payload.fiscalMode === 'detailed' ? 'detailed' : 'simple';
+      state.taxRegime = ['real', 'presumed'].includes(payload.taxRegime) ? payload.taxRegime : 'simple';
+      state.fiscalProfile = payload.fiscalProfile && typeof payload.fiscalProfile === 'object' ? payload.fiscalProfile : {};
+      state.fiscalBySku = payload.fiscalBySku && typeof payload.fiscalBySku === 'object' ? payload.fiscalBySku : {};
       if ($('profitTaxInput')) $('profitTaxInput').value = String(state.profitTaxRate);
       if ($('profitFlexInput')) $('profitFlexInput').value = String(state.flexCarrierCost);
+      syncFiscalForm();
     }
     function financeProfilePayload() {
       return {
         costBySku: state.costBySku || {},
         costByKey: state.costByKey || {},
         profitTaxRate: Number(state.profitTaxRate) || 0,
-        flexCarrierCost: Number(state.flexCarrierCost) || 0
+        flexCarrierCost: Number(state.flexCarrierCost) || 0,
+        fiscalMode: state.fiscalMode === 'detailed' ? 'detailed' : 'simple',
+        taxRegime: state.fiscalMode === 'detailed' && ['real', 'presumed'].includes(state.taxRegime) ? state.taxRegime : 'simple',
+        fiscalProfile: state.fiscalProfile || {},
+        fiscalBySku: state.fiscalBySku || {}
       };
     }
     function normalizeStoredSales(rows) {
@@ -1214,12 +1271,17 @@
         if (!response.ok) return;
         const payload = await response.json();
         const profile = payload?.profile || {};
-        const hasRemoteProfile = ['costBySku', 'costByKey', 'profitTaxRate', 'flexCarrierCost']
+        const hasRemoteProfile = ['costBySku', 'costByKey', 'profitTaxRate', 'flexCarrierCost', 'fiscalMode', 'taxRegime', 'fiscalProfile', 'fiscalBySku']
           .some((key) => Object.prototype.hasOwnProperty.call(profile, key));
         if (Object.prototype.hasOwnProperty.call(profile, 'costBySku')) state.costBySku = profile.costBySku || {};
         if (Object.prototype.hasOwnProperty.call(profile, 'costByKey')) state.costByKey = profile.costByKey || {};
         if (Object.prototype.hasOwnProperty.call(profile, 'profitTaxRate')) state.profitTaxRate = Number(profile.profitTaxRate) || 0;
         if (Object.prototype.hasOwnProperty.call(profile, 'flexCarrierCost')) state.flexCarrierCost = Number(profile.flexCarrierCost) || 0;
+        if (Object.prototype.hasOwnProperty.call(profile, 'fiscalMode')) state.fiscalMode = profile.fiscalMode === 'detailed' ? 'detailed' : 'simple';
+        if (Object.prototype.hasOwnProperty.call(profile, 'taxRegime')) state.taxRegime = ['real', 'presumed'].includes(profile.taxRegime) ? profile.taxRegime : 'simple';
+        if (Object.prototype.hasOwnProperty.call(profile, 'fiscalProfile')) state.fiscalProfile = profile.fiscalProfile && typeof profile.fiscalProfile === 'object' ? profile.fiscalProfile : {};
+        if (Object.prototype.hasOwnProperty.call(profile, 'fiscalBySku')) state.fiscalBySku = profile.fiscalBySku && typeof profile.fiscalBySku === 'object' ? profile.fiscalBySku : {};
+        syncFiscalForm();
         await putOne('meta', { id: clientCostProfileId(), ...financeProfilePayload(), updatedAt: new Date().toISOString() });
         const rows = Array.isArray(payload.saleCosts) ? payload.saleCosts : [];
         if (rows.length) await putMany('saleCosts', rows);
@@ -1235,6 +1297,10 @@
         costByKey: state.costByKey || {},
         profitTaxRate: Number.isFinite(Number(state.profitTaxRate)) ? Math.max(0, Number(state.profitTaxRate)) : 0,
         flexCarrierCost: Number.isFinite(Number(state.flexCarrierCost)) ? Math.max(0, Number(state.flexCarrierCost)) : 0,
+        fiscalMode: state.fiscalMode === 'detailed' ? 'detailed' : 'simple',
+        taxRegime: state.taxRegime || 'simple',
+        fiscalProfile: state.fiscalProfile || {},
+        fiscalBySku: state.fiscalBySku || {},
         updatedAt: new Date().toISOString()
       });
       queueRemoteFinanceSync();
@@ -1380,6 +1446,21 @@
       if ($('dashboardSearchInput')) $('dashboardSearchInput').oninput = (e) => applyGlobalSearch(undefined, e.target.value || '');
       $('profitTaxInput').oninput = (e) => { state.profitTaxRate = Math.max(0, Number(e.target.value || 0)); saveClientCostProfile().catch(() => {}); renderProfit(); };
       $('profitFlexInput').oninput = (e) => { state.flexCarrierCost = Math.max(0, Number(e.target.value || 0)); saveClientCostProfile().catch(() => {}); renderProfit(); };
+      ['fiscalMode', 'taxRegime', ...Object.keys(fiscalFieldMap)].forEach((id) => {
+        const node = $(id);
+        if (!node) return;
+        node.onchange = async () => {
+          readFiscalForm();
+          if ($('fiscalSaveStatus')) $('fiscalSaveStatus').textContent = 'Salvando na base compartilhada...';
+          try {
+            await saveClientCostProfile();
+            if ($('fiscalSaveStatus')) $('fiscalSaveStatus').textContent = 'Configuracao salva localmente e colocada na fila de sincronizacao.';
+          } catch (_) {
+            if ($('fiscalSaveStatus')) $('fiscalSaveStatus').textContent = 'Salva localmente; sincronizacao remota pendente.';
+          }
+        };
+      });
+      syncFiscalForm();
       $('exportCostTemplateBtn').onclick = exportCostTemplateCsv;
       $('importCostTemplateBtn').onclick = () => $('importCostInput').click();
       $('importCostInput').onchange = (e) => importCostTemplate(e.target.files[0]);
@@ -4446,6 +4527,10 @@
         costByKey: state.costByKey || {},
         profitTaxRate: Number(state.profitTaxRate || 0),
         flexCarrierCost: Number(state.flexCarrierCost || 0),
+        fiscalMode: state.fiscalMode || 'simple',
+        taxRegime: state.taxRegime || 'simple',
+        fiscalProfile: state.fiscalProfile || {},
+        fiscalBySku: state.fiscalBySku || {},
         profitWindow: state.profitWindow || '30d',
         profitDateStart: state.profitDateStart || '',
         profitDateEnd: state.profitDateEnd || '',
@@ -4484,6 +4569,10 @@
         costByKey: state.costByKey || {},
         profitTaxRate: Number(state.profitTaxRate || 0),
         flexCarrierCost: Number(state.flexCarrierCost || 0),
+        fiscalMode: state.fiscalMode || 'simple',
+        taxRegime: state.taxRegime || 'simple',
+        fiscalProfile: state.fiscalProfile || {},
+        fiscalBySku: state.fiscalBySku || {},
         profitWindow: state.profitWindow || '30d',
         profitDateStart: state.profitDateStart || '',
         profitDateEnd: state.profitDateEnd || '',
@@ -4514,6 +4603,10 @@
          costByKey: data.costByKey && typeof data.costByKey === 'object' ? data.costByKey : {},
         profitTaxRate: Number(data.profitTaxRate || 0),
         flexCarrierCost: Number(data.flexCarrierCost || 0),
+        fiscalMode: data.fiscalMode || 'simple',
+        taxRegime: data.taxRegime || 'simple',
+        fiscalProfile: data.fiscalProfile && typeof data.fiscalProfile === 'object' ? data.fiscalProfile : {},
+        fiscalBySku: data.fiscalBySku && typeof data.fiscalBySku === 'object' ? data.fiscalBySku : {},
         profitWindow: data.profitWindow || '30d',
         profitDateStart: data.profitDateStart || '',
         profitDateEnd: data.profitDateEnd || '',
@@ -4567,6 +4660,10 @@
         const costByKey = payload.costByKey && typeof payload.costByKey === 'object' ? payload.costByKey : {};
         const profitTaxRate = Number(payload.profitTaxRate || 0);
         const flexCarrierCost = Number(payload.flexCarrierCost || 0);
+        const fiscalMode = payload.fiscalMode === 'detailed' ? 'detailed' : 'simple';
+        const taxRegime = ['real', 'presumed'].includes(payload.taxRegime) ? payload.taxRegime : 'simple';
+        const fiscalProfile = payload.fiscalProfile && typeof payload.fiscalProfile === 'object' ? payload.fiscalProfile : {};
+        const fiscalBySku = payload.fiscalBySku && typeof payload.fiscalBySku === 'object' ? payload.fiscalBySku : {};
         const profitWindow = payload.profitWindow || '30d';
         const profitDateStart = payload.profitDateStart || '';
         const profitDateEnd = payload.profitDateEnd || '';
@@ -4594,6 +4691,10 @@
         state.costByKey = costByKey;
         state.profitTaxRate = Number.isFinite(profitTaxRate) ? Math.max(0, profitTaxRate) : 0;
         state.flexCarrierCost = Number.isFinite(flexCarrierCost) ? Math.max(0, flexCarrierCost) : 0;
+        state.fiscalMode = fiscalMode;
+        state.taxRegime = taxRegime;
+        state.fiscalProfile = fiscalProfile;
+        state.fiscalBySku = fiscalBySku;
         state.profitWindow = ['1d','7d','15d','30d','quarter','total','custom'].includes(profitWindow) ? profitWindow : '30d';
         state.profitDateStart = String(profitDateStart || '');
         state.profitDateEnd = String(profitDateEnd || '');
@@ -4607,6 +4708,7 @@
         syncDerivedWindowsFromReport();
         if ($('profitTaxInput')) $('profitTaxInput').value = String(state.profitTaxRate);
         if ($('profitFlexInput')) $('profitFlexInput').value = String(state.flexCarrierCost);
+        syncFiscalForm();
         if ($('profitDateStart')) $('profitDateStart').value = state.profitDateStart;
         if ($('profitDateEnd')) $('profitDateEnd').value = state.profitDateEnd;
         syncWindowControls();
@@ -4629,7 +4731,7 @@
 
     window.__marketplaceApp = {
       getState: () => state,
-      setMemoryData: ({ sales = [], neverSoldListings = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku, costByKey, profitTaxRate, flexCarrierCost = null, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', dashboardGranularity = 'day', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
+      setMemoryData: ({ sales = [], neverSoldListings = [], imports = [], events = [], planStatus = {}, planJournal = [], costBySku, costByKey, profitTaxRate, flexCarrierCost = null, fiscalMode, taxRegime, fiscalProfile, fiscalBySku, profitWindow = '30d', profitDateStart = '', profitDateEnd = '', reportWindow = '30d', reportDateStart = '', reportDateEnd = '', dashboardGranularity = 'day', globalSearchScope = 'code', globalSearch = '', noSalesRejected = {}, onlineNotice = '' }) => {
         state.sales = (sales || []).map((s) => ({ ...s, date: s.date ? new Date(s.date) : null }));
         state.neverSoldListings = Array.isArray(neverSoldListings) ? neverSoldListings : [];
         state.imports = imports;
@@ -4640,6 +4742,10 @@
         if (costByKey !== undefined) state.costByKey = costByKey && typeof costByKey === 'object' ? costByKey : {};
         if (profitTaxRate !== undefined) state.profitTaxRate = Number.isFinite(Number(profitTaxRate)) ? Math.max(0, Number(profitTaxRate)) : 0;
         if (flexCarrierCost !== null && flexCarrierCost !== undefined) state.flexCarrierCost = Number.isFinite(Number(flexCarrierCost)) ? Math.max(0, Number(flexCarrierCost)) : 0;
+        if (fiscalMode !== undefined) state.fiscalMode = fiscalMode === 'detailed' ? 'detailed' : 'simple';
+        if (taxRegime !== undefined) state.taxRegime = ['real', 'presumed'].includes(taxRegime) ? taxRegime : 'simple';
+        if (fiscalProfile !== undefined) state.fiscalProfile = fiscalProfile && typeof fiscalProfile === 'object' ? fiscalProfile : {};
+        if (fiscalBySku !== undefined) state.fiscalBySku = fiscalBySku && typeof fiscalBySku === 'object' ? fiscalBySku : {};
         state.profitWindow = ['1d','7d','15d','30d','quarter','total','custom'].includes(profitWindow) ? profitWindow : '30d';
         state.profitDateStart = String(profitDateStart || '');
         state.profitDateEnd = String(profitDateEnd || '');
@@ -4655,6 +4761,7 @@
         syncDerivedWindowsFromReport();
         if ($('profitTaxInput')) $('profitTaxInput').value = String(state.profitTaxRate);
         if ($('profitFlexInput')) $('profitFlexInput').value = String(state.flexCarrierCost);
+        syncFiscalForm();
         if ($('profitDateStart')) $('profitDateStart').value = state.profitDateStart;
         if ($('profitDateEnd')) $('profitDateEnd').value = state.profitDateEnd;
         syncWindowControls();

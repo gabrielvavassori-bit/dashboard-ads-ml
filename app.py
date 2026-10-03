@@ -40,14 +40,19 @@ Variaveis de ambiente:
 """
 import html as _html
 import calendar
+import gzip
+import hashlib
+import hmac
 import json
 import math
 import os
 import pathlib
+import re
 import secrets
 import tempfile
 import traceback
 import threading
+import zlib
 import time
 from datetime import date, datetime, timedelta
 from email import policy
@@ -281,6 +286,7 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
         url,
         headers={
             "Accept": "application/json",
+            "Accept-Encoding": "identity",
             "X-COMPETITIVE-WORKER-SECRET": secret,
         },
         method="GET",
@@ -303,7 +309,13 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
     try:
         payload = json.loads(raw.decode("utf-8", errors="replace"))
     except json.JSONDecodeError:
-        payload = {"ok": False, "message": "agente-ml retornou resposta nao JSON."}
+        payload = {
+            "ok": False,
+            "error": "agent_response_not_json",
+            "message": "O agente de promoções respondeu em formato inválido. A consulta pode ser repetida com segurança.",
+            "upstream_status": status,
+            "upstream_content_type": "indisponível",
+        }
     if isinstance(payload, dict):
         payload.pop("access_token", None)
         payload.pop("refresh_token", None)
@@ -449,6 +461,96 @@ def _load_snapshot_completeness_governance_rule() -> dict:
             "result": result,
         })
         return result
+def _decode_dash_ads_response(raw: bytes, *, content_encoding: str = "", content_type: str = "") -> tuple[dict | None, str | None]:
+    """Decodifica o contrato interno sem deixar erro HTML virar resposta genérica."""
+    encoding = str(content_encoding or "").lower().strip()
+    try:
+        if encoding == "gzip":
+            raw = gzip.decompress(raw)
+        elif encoding == "deflate":
+            raw = zlib.decompress(raw)
+    except (OSError, zlib.error) as exc:
+        return None, f"codificacao_invalida:{exc.__class__.__name__}"
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        detail = f"json_invalido:{exc.__class__.__name__}"
+        if content_type:
+            detail += f";content_type={content_type}"
+        if encoding:
+            detail += f";content_encoding={encoding}"
+        return None, detail
+    if not isinstance(parsed, dict):
+        return None, "json_nao_objeto"
+    return parsed, None
+
+
+def _post_dash_ads_json(path: str, payload: dict) -> dict:
+    secret = os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")
+    if not secret:
+        return {"ok": False, "http_status": 503, "message": "Segredo interno do Dash ADS nao configurado."}
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    req = Request(
+        f"{AGENTE_ML_BASE_URL}{path}",
+        data=body,
+        headers={
+            "Accept": "application/json",
+            "Accept-Encoding": "identity",
+            "Content-Type": "application/json",
+            "X-COMPETITIVE-WORKER-SECRET": secret,
+        },
+        method="POST",
+    )
+    response_headers = None
+    try:
+        with urlopen(req, timeout=45) as response:
+            raw = response.read(8_000_000)
+            status = response.status
+            response_headers = response.headers
+    except HTTPError as exc:
+        raw = exc.read(8_000_000)
+        status = exc.code
+        response_headers = exc.headers
+    except (URLError, TimeoutError) as exc:
+        return {"ok": False, "http_status": 502, "message": "Falha ao consultar agente-ml.", "error": exc.__class__.__name__}
+    content_type = str(response_headers.get("Content-Type") or "") if response_headers else ""
+    content_encoding = str(response_headers.get("Content-Encoding") or "") if response_headers else ""
+    response_payload, decode_error = _decode_dash_ads_response(
+        raw, content_encoding=content_encoding, content_type=content_type,
+    )
+    if response_payload is None:
+        response_payload = {
+            "ok": False,
+            "message": "A resposta do agente-ml não pôde ser interpretada. Tente novamente; se persistir, informe o código exibido.",
+            "error": "agent_response_not_json",
+            "upstream_status": status,
+            "upstream_content_type": content_type or "indisponivel",
+            "response_contract": decode_error,
+        }
+    for sensitive_key in ("access_token", "refresh_token", "client_secret"):
+        response_payload.pop(sensitive_key, None)
+    response_payload.setdefault("http_status", status)
+    response_payload.setdefault("token_exposed", False)
+    return response_payload
+
+
+def _promotion_csrf_token(user, session_token: str) -> str:
+    secret = os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")
+    if not secret:
+        return ""
+    message = f"promotion:{user['id']}:{session_token}".encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def _promotion_csrf_valid(handler, user, session_token: str) -> bool:
+    supplied = (handler.headers.get("X-Promotion-CSRF") or "").strip()
+    expected = _promotion_csrf_token(user, session_token)
+    return bool(supplied and expected) and hmac.compare_digest(supplied, expected)
+
+
+def _exact_mlb(value) -> str:
+    value = str(value or "").strip().upper()
+    return value if re.fullmatch(r"MLB\d+", value) else ""
 
 
 def _fetch_governance_summary() -> tuple[dict, int]:
@@ -769,6 +871,11 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         daily_sales_coverage_days = {}
     else:
         daily_sales_rows, daily_sales_coverage_days, daily_sales_error = daily_sales_result
+    daily_visits_rows, daily_visits_coverage_by_item, daily_visits_error = (
+        ([], {}, "partial_operational_cache")
+        if daily_partial
+        else _sales_intelligence_fetch_daily_visits(client, latest_date_from, latest_date_to)
+    )
     daily_ads_rows, daily_ads_coverage_days, daily_ads_error = (latest_payload.get("daily_ads", []), {}, "partial_operational_cache") if daily_partial else _sales_intelligence_fetch_daily_ads(
         client,
         latest_date_from,
@@ -822,6 +929,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "impressions": 0.0,
             "clicks": 0.0,
             "adsUnits": 0.0,
+            "visits": 0.0,
         }
     for daily_raw in daily_ads_rows:
         daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
@@ -842,6 +950,16 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "clicks": _number(daily_raw.get("clicks")),
             "adsUnits": _number(daily_raw.get("units_quantity")),
         })
+    for daily_raw in daily_visits_rows:
+        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
+        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
+        if not daily_code or not snapshot_date:
+            continue
+        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
+            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
+            "lastSaleDate": "", "lastSalePrice": 0.0,
+        })
+        daily["visits"] = _number(daily_raw.get("visits_total"))
     daily_series_by_item: dict[str, list[dict]] = {}
     for daily_code, daily_by_date in daily_by_item_date.items():
         daily_series = []
@@ -874,6 +992,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 "impressions": 0.0,
                 "clicks": 0.0,
                 "adsUnits": 0.0,
+                "visits": 0.0,
                 "priceFallback": 0.0,
             })
             account_daily["salesPresent"] |= daily.get("salesPresent", False)
@@ -881,7 +1000,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             for field in (
                 "orders", "units", "revenue", "adsRevenue", "adsDirectRevenue",
                 "adsIndirectRevenue", "investment", "tacosBaseRevenue", "impressions",
-                "clicks", "adsUnits",
+                "clicks", "adsUnits", "visits",
             ):
                 account_daily[field] += _number(daily.get(field))
             if _number(daily.get("lastSalePrice")) > 0:
@@ -1034,6 +1153,12 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 and isinstance(latest_payload["performance_7d"].get("items"), dict)
                 and isinstance(latest_payload["performance_7d"]["items"].get(code, {}), dict)
             ) else {},
+            # Visitas são uma métrica operacional independente: somente
+            # habilitamos a comparação quando cada dia do período foi salvo.
+            "visitsCoverageComplete": (
+                bool(daily_visits_coverage_by_item.get(code, {}).get("complete"))
+                if not daily_visits_error else None
+            ),
             "listingTypeId": str(raw.get("listing_type_id") or raw.get("listingTypeId") or "").strip(),
             "logisticType": str(raw.get("logistic_type") or shipping.get("logistic_type") or "").strip(),
             "freeShipping": bool(free_shipping) if free_shipping is not None else None,
@@ -1131,6 +1256,60 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     total_tacos_base = total_revenue
     total_clicks = sum(item["clicks"] for item in items)
     total_ads_sales = sum(item["adsSales"] for item in items)
+    # Devoluções vêm de uma fonte oficial independente do cache operacional.
+    # Uma leitura parcial de Ads/vendas não pode ocultar uma devolução já
+    # confirmada; o cálculo percentual continua condicionado ao denominador
+    # comprovado abaixo.
+    returns_payload = _fetch_dash_ads_json(
+        "/internal/dash-ads/returns-summary",
+        {
+            "client": client,
+            "date_from": latest_date_from,
+            "date_to": latest_date_to,
+        },
+    )
+    returns_available = bool(
+        returns_payload.get("ok") is True
+        and returns_payload.get("complete") is True
+        and str(returns_payload.get("date_from") or "") == latest_date_from
+        and str(returns_payload.get("date_to") or "") == latest_date_to
+    )
+    returns_amount = _number(returns_payload.get("amount")) if returns_available else 0.0
+    returns_rate = (returns_amount / total_revenue) if returns_available and total_revenue else 0.0
+    returns_orders_available = bool(
+        returns_available and returns_payload.get("orders_total_available") is True
+    )
+    returns_orders_count = (
+        int(_number(returns_payload.get("returned_orders_count")))
+        if returns_available else 0
+    )
+    returns_orders_total = (
+        int(_number(returns_payload.get("orders_total")))
+        if returns_orders_available else 0
+    )
+    returns_orders_rate = (
+        returns_orders_count / returns_orders_total
+        if returns_orders_available and returns_orders_total > 0 else 0.0
+    )
+    returns_meta = {
+        "available": returns_available,
+        "amount": returns_amount,
+        "rate": returns_rate,
+        "count": int(_number(returns_payload.get("returns_count"))) if returns_available else 0,
+        "returnedOrdersCount": returns_orders_count,
+        "ordersTotal": returns_orders_total,
+        "ordersRate": returns_orders_rate,
+        "ordersAvailable": returns_orders_available,
+        "returnedUnits": _number(returns_payload.get("returned_units")) if returns_available else 0.0,
+        "returnShippingCost": (
+            _number(returns_payload.get("return_shipping_cost"))
+            if returns_available and returns_payload.get("return_shipping_cost") is not None
+            else None
+        ),
+        "shippingComplete": bool(returns_payload.get("shipping_complete")) if returns_available else False,
+        "source": str(returns_payload.get("source") or "mercado_livre_claims_returns_v2"),
+        "error": str(returns_payload.get("error") or returns_payload.get("erro") or "") if not returns_available else "",
+    }
     snapshot_at = str(latest.get("updated_at") or ads.get("updated_at") or "").strip()
     snapshot_age_seconds = None
     try:
@@ -1171,6 +1350,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             f" Foram removidas {ads_deduplication['removedRows']} linhas duplicadas do cache de Ads "
             "antes dos calculos."
         )
+    if returns_available:
+        notice += " Devolucoes: valor dos produtos com dinheiro reembolsado; o frete de retorno nao esta somado ao indicador."
+    else:
+        notice += " A leitura oficial de devolucoes ainda nao ficou completa; os indicadores aparecem como N/D."
     return {
         "kpis": {
             "clientName": client,
@@ -1181,6 +1364,14 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "adsRevenue": total_ads_revenue,
             "adsDirectRevenue": total_ads_direct,
             "organicRevenue": total_organic,
+            "returnsAvailable": returns_available,
+            "returnsAmount": returns_amount,
+            "returnsRate": returns_rate,
+            "returnsOrdersAvailable": returns_orders_available,
+            "returnsOrdersCount": returns_orders_count,
+            "returnsOrdersTotal": returns_orders_total,
+            "returnsOrdersRate": returns_orders_rate,
+            "returnsUnits": _number(returns_payload.get("returned_units")) if returns_available else 0.0,
             "tacosBaseRevenue": total_tacos_base,
             "investment": total_investment,
             "investmentNoAdsSales": sum(item["investment"] for item in items if item["investment"] > 0 and item["adsRevenue"] <= 0),
@@ -1197,6 +1388,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "revenueSource": "agente-ml / online-cache-latest / pedidos brutos",
             "onlineMode": {"enabled": True, "notice": notice, "complete": complete, "updatedAt": snapshot_at, "onlinePeriod": requested_period or {}, "periodMatch": period_match, "snapshot": snapshot_meta},
             "adsDeduplication": ads_deduplication,
+            "returns": returns_meta,
             "dailySales": {
                 "source": "agente-ml / sales-daily",
                 "available": not bool(daily_sales_error),
@@ -1746,6 +1938,14 @@ def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_fro
     })
     if not payload.get("ok"):
         return None, "Ainda não há dados operacionais disponíveis no cache desta conta e período."
+    # Compatibilidade transitória com agentes que ainda retornam o recibo
+    # financeiro completo na rota operacional. Nunca aceita esse formato se a
+    # prova de conta, período e cobertura não for exatamente a solicitada.
+    if payload.get("client_id") is None and payload.get("operational_partial") is None:
+        integrity = _online_cache_integrity_state(payload, client, advertiser_id, date_from, date_to)
+        if integrity["ready"]:
+            return payload, ""
+        return None, ONLINE_CACHE_INTEGRITY_PREFIX + integrity["message"]
     if payload.get("client_id") != client or payload.get("operational_partial") is not True:
         return None, "A identificação do cache operacional não corresponde à conta solicitada."
     for key in ("latest", "ads", "sales"):
@@ -1978,6 +2178,29 @@ def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: 
     if payload.get("ok") is True and not source_error:
         return [row for row in rows if isinstance(row, dict)], coverage_days, ""
     return [], coverage_days, source_error or "snapshots_diarios_indisponiveis"
+
+
+def _sales_intelligence_fetch_daily_visits(client: str, date_from: str, date_to: str) -> tuple[list[dict], dict, str]:
+    """Lê somente visitas diárias já persistidas pelo agente.
+
+    Não aciona OAuth, coleta nem repara o cache durante a consulta do beta.
+    A ausência de cobertura é tratada pela interface como N/D, sem afetar a
+    integridade financeira de vendas e Ads.
+    """
+    payload = _fetch_dash_ads_json(
+        "/internal/dash-ads/visits-daily",
+        {
+            "client": client,
+            "date_from": date_from,
+            "date_to": date_to,
+        },
+    )
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    coverage_by_item = payload.get("coverage_by_item") if isinstance(payload.get("coverage_by_item"), dict) else {}
+    source_error = str(payload.get("erro") or payload.get("error") or "").strip()
+    if payload.get("ok") is True and not source_error:
+        return [row for row in rows if isinstance(row, dict)], coverage_by_item, ""
+    return [], coverage_by_item, source_error or "visitas_diarias_indisponiveis"
 
 
 def _daily_partial_snapshot_dates(coverage_days: dict) -> set[str]:
@@ -2406,12 +2629,12 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):  # noqa: A002
         return
 
-    def _intelligence_finance_context(self):
+    def _intelligence_finance_context(self, require_sales=True):
         user, token = _current_user(self)
         if not user:
             _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
             return None
-        if not _sales_access_allowed(user):
+        if require_sales and not _sales_access_allowed(user):
             _send_json(self, {"ok": False, "error": "sales_access_blocked"}, 403)
             return None
         link, _, _ = _current_ml_account(user, token)
@@ -2420,8 +2643,8 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return user, link
 
-    def _get_intelligence_finance_cache(self):
-        context = self._intelligence_finance_context()
+    def _get_intelligence_finance_cache(self, require_sales=True):
+        context = self._intelligence_finance_context(require_sales=require_sales)
         if not context:
             return
         user, link = context
@@ -2446,8 +2669,8 @@ class Handler(BaseHTTPRequestHandler):
         )
         _send_json(self, payload, 200 if payload.get("ok") else 502)
 
-    def _post_intelligence_finance_cache(self):
-        context = self._intelligence_finance_context()
+    def _post_intelligence_finance_cache(self, require_sales=True):
+        context = self._intelligence_finance_context(require_sales=require_sales)
         if not context:
             _read_and_discard_body(self)
             return
@@ -2481,6 +2704,26 @@ class Handler(BaseHTTPRequestHandler):
                 "profitTaxRate": number(profile.get("profitTaxRate")),
                 "flexCarrierCost": number(profile.get("flexCarrierCost")),
             }
+            if "fiscalMode" in profile:
+                fiscal_mode = str(profile.get("fiscalMode") or "simple").strip().lower()
+                if fiscal_mode not in {"simple", "detailed"}:
+                    raise ValueError("Modo fiscal invalido.")
+                clean_profile["fiscalMode"] = fiscal_mode
+            if "taxRegime" in profile:
+                tax_regime = str(profile.get("taxRegime") or "simple").strip().lower()
+                if tax_regime not in {"mei", "simple", "presumed", "real"}:
+                    raise ValueError("Regime tributario invalido.")
+                clean_profile["taxRegime"] = tax_regime
+            for field in ("fiscalProfile", "fiscalBySku"):
+                if field not in profile:
+                    continue
+                value = profile.get(field)
+                if not isinstance(value, dict):
+                    raise ValueError("Configuracao fiscal invalida.")
+                encoded = json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+                if len(encoded.encode("utf-8")) > 500_000:
+                    raise ValueError("Configuracao fiscal excede o limite permitido.")
+                clean_profile[field] = json.loads(encoded)
             fields = (
                 "productRevenue", "buyerPriceIncrease", "shippingRevenue", "sellingFee",
                 "installmentFee", "shippingFee", "shippingExchangeCost",
@@ -2510,7 +2753,11 @@ class Handler(BaseHTTPRequestHandler):
                 row.update({field: number(raw_row.get(field)) for field in fields})
                 clean_rows.append(row)
             saved = db.upsert_intelligence_finance_cache(user["id"], link["client_id"], clean_profile, clean_rows)
-            _send_json(self, {"ok": True, "clientId": link["client_id"], "saved": saved})
+            persisted = db.get_intelligence_finance_cache(user["id"], link["client_id"])
+            _send_json(self, {
+                "ok": True, "clientId": link["client_id"], "saved": saved,
+                "profile": persisted.get("profile") or {},
+            })
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             _send_json(self, {"ok": False, "error": str(exc)}, 400)
         except Exception:
@@ -2530,6 +2777,72 @@ class Handler(BaseHTTPRequestHandler):
                 if url.query:
                     target += "?" + url.query
                 _redirect(self, target)
+                return
+            if path == "/api/promotions":
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Usuario sem acesso ao ambiente beta."}, 403)
+                    return
+                link, _, _ = _current_ml_account(user, token)
+                item_id = _exact_mlb(parse_qs(url.query or "").get("item_id", [""])[0])
+                if not link or not item_id:
+                    _send_json(self, {"ok": False, "message": "Selecione uma conta e um anuncio MLB individual."}, 400)
+                    return
+                payload = _fetch_dash_ads_json(
+                    "/internal/dash-ads/promotions",
+                    {"client": (link["client_id"] or "").strip(), "item_id": item_id},
+                )
+                _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
+                return
+            if path in ("/api/promotions/campaigns", "/api/promotions/campaign-items"):
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Usuario sem acesso ao ambiente beta."}, 403)
+                    return
+                link, _, _ = _current_ml_account(user, token)
+                if not link:
+                    _send_json(self, {"ok": False, "message": "Selecione uma conta Mercado Livre."}, 400)
+                    return
+                params = {"client": (link["client_id"] or "").strip()}
+                agent_path = "/internal/dash-ads/promotions/campaigns"
+                if path.endswith("/campaign-items"):
+                    query = parse_qs(url.query or "")
+                    promotion_id = str(query.get("promotion_id", [""])[0] or "").strip()
+                    promotion_type = str(query.get("promotion_type", [""])[0] or "").strip().upper()
+                    search_after = str(query.get("search_after", [""])[0] or "").strip()
+                    if not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", promotion_id) or not re.fullmatch(r"[A-Z_]{2,60}", promotion_type):
+                        _send_json(self, {"ok": False, "message": "Selecione uma campanha valida da conta."}, 400)
+                        return
+                    if len(search_after) > 300 or any(ord(char) < 32 for char in search_after):
+                        _send_json(self, {"ok": False, "message": "Cursor de campanha invalido."}, 400)
+                        return
+                    params.update({"promotion_id": promotion_id, "promotion_type": promotion_type})
+                    if search_after:
+                        params["search_after"] = search_after
+                    agent_path = "/internal/dash-ads/promotions/campaign-items"
+                payload = _fetch_dash_ads_json(agent_path, params)
+                _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
+                return
+            if path == "/api/promotions/audit":
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Usuario sem acesso ao ambiente beta."}, 403)
+                    return
+                link, _, _ = _current_ml_account(user, token)
+                if not link:
+                    _send_json(self, {"ok": False, "message": "Selecione uma conta Mercado Livre."}, 400)
+                    return
+                rows = db.list_promotion_action_audit(user["id"], (link["client_id"] or "").strip())
+                _send_json(self, {"ok": True, "entries": [dict(row) for row in rows]})
                 return
             if path == "/api/governance/summary":
                 user, _ = _current_user(self)
@@ -2725,6 +3038,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/inteligencia/finance-cache":
                 self._get_intelligence_finance_cache()
                 return
+            if path == "/api/finance-profile":
+                self._get_intelligence_finance_cache(require_sales=False)
+                return
             if path == "/api/inteligencia/order-financials":
                 self._get_intelligence_order_financials()
                 return
@@ -2828,6 +3144,17 @@ class Handler(BaseHTTPRequestHandler):
                                 503,
                             )
                             return
+                    # Modo demo é estritamente somente leitura e não possui
+                    # sessão de usuário apta a assinar ações promocionais.
+                    promotion_csrf = None if is_demo else _promotion_csrf_token(user, token)
+                    dashboard_data["promotionApi"] = {
+                        "enabled": bool(promotion_csrf),
+                        # O fluxo individual validado pode operar no principal.
+                        # A execução coletiva permanece isolada no beta até o
+                        # worker persistente e os testes de grande volume.
+                        "bulkEnabled": bool(beta_config.BETA_MODE),
+                        "csrfToken": promotion_csrf,
+                    }
                     _send_html(self, render_dashboard(dashboard_data))
                 return
             if path in ("/teste", "/teste/"):
@@ -2902,6 +3229,36 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         path = url.path
         try:
+            if path in ("/api/promotions/preview", "/api/promotions/confirm"):
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Usuario sem acesso ao ambiente beta."}, 403)
+                    return
+                if not _promotion_csrf_valid(self, user, token):
+                    _send_json(self, {"ok": False, "message": "Confirmacao de seguranca invalida."}, 403)
+                    return
+                link, _, _ = _current_ml_account(user, token)
+                if not link:
+                    _send_json(self, {"ok": False, "message": "Selecione uma conta Mercado Livre."}, 400)
+                    return
+                body = _parse_json_body(self)
+                item_id = _exact_mlb(body.get("item_id"))
+                if not item_id:
+                    _send_json(self, {"ok": False, "message": "Selecione um anuncio MLB individual."}, 400)
+                    return
+                body["item_id"] = item_id
+                body["client"] = (link["client_id"] or "").strip()
+                agent_path = "/internal/dash-ads/promotions/preview" if path.endswith("/preview") else "/internal/dash-ads/promotions/confirm"
+                payload = _post_dash_ads_json(agent_path, body)
+                if path.endswith("/confirm"):
+                    db.record_promotion_action(
+                        user["id"], (link["client_id"] or "").strip(), item_id, payload,
+                    )
+                _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
+                return
             if path == "/login":
                 self._post_login()
                 return
@@ -2947,6 +3304,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/inteligencia/finance-cache":
                 self._post_intelligence_finance_cache()
+                return
+            if path == "/api/finance-profile":
+                self._post_intelligence_finance_cache(require_sales=False)
                 return
             if path == "/admin/beta-sync-all":
                 self._post_admin_beta_sync_all()
@@ -3280,6 +3640,7 @@ class Handler(BaseHTTPRequestHandler):
             upstream_url,
             headers={
                 "Accept": "application/json",
+                "Accept-Encoding": "identity",
                 "X-COMPETITIVE-WORKER-SECRET": expected,
             },
             method="GET",
@@ -3307,8 +3668,11 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             payload = {
                 "ok": False,
-                "message": "agente-ml retornou resposta nao JSON.",
+                "error": "agent_response_not_json",
+                "message": "O agente de promoções respondeu em formato inválido. A consulta pode ser repetida com segurança.",
                 "http_status": status,
+                "upstream_status": status,
+                "upstream_content_type": "indisponível",
             }
         if isinstance(payload, dict):
             payload.pop("access_token", None)

@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import hmac
 import importlib
@@ -39,6 +40,30 @@ import webhook
 import app
 import templates
 from gerar_dashboard_ads_ml import detect_ads_period
+
+# Outros módulos de teste podem carregar app/webhook antes de estas variáveis
+# serem definidas. Recarregamos somente os módulos que congelam secrets no
+# import, preservando a verificação de assinatura e o segredo interno reais.
+webhook = importlib.reload(webhook)
+app = importlib.reload(app)
+
+
+class DashAdsBridgeResponseTests(unittest.TestCase):
+    def test_decodes_plain_and_gzip_json_without_exposing_raw_response(self):
+        raw = b'{"ok": true, "message": "safe"}'
+        plain, plain_error = app._decode_dash_ads_response(raw, content_type="application/json")
+        compressed, compressed_error = app._decode_dash_ads_response(gzip.compress(raw), content_encoding="gzip", content_type="application/json")
+        self.assertEqual(plain, {"ok": True, "message": "safe"})
+        self.assertIsNone(plain_error)
+        self.assertEqual(compressed, plain)
+        self.assertIsNone(compressed_error)
+
+    def test_reports_non_json_contract_without_returning_upstream_body(self):
+        decoded, error = app._decode_dash_ads_response(b"<html>upstream failure</html>", content_type="text/html")
+        self.assertIsNone(decoded)
+        self.assertIn("json_invalido", error)
+        self.assertIn("content_type=text/html", error)
+
 
 
 def signed(payload):
@@ -670,6 +695,43 @@ class HTTPRouteTests(unittest.TestCase):
                 return None
         return build_opener(NoRedirect)
 
+    def test_promotions_api_requires_authenticated_user(self):
+        for path, method in (
+            ("/api/promotions?item_id=MLB123", "GET"),
+            ("/api/promotions/preview", "POST"),
+            ("/api/promotions/confirm", "POST"),
+        ):
+            request = Request(
+                f"{self.base_url}{path}",
+                data=b"{}" if method == "POST" else None,
+                headers={"Content-Type": "application/json"},
+                method=method,
+            )
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request, timeout=5)
+            self.assertEqual(raised.exception.code, 401)
+
+    def test_promotions_api_rejects_missing_csrf(self):
+        user_id, cookie = self._login_cookie("promotion-csrf@example.com")
+        db.set_user_beta_access(user_id, True)
+        previous = app.beta_config.BETA_MODE
+        app.beta_config.BETA_MODE = True
+        try:
+            for path in ("/api/promotions/preview", "/api/promotions/confirm"):
+                request = Request(
+                    f"{self.base_url}{path}",
+                    data=json.dumps({"item_id": "MLB123"}).encode("utf-8"),
+                    headers={"Cookie": cookie, "Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=5)
+                self.assertEqual(raised.exception.code, 403)
+                payload_value = json.loads(raised.exception.read().decode("utf-8"))
+                self.assertEqual(payload_value["message"], "Confirmacao de seguranca invalida.")
+        finally:
+            app.beta_config.BETA_MODE = previous
+
     def test_beta_assertion_is_identity_only_and_single_use(self):
         user_id, _ = self._login_cookie("beta-assertion@example.com")
         db.set_user_beta_access(user_id, True)
@@ -1189,8 +1251,8 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(data["kpis"]["adsRevenue"], 100)
         self.assertEqual(data["kpis"]["revenue"], 200)
         self.assertEqual(data["items"][0]["organicRevenue"], 130)
-        self.assertEqual(data["items"][0]["tacosBaseRevenue"], 230)
-        self.assertAlmostEqual(data["items"][0]["tacos"], 10 / 230)
+        self.assertEqual(data["items"][0]["tacosBaseRevenue"], 200)
+        self.assertAlmostEqual(data["items"][0]["tacos"], 10 / 200)
         self.assertEqual(data["kpis"]["organicRevenue"], 130)
         self.assertEqual(data["kpis"]["tacosBaseRevenue"], 200)
         self.assertAlmostEqual(data["kpis"]["tacos"], 0.05)
@@ -1344,8 +1406,8 @@ class HTTPRouteTests(unittest.TestCase):
 
         self.assertEqual(message, "")
         advertised_item = next(item for item in data["items"] if item["code"] == "MLB123")
-        self.assertEqual(advertised_item["tacosBaseRevenue"], 50000)
-        self.assertAlmostEqual(advertised_item["tacos"], 0.04)
+        self.assertEqual(advertised_item["tacosBaseRevenue"], 0)
+        self.assertEqual(advertised_item["tacos"], 0)
         self.assertEqual(data["kpis"]["tacosBaseRevenue"], 50000)
 
     def test_online_dashboard_blocks_partial_sales_before_calculating_kpis(self):
