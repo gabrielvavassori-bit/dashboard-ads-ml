@@ -131,7 +131,7 @@
       "components": ["dash_ads_returns_bridge", "returns_kpis"],
       "domains": ["financial_reporting", "mercado_livre_returns"],
       "tags": ["returns", "rolling_period", "returned_orders", "no_false_nd"],
-      "invariant": "O beta mostra valor e contagem de pedidos devolvidos quando a ponte comprova a janela exata; a taxa por pedidos continua N/D sem universo de pedidos comprovado, sem ocultar a contagem nem inventar denominador.",
+      "invariant": "O beta mostra valor e contagem de vendas devolvidas somente quando a ponte comprova a conta e janela exatas e declara o contrato ml_business_returns_v1 reconciliado com Metricas de negocio. O recibo legado por data do evento nao gera cartoes, mesmo se completo. A taxa por pedidos continua N/D sem universo de pedidos comprovado.",
       "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "test_operational_availability.py"],
       "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_operational_availability.py"], "blocking": true}]
     },

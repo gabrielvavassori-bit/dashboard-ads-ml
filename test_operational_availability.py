@@ -27,7 +27,7 @@ class OperationalAvailabilityTests(unittest.TestCase):
 
     def test_partial_cache_still_reads_independent_returns(self):
         returns = {
-            "ok": True, "complete": True,
+            "ok": True, "complete": True, "metric_contract": "ml_business_returns_v1", "client_id": "demo",
             "date_from": "2026-09-01", "date_to": "2026-09-02",
             "amount": 12.50, "returns_count": 1,
             "returned_orders_count": 1, "orders_total": 10,
@@ -39,11 +39,12 @@ class OperationalAvailabilityTests(unittest.TestCase):
         self.assertTrue(data["kpis"]["returnsAvailable"])
         self.assertTrue(data["kpis"]["returnsOrdersAvailable"])
         self.assertEqual(data["kpis"]["returnsAmount"], 12.50)
+        self.assertIn("Valor de vendas devolvidas", render_dashboard(data))
         self.assertEqual(fetch.call_args_list[1].args[0], "/internal/dash-ads/returns-summary")
 
     def test_confirmed_returned_orders_count_remains_visible_without_order_universe(self):
         returns = {
-            "ok": True, "complete": True,
+            "ok": True, "complete": True, "metric_contract": "ml_business_returns_v1", "client_id": "demo",
             "date_from": "2026-09-01", "date_to": "2026-09-02",
             "amount": 12.50, "returns_count": 1,
             "returned_orders_count": 2, "orders_total_available": False,
@@ -56,6 +57,32 @@ class OperationalAvailabilityTests(unittest.TestCase):
         self.assertEqual(data["kpis"]["returnsOrdersCount"], 2)
         html = render_dashboard(data)
         self.assertIn("taxa N/D", html)
+
+    def test_legacy_event_date_returns_cannot_appear_as_business_returns(self):
+        returns = {
+            "ok": True, "complete": True,
+            "date_from": "2026-09-01", "date_to": "2026-09-02",
+            "amount": 1547.74, "returns_count": 2,
+            "returned_orders_count": 2, "orders_total_available": True,
+            "orders_total": 10, "source": "mercado_livre_claims_returns_v2",
+        }
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=[self.payload(), returns]):
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertEqual(error, "")
+        self.assertFalse(data["kpis"]["returnsAvailable"])
+        self.assertIn("N/D", render_dashboard(data))
+
+    def test_business_returns_contract_must_match_requested_account(self):
+        returns = {
+            "ok": True, "complete": True,
+            "metric_contract": "ml_business_returns_v1", "client_id": "other",
+            "date_from": "2026-09-01", "date_to": "2026-09-02",
+            "amount": 940, "returns_count": 8, "returned_orders_count": 8,
+        }
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=[self.payload(), returns]):
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertEqual(error, "")
+        self.assertFalse(data["kpis"]["returnsAvailable"])
 
     def test_rejects_other_account_period_and_advertiser(self):
         for field, value in (("client_id", "other"), ("date_from", "2026-08-01"), ("advertiser_id", "8")):

@@ -1277,10 +1277,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     total_tacos_base = total_revenue
     total_clicks = sum(item["clicks"] for item in items)
     total_ads_sales = sum(item["adsSales"] for item in items)
-    # Devoluções vêm de uma fonte oficial independente do cache operacional.
-    # Uma leitura parcial de Ads/vendas não pode ocultar uma devolução já
-    # confirmada; o cálculo percentual continua condicionado ao denominador
-    # comprovado abaixo.
+    # O recibo legado de Returns e completo apenas para eventos por data da
+    # devolucao; nao equivale a vendas devolvidas na coorte do cartao do ML.
+    # So publicar o KPI quando a ponte declarar explicitamente o contrato
+    # de negocio reconciliado para a conta e janela solicitadas.
     returns_payload = _fetch_dash_ads_json(
         "/internal/dash-ads/returns-summary",
         {
@@ -1292,6 +1292,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     returns_available = bool(
         returns_payload.get("ok") is True
         and returns_payload.get("complete") is True
+        and returns_payload.get("metric_contract") == "ml_business_returns_v1"
+        and str(returns_payload.get("client_id") or "") == client
         and str(returns_payload.get("date_from") or "") == latest_date_from
         and str(returns_payload.get("date_to") or "") == latest_date_to
     )
@@ -1372,9 +1374,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "antes dos calculos."
         )
     if returns_available:
-        notice += " Devolucoes: valor dos produtos com dinheiro reembolsado; o frete de retorno nao esta somado ao indicador."
+        notice += " Devolucoes: indicador conciliado com Metricas de negocio do Mercado Livre para esta conta e periodo."
     else:
-        notice += " A leitura oficial de devolucoes ainda nao ficou completa; os indicadores aparecem como N/D."
+        notice += " Devolucoes: a leitura ainda nao foi conciliada com Metricas de negocio do Mercado Livre; os cartoes ficam ocultos."
     return {
         "kpis": {
             "clientName": client,
