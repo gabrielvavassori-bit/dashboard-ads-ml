@@ -577,7 +577,9 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('data-promo-bulk-execute', source)
         self.assertIn('Confirmo a aplicação destas promoções no Mercado Livre', source)
         bulk_handler = source[source.index("document.querySelectorAll('[data-promo-bulk-execute]')"):source.index("document.querySelectorAll('[data-promo-create-campaign]')")]
-        self.assertIn("promotionApiRequest('/api/promotions/confirm'", bulk_handler)
+        self.assertIn("promotionApiRequest('/api/promotions/bulk-jobs'", bulk_handler)
+        self.assertIn('/api/promotions/bulk-jobs/${{encodeURIComponent(jobId)}}', bulk_handler)
+        self.assertIn('Lote enviado ao processamento em segundo plano.', bulk_handler)
 
     def test_account_campaign_inventory_loads_without_product_search(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
@@ -600,6 +602,17 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('Elegíveis:', catalog)
         self.assertIn('Participando:', catalog)
         self.assertIn("? 'N/D'", catalog)
+
+    def test_sku_margin_floor_overrides_only_a_lower_global_floor(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        margin_cell = source[source.index('    function promotionMarginCell'):source.index('    function promotionTableRow')]
+        self.assertIn('promotionMinimumMargin', margin_cell)
+        self.assertIn('Math.max(promotionMarginTarget, skuTarget)', margin_cell)
+        recommendations = source[source.index('    function promotionMarginRecommendations'):source.index('    function promotionRecommendationHtml')]
+        self.assertIn('promotionMinimumMargin', recommendations)
+        self.assertIn('Math.max(target, skuTarget)', recommendations)
+        self.assertIn('financial.margin < effectiveTarget', recommendations)
+        self.assertIn('candidate.flexMargin < candidate.effectiveTarget', recommendations)
 
     def test_campaign_inventory_enriches_rows_and_loads_cursor_pages(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
@@ -697,16 +710,16 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         summary = source[source.index('    function promotionBulkSummaryHtml'):source.index('    function promotionScopePanelHtml')]
         self.assertIn('Confirmo a aplicação destas promoções no Mercado Livre', summary)
         self.assertIn('data-promo-bulk-execute', summary)
-        self.assertIn('Execução sequencial por MLB', summary)
+        self.assertIn('Execução em segundo plano por pequenos lotes', summary)
         handler = source[source.index("document.querySelectorAll('[data-promo-bulk-execute]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
         self.assertIn('if (!bulkRun.executionAcknowledged', handler)
         self.assertIn('for (const item of candidates)', handler)
         self.assertNotIn('Promise.all', handler)
-        self.assertEqual(handler.count("promotionApiRequest('/api/promotions/confirm'"), 1)
-        self.assertIn('executionStatus:\'success\'', handler)
+        self.assertEqual(handler.count("promotionApiRequest('/api/promotions/bulk-jobs'"), 1)
+        self.assertIn("executionStatus:result.ok ? 'success' : 'error'", handler)
         self.assertIn('executionStatus:\'error\'', handler)
         self.assertIn('executionStatus:\'pending\'', handler)
-        self.assertIn('waitForPromotionConfirmation', handler)
+        self.assertIn('/api/promotions/bulk-jobs/${{encodeURIComponent(jobId)}}', handler)
         self.assertIn('loadPromotionAudit()', handler)
 
     def test_collective_retry_targets_only_failed_items_and_skips_successes(self):
@@ -725,9 +738,9 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('/api/promotions?item_id=', waiter)
         self.assertNotIn("'/api/promotions/confirm'", waiter)
         handler = source[source.index("document.querySelectorAll('[data-promo-bulk-execute]'"):source.index("document.querySelectorAll('[data-promo-load]'")]
-        self.assertEqual(handler.count("promotionApiRequest('/api/promotions/confirm'"), 1)
-        self.assertIn('confirmation_state_unknown', handler)
-        self.assertIn('Não será reenviada automaticamente.', handler)
+        self.assertEqual(handler.count("promotionApiRequest('/api/promotions/bulk-jobs'"), 1)
+        self.assertIn("['completed','completed_with_errors']", handler)
+        self.assertIn('Lote continua em processamento no servidor.', handler)
 
     def test_individual_confirmation_polls_without_resending_mutation(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')

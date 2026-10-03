@@ -14,6 +14,7 @@ class FiscalProfileUiTests(unittest.TestCase):
             'data-view="finance"', 'id="view-finance"', 'id="skuFiscalTaxRegime"',
             'value="simple"', 'value="real"', 'value="presumed"',
             'id="skuFiscalSimpleTax"', 'id="skuFiscalFlexCost"',
+            'id="skuPromotionMinimumMargin"',
             'id="skuFiscalIcmsInput"', 'id="skuFiscalIcmsOutput"',
             'id="skuFiscalDifal"', 'id="skuFiscalStDecision"', 'id="skuFiscalEvidence"',
             'id="financeSkuRows"', 'data-finance-edit=', 'id="financeSkuModal"',
@@ -54,6 +55,7 @@ class FiscalProfileUiTests(unittest.TestCase):
         self.assertIn('taxRegime:', self.source)
         self.assertIn('simpleTaxRate:', self.source)
         self.assertIn('flexCarrierCost:', self.source)
+        self.assertIn('promotionMinimumMargin:', self.source)
         self.assertIn('originState:', self.source)
         self.assertIn('icmsInputRate:', self.source)
         self.assertIn('destinationState:', self.source)

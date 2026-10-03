@@ -2120,6 +2120,7 @@ def render_dashboard(data):
       <div class="finance-modal-body"><div class="finance-grid">
         <label class="finance-field">Regime tributário<select id="skuFiscalTaxRegime"><option value="simple">Simples Nacional</option><option value="presumed">Lucro Presumido</option><option value="real">Lucro Real</option></select></label>
         <label class="finance-field">Custo unitário (R$)<input id="skuFiscalCost" type="number" min="0" step="0.01"></label>
+        <label class="finance-field">Margem mínima em promoções (%)<input id="skuPromotionMinimumMargin" type="number" min="0" max="100" step="0.1"></label>
         <label class="finance-field sku-simple">Imposto do Simples (%)<input id="skuFiscalSimpleTax" type="number" min="0" step="0.01"></label>
         <label class="finance-field">Custo Flex por pedido (R$)<input id="skuFiscalFlexCost" type="number" min="0" step="0.01"></label>
         <label class="finance-field sku-detailed">Origem do produto<select id="skuFiscalOrigin"><option value="unknown">Não informado</option><option value="national">Nacional</option><option value="imported_direct">Importado diretamente</option><option value="imported_domestic">Importado adquirido no Brasil</option></select></label>
@@ -2360,6 +2361,7 @@ def render_dashboard(data):
       financeField('financeSkuModalSave').textContent = bulk ? `Salvar em ${{skus.length}} produtos` : 'Salvar produto';
       financeField('skuFiscalTaxRegime').value = ['real','presumed','simple'].includes(profile.taxRegime) ? profile.taxRegime : 'simple';
       setSkuFiscalNumber('skuFiscalCost', Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku) ? financeProfile.costBySku[sku] : null);
+      setSkuFiscalNumber('skuPromotionMinimumMargin', profile.promotionMinimumMargin);
       setSkuFiscalNumber('skuFiscalSimpleTax', profile.simpleTaxRate);
       setSkuFiscalNumber('skuFiscalFlexCost', profile.flexCarrierCost);
       financeField('skuFiscalOrigin').value = profile.productOrigin || 'unknown';
@@ -2409,6 +2411,7 @@ def render_dashboard(data):
       const difalStatus = financeField('skuFiscalDifal').value;
       const profile = {{
         taxRegime:financeField('skuFiscalTaxRegime').value,
+        promotionMinimumMargin:skuFiscalOptionalNumber('skuPromotionMinimumMargin'),
         simpleTaxRate:skuFiscalOptionalNumber('skuFiscalSimpleTax'),
         flexCarrierCost:skuFiscalOptionalNumber('skuFiscalFlexCost'),
         productOrigin:financeField('skuFiscalOrigin').value, originState:financeField('skuFiscalOriginState').value,
@@ -3904,10 +3907,14 @@ def render_dashboard(data):
       if (result.available) {{
         const margin = result.margin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
         const flexMargin = result.flexAvailable ? result.flexMargin.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}}) : '';
-        const flexWarning = result.flexAvailable && result.flexMargin < promotionMarginTarget;
+        const sku = String(item?.sku || '').trim();
+        const skuTarget = Number((typeof financeProfile !== 'undefined' && financeProfile.fiscalBySku || {{}})[sku]?.promotionMinimumMargin);
+        const effectiveMarginTarget = Number.isFinite(skuTarget) ? Math.max(promotionMarginTarget, skuTarget) : promotionMarginTarget;
+        const flexWarning = result.flexAvailable && result.flexMargin < effectiveMarginTarget;
         const flexScenario = result.flexAvailable ? `<div class="promotion-margin-note"><b>Cenário consultivo Flex · média distância${{result.flexWeightEstimated ? ' · estimado' : ''}}</b>${{line('Tarifa de venda', '−' + brl(result.flexFee))}}${{line('Frete tradicional', 'Desconsiderado')}}${{line(`Taxa Flex · ${{result.flexPriceBand}}`, '−' + brl(result.flexFixedFee))}}${{line(`Bônus ML · ${{result.flexWeightBand}}`, '+' + brl(result.flexBonus))}}${{line('Transportador Flex informado', '−' + brl(result.flexCarrierCost))}}${{line('Custo líquido Flex', '−' + brl(result.flexNetCost))}}${{line('Resultado com Flex', brl(result.flexProfit))}}${{line('Margem com Flex', flexMargin + '%')}}Cálculo validado pela regra da calculadora: substitui o frete normal por transportador + taxa Flex − bônus do Mercado Livre. Peso usado: ${{result.flexWeight.toLocaleString('pt-BR',{{maximumFractionDigits:3}})}} kg (${{safe(result.flexWeightSource)}}).${{result.flexWeightEstimated ? ' Como a API não informou o peso faturável, foi usada a faixa intermediária de 0,5 a 5 kg; o valor é consultivo.' : ''}}</div>` : (result.flexActive ? `<div class="promotion-margin-note"><b>Flex ativo</b> ${{safe(result.flexPendingReason || 'Configure o custo do transportador Flex para calcular o cenário consultivo.')}}</div>` : '');
         const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}${{line('Custo do produto', '−' + brl(result.cost))}}${{line('Débitos fiscais', '−' + brl(result.debits))}}${{line('Créditos fiscais aproveitados', '+' + brl(result.credits))}}${{result.difal > 0 ? line('DIFAL', '−' + brl(result.difal)) : line('DIFAL', brl(0))}}<div class="promotion-margin-total">${{line('Lucro líquido estimado', brl(result.profit))}}</div><div class="promotion-margin-note">Margem líquida estimada: ${{margin}}%. Rebate, tarifa e frete vêm da cotação da oportunidade; custo e parâmetros fiscais vêm do SKU. O Flex não compõe esta margem.</div>${{flexScenario}}`;
-        return `<span class="promotion-margin-value ${{result.profit < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small>${{flexWarning ? `<span class="promotion-flex-warning">⚠ Flex ativo: margem ${{flexMargin}}%, abaixo da meta de ${{promotionMarginTarget.toLocaleString('pt-BR')}}%</span>` : (result.flexActive && !result.flexAvailable ? '<small>Flex ativo · cálculo pendente</small>' : '')}}</span>`;
+        const skuFloor = effectiveMarginTarget > promotionMarginTarget ? `<small>Piso do SKU: ${{effectiveMarginTarget.toLocaleString('pt-BR')}}%</small>` : '';
+        return `<span class="promotion-margin-value ${{result.profit < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small>${{skuFloor}}${{flexWarning ? `<span class="promotion-flex-warning">⚠ Flex ativo: margem ${{flexMargin}}%, abaixo da meta de ${{effectiveMarginTarget.toLocaleString('pt-BR')}}%</span>` : (result.flexActive && !result.flexAvailable ? '<small>Flex ativo · cálculo pendente</small>' : '')}}</span>`;
       }}
       const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{line('Custo do produto', 'Não informado')}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line('Saldo antes de custo e imposto', brl(receipt))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. A margem de contribuição real depende do custo e do imposto cadastrados; estes não foram assumidos como zero.</div>`;
       return `<span class="promotion-margin-value ${{receipt < 0 ? 'negative' : 'positive'}}" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small></span>`;
@@ -3929,7 +3936,7 @@ def render_dashboard(data):
       const canUpdate = allowAction && row.can_update === true && active && quoteConsistent;
       const canRemove = allowAction && row.can_leave === true && active;
       const actionControls = canJoin || canUpdate
-        ? `<div class="promotion-form"><button type="button" title="Gerar prévia para revisar antes da confirmação" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Alterar' : 'Participar'}}</button>${{canRemove ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>` : ''}}</div>`
+        ? `<div class="promotion-form"><button type="button" title="${{canUpdate ? 'Revisar preço e condições antes de confirmar a alteração' : 'Gerar prévia para revisar antes da confirmação'}}" data-promo-campaign="${{index}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}" data-promo-item="${{safe(item.code)}}">${{canUpdate ? 'Alterar' : 'Participar'}}</button>${{canRemove ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>` : ''}}</div>`
         : (canRemove
           ? `<button type="button" class="secondary-action" title="Revisar a saída antes de confirmar" data-promo-campaign="${{index}}" data-promo-operation="remove" data-promo-item="${{safe(item.code)}}">Sair</button>`
           : `<span class="muted">${{safe(!quoteConsistent ? 'Cotação divergente; gere uma prévia atualizada antes de aplicar.' : row.read_only_reason || 'Somente leitura')}}</span>`);
@@ -4092,7 +4099,7 @@ def render_dashboard(data):
         : run.items.filter(item => stagedKeys.has(item.selectionKey) && !['success','pending'].includes(item.executionStatus)).length;
       const executionLabel = executionErrors > 0 ? `Repetir ${{executionCandidates}} falha(s)` : `Executar ${{executionCandidates}} promoção(ões)`;
       const executionSummary = executionSuccess || executionErrors || executionRunning || executionPending ? `${{executionSuccess}} aplicada(s), ${{executionErrors}} falha(s), ${{executionRunning}} em consulta e ${{executionPending}} aguardando retorno.` : 'Nenhuma promoção foi aplicada.';
-      const execution = stagedKeys.size ? `<div class="promotion-success"><b>Lote revisado:</b> ${{stagedKeys.size}} promoção(ões) autorizada(s). ${{executionSummary}}</div>${{executionCandidates && !executionRunning ? `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-execution-ack data-promo-scope-key="${{safe(scopeKey)}}"${{run.executionAcknowledged ? ' checked' : ''}}> Confirmo a aplicação destas promoções no Mercado Livre</label><button class="promotion-confirm" type="button" data-promo-bulk-execute data-promo-scope-key="${{safe(scopeKey)}}"${{run.executionAcknowledged ? '' : ' disabled'}}>${{executionLabel}}</button><span class="muted">Execução sequencial por MLB; falhas não interrompem nem repetem os itens já confirmados.</span></div>` : ''}}` : '';
+      const execution = stagedKeys.size ? `<div class="promotion-success"><b>Lote revisado:</b> ${{stagedKeys.size}} promoção(ões) autorizada(s). ${{executionSummary}}</div>${{executionCandidates && !executionRunning ? `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-execution-ack data-promo-scope-key="${{safe(scopeKey)}}"${{run.executionAcknowledged ? ' checked' : ''}}> Confirmo a aplicação destas promoções no Mercado Livre</label><button class="promotion-confirm" type="button" data-promo-bulk-execute data-promo-scope-key="${{safe(scopeKey)}}"${{run.executionAcknowledged ? '' : ' disabled'}}>${{executionLabel}}</button><span class="muted">Execução em segundo plano por pequenos lotes; falhas não interrompem nem repetem os itens já confirmados.</span></div>` : ''}}` : '';
       const controls = executionSuccess || executionErrors || executionRunning || executionPending ? '' : `<div class="promotion-bulk-toolbar"><label><input type="checkbox" data-promo-bulk-approve-all data-promo-scope-key="${{safe(scopeKey)}}"${{allReadyApproved ? ' checked' : ''}}${{ready ? '' : ' disabled'}}> Aprovar todas as prévias válidas</label><button type="button" data-promo-bulk-stage-confirm data-promo-scope-key="${{safe(scopeKey)}}"${{approvedKeys.size ? '' : ' disabled'}}>Confirmar ${{approvedKeys.size}} para próxima etapa</button><span class="muted">Esta confirmação apenas forma o lote; ainda não envia nada ao Mercado Livre.</span></div>`;
       return `<div class="promotion-bulk-summary"><div class="promotion-bulk-summary-head"><div><b>Resumo das prévias coletivas</b><div class="muted">${{safe(run.campaignName || 'Campanha')}} · revise cada MLB antes de formar o lote.</div></div><div><b>${{ready}} pronta(s)</b> · ${{errors}} impedida(s) · ${{pending}} em processamento</div></div>${{controls}}${{execution}}<div class="promotion-bulk-summary-list">${{rows}}</div></div>`;
     }}
@@ -4109,11 +4116,14 @@ def render_dashboard(data):
         if (active || listing.row.can_join !== true) {{ unavailable += 1; return; }}
         const financial = promotionFinancialResult(listing.row, source);
         if (!financial.available) {{ blocked += 1; return; }}
-        if (financial.margin < target) {{ belowTarget += 1; return; }}
+        const sku = String(source?.sku || '').trim();
+        const skuTarget = Number((typeof financeProfile !== 'undefined' && financeProfile.fiscalBySku || {{}})[sku]?.promotionMinimumMargin);
+        const effectiveTarget = Number.isFinite(skuTarget) ? Math.max(target, skuTarget) : target;
+        if (financial.margin < effectiveTarget) {{ belowTarget += 1; return; }}
         candidates.push({{
           code:listing.code, campaignKey:group.key, campaignName:group.name, index:listing.index,
           selectionKey:`${{group.key}}|${{listing.code}}|${{listing.index}}`,
-          receipt:financial.receipt, profit:financial.profit, margin:financial.margin,
+          receipt:financial.receipt, profit:financial.profit, margin:financial.margin, effectiveTarget,
           flexActive:financial.flexActive === true,
           flexAvailable:financial.flexAvailable === true,
           flexMargin:financial.flexAvailable ? financial.flexMargin : null
@@ -4126,7 +4136,7 @@ def render_dashboard(data):
           bestByListing.set(candidate.code, candidate);
       }});
       const recommended = [...bestByListing.values()].sort((a, b) => b.receipt - a.receipt || b.profit - a.profit || a.code.localeCompare(b.code));
-      const flexAlerts = recommended.filter(candidate => candidate.flexActive && candidate.flexAvailable && candidate.flexMargin < target).length;
+      const flexAlerts = recommended.filter(candidate => candidate.flexActive && candidate.flexAvailable && candidate.flexMargin < candidate.effectiveTarget).length;
       const flexPending = recommended.filter(candidate => candidate.flexActive && !candidate.flexAvailable).length;
       return {{recommended, qualifying:candidates.length, blocked, belowTarget, unavailable, flexAlerts, flexPending}};
     }}
@@ -4792,37 +4802,36 @@ def render_dashboard(data):
         const candidates = (bulkRun.items || []).filter(item => stagedKeys.has(item.selectionKey) && (hasFailures ? item.executionStatus === 'error' : !['success','pending'].includes(item.executionStatus)));
         button.disabled = true;
         promotionStateUpdate(key, {{bulkRun:{{...bulkRun, executionAcknowledged:false}}}});
+        const queued = [];
         for (const item of candidates) {{
-          const itemState = promotionState.get(item.code) || {{}};
-          const previewToken = itemState.preview?.preview_token;
-          if (!previewToken) {{ promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'error', executionError:'Prévia ausente ou expirada. Gere uma nova prévia antes de executar.'}}); continue; }}
-          const preview = itemState.preview;
-          promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionAttempt:1, executionError:''}});
+          const previewToken = promotionState.get(item.code)?.preview?.preview_token;
+          if (!previewToken) {{
+            promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'error', executionError:'Prévia ausente ou expirada. Gere uma nova prévia antes de executar.'}});
+            continue;
+          }}
+          queued.push({{item, item_id:item.code, preview_token:previewToken}});
+          promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionAttempt:1, executionError:'Lote enviado ao processamento em segundo plano.'}});
+        }}
+        if (queued.length) {{
           try {{
-            const result = await promotionApiRequest('/api/promotions/confirm', 'POST', {{item_id:item.code, preview_token:previewToken}});
-            const outcome = await waitForPromotionConfirmation(item.code, preview, attempt => promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionAttempt:attempt, executionError:''}}));
-            if (outcome.confirmed) {{
-              const freshData = promotionPropagateFreshData(item.code, outcome.data);
-              promotionStateUpdate(item.code, {{loading:false, data:freshData, preview:null, result, error:''}});
-              promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'success', executionAttempt:outcome.attempt, executionError:''}});
-            }} else {{
-              promotionStateUpdate(item.code, {{loading:false, confirmation:{{status:'pending', attempt:outcome.attempt}}, error:'Solicitação enviada; confirmação ainda pendente no Mercado Livre. Não reenvie.'}});
-              promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'pending', executionAttempt:outcome.attempt, executionError:'Solicitação enviada; confirmação ainda pendente. Não será reenviada automaticamente.'}});
+            const created = await promotionApiRequest('/api/promotions/bulk-jobs', 'POST', {{items:queued.map(row => ({{item_id:row.item_id, preview_token:row.preview_token, selection_key:row.item.selectionKey}}))}});
+            const jobId = created.job?.id;
+            if (!jobId) throw new Error('O servidor não retornou a identificação do lote.');
+            let finished = false;
+            for (let attempt = 1; attempt <= 180 && !finished; attempt += 1) {{
+              if (attempt > 1) await new Promise(resolve => setTimeout(resolve, 2000));
+              const status = await promotionApiRequest(`/api/promotions/bulk-jobs/${{encodeURIComponent(jobId)}}`);
+              const job = status.job || {{}};
+              (job.results || []).forEach(result => {{
+                const queuedItem = queued.find(row => row.item.selectionKey === result.selection_key);
+                if (!queuedItem) return;
+                promotionBulkRunUpdate(key, queuedItem.item.selectionKey, {{executionStatus:result.ok ? 'success' : 'error', executionAttempt:attempt, executionError:result.ok ? '' : (result.message || 'Promoção recusada.')}});
+              }});
+              finished = ['completed','completed_with_errors'].includes(String(job.status || ''));
             }}
+            if (!finished) queued.forEach(row => promotionBulkRunUpdate(key, row.item.selectionKey, {{executionStatus:'pending', executionError:'Lote continua em processamento no servidor. Consulte novamente mais tarde.'}}));
           }} catch (error) {{
-            if (['promotion_confirmation_unverified','promotion_removal_unverified','campaign_confirmation_unverified','confirmation_in_progress','confirmation_state_unknown'].includes(String(error.code || ''))) {{
-              const outcome = await waitForPromotionConfirmation(item.code, preview, attempt => promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'running', executionAttempt:attempt, executionError:''}}));
-              if (outcome.confirmed) {{
-                const freshData = promotionPropagateFreshData(item.code, outcome.data);
-                promotionStateUpdate(item.code, {{loading:false, data:freshData, preview:null, result:{{ok:true}}, error:''}});
-                promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'success', executionAttempt:outcome.attempt, executionError:''}});
-              }} else {{
-                promotionStateUpdate(item.code, {{loading:false, confirmation:{{status:'pending', attempt:outcome.attempt}}, error:'Solicitação enviada; confirmação ainda pendente no Mercado Livre. Não reenvie.'}});
-                promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'pending', executionAttempt:outcome.attempt, executionError:'Solicitação enviada; confirmação ainda pendente. Não será reenviada automaticamente.'}});
-              }}
-            }} else {{
-              promotionBulkRunUpdate(key, item.selectionKey, {{executionStatus:'error', executionError:`Promoção recusada: ${{error.message}}`}});
-            }}
+            queued.forEach(row => promotionBulkRunUpdate(key, row.item.selectionKey, {{executionStatus:'error', executionError:`Falha ao iniciar ou consultar o lote: ${{error.message}}`}}));
           }}
         }}
         loadPromotionAudit();

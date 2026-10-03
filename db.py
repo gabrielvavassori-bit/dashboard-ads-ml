@@ -179,6 +179,25 @@ CREATE TABLE IF NOT EXISTS promotion_action_audit (
 CREATE INDEX IF NOT EXISTS idx_promotion_action_audit_scope
     ON promotion_action_audit(user_id, client_id, created_at DESC, id DESC);
 
+CREATE TABLE IF NOT EXISTS promotion_bulk_jobs (
+    id            TEXT PRIMARY KEY,
+    user_id       INTEGER NOT NULL,
+    client_id     TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    total         INTEGER NOT NULL,
+    completed     INTEGER NOT NULL DEFAULT 0,
+    succeeded     INTEGER NOT NULL DEFAULT 0,
+    failed        INTEGER NOT NULL DEFAULT 0,
+    request_json  TEXT NOT NULL DEFAULT '[]',
+    result_json   TEXT NOT NULL DEFAULT '[]',
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_promotion_bulk_jobs_scope
+    ON promotion_bulk_jobs(user_id, client_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS beta_handoffs (
     nonce_hash TEXT PRIMARY KEY,
     expires_at INTEGER NOT NULL,
@@ -1618,5 +1637,61 @@ def list_promotion_action_audit(user_id: int, client_id: str, limit: int = 50):
             (int(user_id), str(client_id or ""), max(1, min(int(limit or 50), 100))),
         )
         return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def create_promotion_bulk_job(job_id: str, user_id: int, client_id: str, items: list):
+    ts = now()
+    conn = get_conn()
+    try:
+        conn.execute(
+            """INSERT INTO promotion_bulk_jobs
+               (id,user_id,client_id,status,total,request_json,result_json,created_at,updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (job_id, int(user_id), str(client_id or ""), "queued", len(items),
+             json.dumps(items, ensure_ascii=False, separators=(",", ":")), "[]", ts, ts),
+        )
+    finally:
+        conn.close()
+
+
+def update_promotion_bulk_job(job_id: str, *, status: str, completed: int,
+                              succeeded: int, failed: int, results: list,
+                              clear_request: bool = False):
+    conn = get_conn()
+    try:
+        conn.execute(
+            """UPDATE promotion_bulk_jobs
+               SET status=?,completed=?,succeeded=?,failed=?,result_json=?,
+                   request_json=CASE WHEN ? THEN '[]' ELSE request_json END,updated_at=?
+               WHERE id=?""",
+            (status, completed, succeeded, failed,
+             json.dumps(results, ensure_ascii=False, separators=(",", ":")),
+             1 if clear_request else 0, now(), job_id),
+        )
+    finally:
+        conn.close()
+
+
+def get_promotion_bulk_job(job_id: str, user_id: int, client_id: str, include_request=False):
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """SELECT * FROM promotion_bulk_jobs
+               WHERE id=? AND user_id=? AND client_id=?""",
+            (job_id, int(user_id), str(client_id or "")),
+        ).fetchone()
+        if not row:
+            return None
+        result = {
+            "id": row["id"], "status": row["status"], "total": row["total"],
+            "completed": row["completed"], "succeeded": row["succeeded"],
+            "failed": row["failed"], "results": json.loads(row["result_json"] or "[]"),
+            "createdAt": row["created_at"], "updatedAt": row["updated_at"],
+        }
+        if include_request:
+            result["items"] = json.loads(row["request_json"] or "[]")
+        return result
     finally:
         conn.close()

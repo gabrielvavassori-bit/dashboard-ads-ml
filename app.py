@@ -531,6 +531,57 @@ def _post_dash_ads_json(path: str, payload: dict) -> dict:
     return response_payload
 
 
+def _run_promotion_bulk_job(job_id: str, user_id: int, client_id: str):
+    """Executa um lote revisado fora da requisição web e persiste o progresso."""
+    job = db.get_promotion_bulk_job(job_id, user_id, client_id, include_request=True)
+    if not job:
+        return
+    items = job.get("items") or []
+    results = []
+    succeeded = failed = 0
+    db.update_promotion_bulk_job(job_id, status="running", completed=0,
+                                 succeeded=0, failed=0, results=[])
+    for index, item in enumerate(items, 1):
+        item_id = _exact_mlb(item.get("item_id"))
+        preview_token = str(item.get("preview_token") or "").strip()
+        safe_result = {"item_id": item_id or str(item.get("item_id") or ""),
+                       "selection_key": str(item.get("selection_key") or "")[:500], "ok": False}
+        try:
+            if not item_id or not preview_token:
+                raise ValueError("Prévia ausente ou inválida.")
+            payload = _post_dash_ads_json(
+                "/internal/dash-ads/promotions/confirm",
+                {"client": client_id, "item_id": item_id, "preview_token": preview_token},
+            )
+            db.record_promotion_action(user_id, client_id, item_id, payload)
+            safe_result.update({
+                "ok": payload.get("ok") is True,
+                "status": str(payload.get("status") or ("success" if payload.get("ok") is True else "failed")),
+                "message": str(payload.get("message") or payload.get("error") or "")[:500],
+                "audit_id": str(payload.get("audit_id") or ""),
+                "idempotent": payload.get("idempotent") is True,
+            })
+            if safe_result["ok"]:
+                succeeded += 1
+            else:
+                failed += 1
+        except Exception as exc:
+            failed += 1
+            safe_result.update({"status": "failed", "message": str(exc)[:500]})
+        results.append(safe_result)
+        db.update_promotion_bulk_job(
+            job_id, status="running", completed=index, succeeded=succeeded,
+            failed=failed, results=results,
+        )
+        if index < len(items):
+            time.sleep(0.25)
+    db.update_promotion_bulk_job(
+        job_id, status="completed" if failed == 0 else "completed_with_errors",
+        completed=len(results), succeeded=succeeded, failed=failed, results=results,
+        clear_request=True,
+    )
+
+
 def _promotion_csrf_token(user, session_token: str) -> str:
     secret = os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")
     if not secret:
@@ -2744,6 +2795,25 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
                 return
+            if path.startswith("/api/promotions/bulk-jobs/"):
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if not beta_config.BETA_MODE or not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Execução em massa disponível somente no beta autorizado."}, 403)
+                    return
+                link, _, _ = _current_ml_account(user, token)
+                job_id = path.rsplit("/", 1)[-1]
+                if not link or not re.fullmatch(r"[A-Za-z0-9_-]{16,120}", job_id):
+                    _send_json(self, {"ok": False, "message": "Lote inválido."}, 400)
+                    return
+                job = db.get_promotion_bulk_job(job_id, user["id"], (link["client_id"] or "").strip())
+                if not job:
+                    _send_json(self, {"ok": False, "message": "Lote não encontrado."}, 404)
+                    return
+                _send_json(self, {"ok": True, "job": job})
+                return
             if path in ("/api/promotions/campaigns", "/api/promotions/campaign-items"):
                 user, token = _current_user(self)
                 if not user:
@@ -3157,6 +3227,44 @@ class Handler(BaseHTTPRequestHandler):
                         user["id"], (link["client_id"] or "").strip(), item_id, payload,
                     )
                 _send_json(self, payload, int(payload.get("http_status") or (200 if payload.get("ok") else 502)))
+                return
+            if path == "/api/promotions/bulk-jobs":
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if not beta_config.BETA_MODE or not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Execução em massa disponível somente no beta autorizado."}, 403)
+                    return
+                if not _promotion_csrf_valid(self, user, token):
+                    _send_json(self, {"ok": False, "message": "Confirmação de segurança inválida."}, 403)
+                    return
+                link, _, _ = _current_ml_account(user, token)
+                body = _parse_json_body(self)
+                items = body.get("items") if isinstance(body.get("items"), list) else []
+                if not link or not items or len(items) > 500:
+                    _send_json(self, {"ok": False, "message": "Informe de 1 a 500 prévias confirmadas por lote."}, 400)
+                    return
+                clean_items = []
+                for item in items:
+                    item_id = _exact_mlb(item.get("item_id") if isinstance(item, dict) else "")
+                    preview_token = str(item.get("preview_token") or "").strip() if isinstance(item, dict) else ""
+                    if not item_id or not preview_token or len(preview_token) > 20_000:
+                        _send_json(self, {"ok": False, "message": "Uma das prévias do lote é inválida ou expirou."}, 400)
+                        return
+                    clean_items.append({
+                        "item_id": item_id, "preview_token": preview_token,
+                        "selection_key": str(item.get("selection_key") or "")[:500],
+                    })
+                job_id = secrets.token_urlsafe(24)
+                client_id = (link["client_id"] or "").strip()
+                db.create_promotion_bulk_job(job_id, user["id"], client_id, clean_items)
+                threading.Thread(
+                    target=_run_promotion_bulk_job,
+                    args=(job_id, user["id"], client_id),
+                    name=f"promotion-bulk-{job_id[:8]}", daemon=True,
+                ).start()
+                _send_json(self, {"ok": True, "job": {"id": job_id, "status": "queued", "total": len(clean_items), "completed": 0}}, 202)
                 return
             if path == "/login":
                 self._post_login()

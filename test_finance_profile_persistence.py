@@ -129,6 +129,22 @@ class FinanceProfilePersistenceTests(unittest.TestCase):
         self.assertIn("fiscal_profile_json", columns)
         self.assertIn("updated_at", columns)
 
+    def test_promotion_bulk_job_persists_progress_and_discards_preview_tokens(self):
+        db.create_promotion_bulk_job("job_1234567890123456", 1, "client", [
+            {"item_id": "MLB1", "preview_token": "secret", "selection_key": "campaign|MLB1"}
+        ])
+        queued = db.get_promotion_bulk_job("job_1234567890123456", 1, "client", include_request=True)
+        self.assertEqual(queued["status"], "queued")
+        self.assertEqual(queued["items"][0]["preview_token"], "secret")
+        db.update_promotion_bulk_job(
+            "job_1234567890123456", status="completed", completed=1,
+            succeeded=1, failed=0, results=[{"item_id": "MLB1", "ok": True}],
+            clear_request=True,
+        )
+        finished = db.get_promotion_bulk_job("job_1234567890123456", 1, "client", include_request=True)
+        self.assertEqual(finished["items"], [])
+        self.assertEqual(finished["succeeded"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
