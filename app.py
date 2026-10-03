@@ -1414,6 +1414,32 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     }, ""
 
 
+def _attach_account_period_comparison(data, client, advertiser_id, period):
+    from period_comparison import summary, compare
+    data['periodSummary'] = summary(data)
+    selected = period.get('comparePeriod')
+    if not selected or period.get('compareMode') == 'none':
+        data['periodComparison'] = {'enabled': False}
+        return
+    previous, error = _build_online_dashboard_data(
+        client, advertiser_id, selected['dateFrom'], selected['dateTo']
+    )
+    exact = bool(previous and previous.get('meta', {}).get('period') == {
+        'dateFrom': selected['dateFrom'], 'dateTo': selected['dateTo']})
+    current_exact = data.get('meta', {}).get('period') == {
+        'dateFrom': period['dateFrom'], 'dateTo': period['dateTo']}
+    # Use positive daily certification, never a global health status or an old window.
+    verified = bool(exact and current_exact and all(
+        d.get('accountDailySeries') and not any(r.get('partial', True) for r in d['accountDailySeries'])
+        for d in (data, previous)))
+    data['periodComparison'] = {
+        'enabled': True, 'period': selected,
+        'metrics': compare(data['periodSummary'], summary(previous) if exact else {}, verified=verified),
+        'available': verified,
+        'reason': '' if verified else 'Comparacao N/D: cobertura dos dois periodos ainda nao comprovada.',
+    }
+
+
 def _build_online_beta_payload(data: dict, client: str, advertiser_id: str = "") -> dict:
     period = (data.get("meta") or {}).get("period") or {}
     date_from = period.get("dateFrom") or ""
@@ -3070,7 +3096,7 @@ class Handler(BaseHTTPRequestHandler):
                     month=qs.get("month", [""])[0],
                     date_from=qs.get("date_from", [""])[0],
                     date_to=qs.get("date_to", [""])[0],
-                    compare=qs.get("compare", ["none"])[0],
+                    compare=qs.get("compare", ["previous"])[0],
                 )
                 if period["error"]:
                     _send_html(self, templates.render_error_page(period["error"]), 400)
@@ -3134,6 +3160,9 @@ class Handler(BaseHTTPRequestHandler):
                             return
                         _send_html(self, templates.render_error_page(message), 503)
                         return
+                    _attach_account_period_comparison(
+                        dashboard_data, client_id, (link['advertiser_id'] or '').strip(), period
+                    )
                     if is_demo:
                         try:
                             dashboard_data = anonymize_dashboard_data(dashboard_data)

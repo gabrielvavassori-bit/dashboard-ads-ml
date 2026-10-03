@@ -29,7 +29,8 @@
         "-m",
         "unittest",
         "test_operational_availability",
-        "test_tacos_status_consistency"
+        "test_tacos_status_consistency",
+        "test_account_period_comparison"
       ],
       "blocking": true
     }
