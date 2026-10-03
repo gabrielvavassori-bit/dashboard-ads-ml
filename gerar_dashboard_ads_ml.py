@@ -1533,7 +1533,7 @@ def render_dashboard(data):
         account_daily_chart = """
     <section class="card daily-chart-card account-daily-chart-card" data-account-daily-chart data-daily-chart data-chart-key="account">
       <div class="chart-head">
-        <div><h3>Desempenho diário da conta</h3><div class="chart-summary">Selecione uma metrica para visualizar.</div></div>
+        <div><h3>Desempenho diário da conta</h3><div class="chart-summary">Selecione uma metrica para visualizar.</div><div class="period-chart-comparison"></div></div>
         <div class="chart-metric-tabs" role="group" aria-label="Metrica do grafico da conta">
           <button class="chart-metric-button" type="button" data-chart-metric="revenue">Faturamento</button>
           <button class="chart-metric-button" type="button" data-chart-metric="adsRevenue">Receita Ads</button>
@@ -1543,6 +1543,8 @@ def render_dashboard(data):
           <button class="chart-metric-button" type="button" data-chart-metric="units">Unidades</button>
           <button class="chart-metric-button" type="button" data-chart-metric="orders">Pedidos</button>
           <button class="chart-metric-button" type="button" data-chart-metric="price">Preco medio</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="visits">Visitas</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="cancelledOrders">Cancelamentos</button>
         </div>
       </div>
       <div class="chart-stage"><div class="chart-canvas"></div><div class="chart-tooltip"></div></div>
@@ -3003,11 +3005,40 @@ def render_dashboard(data):
       URL.revokeObjectURL(link.href);
       link.remove();
     }}
+    function periodMetricFormat(key, value) {{
+      if (value == null || !Number.isFinite(value)) return 'N/D';
+      if (['revenue','adsRevenue','organicRevenue','investment','tacosBaseRevenue','investmentNoAdsSales','price','returnsAmount'].includes(key)) return brl(value);
+      if (key === 'tacos') return pct(value);
+      if (key === 'roas') return value.toLocaleString('pt-BR', {{maximumFractionDigits:2}}) + 'x';
+      return num(value);
+    }}
+    function periodComparisonInline(key) {{
+      const comparison = DATA.periodComparison;
+      if (!comparison || !comparison.enabled || !key) return '';
+      const metric = (comparison.metrics || {{}})[key];
+      const period = comparison.period || {{}};
+      const dates = `${{period.dateFrom || ''}} a ${{period.dateTo || ''}}`;
+      if (!metric || metric.status === 'unavailable') return `<span class="kpi-secondary" title="${{safe(dates)}}">Comparação N/D — dados insuficientes</span>`;
+      const delta = metric.change;
+      const label = metric.status === 'zero_baseline' ? 'Sem base percentual (anterior zero)' : `${{delta > 0 ? '▲ +' : delta < 0 ? '▼ ' : '▬ '}}${{(delta * 100).toLocaleString('pt-BR', {{maximumFractionDigits:1}})}}%`;
+      const lowerBetter = ['investment','tacos','adsNoSales','investmentNoAdsSales','returnsAmount','returnsOrdersCount','cancelledOrders'].includes(key);
+      const color = !delta ? 'var(--muted)' : (delta > 0) !== lowerBetter ? '#087f5b' : '#c92a2a';
+      return `<details class="kpi-secondary"><summary style="cursor:pointer;color:${{color}}">${{safe(label)}} vs. período comparado</summary><span>Anterior (${{safe(dates)}}): ${{safe(periodMetricFormat(key, metric.previous))}}</span></details>`;
+    }}
     function renderKpis() {{
       const k = DATA.kpis;
+      const summary = DATA.periodSummary || {{}};
+      const metricKeys = {{'Receita total':'revenue','Unidades vendidas':'units','Pedidos por item':'orders','Preço médio por unidade':'price','Visitas dos produtos':'visits','Vendas canceladas':'cancelledOrders','Devolucoes confirmadas':'returnsAmount','Pedidos devolvidos':'returnsOrdersCount','Receita atribuida ADS':'adsRevenue','Receita organica estimada':'organicRevenue','Investimento ADS':'investment','Base TACOS comercial':'tacosBaseRevenue','TACOS geral':'tacos','ROAS Ads':'roas','Investiu sem venda ADS':'adsNoSales','Valor sem venda ADS':'investmentNoAdsSales'}};
       document.getElementById('kpis').innerHTML = [
         ['Produtos analisados', num(k.products), ''],
         ['Receita total', brl(k.revenue), 'good'],
+        ...(DATA.periodSummary ? [
+          ['Unidades vendidas', periodMetricFormat('units', summary.units), ''],
+          ['Pedidos por item', periodMetricFormat('orders', summary.orders), '', 'Soma por anúncio; não equivale a pedidos únicos da conta.'],
+          ['Preço médio por unidade', periodMetricFormat('price', summary.price), ''],
+          ['Visitas dos produtos', periodMetricFormat('visits', summary.visits), '', 'N/D quando o histórico do período está incompleto.'],
+          ['Vendas canceladas', periodMetricFormat('cancelledOrders', summary.cancelledOrders), '', 'Fonte de cancelamentos não disponível; devoluções são separadas.']
+        ] : []),
         ['Devolucoes confirmadas', k.returnsAvailable ? `${{brl(k.returnsAmount || 0)}} · ${{pct(k.returnsRate || 0)}} da receita` : 'N/D', k.returnsAvailable && k.returnsAmount > 0 ? 'danger' : ''],
         ['Pedidos devolvidos', k.returnsAvailable ? (k.returnsOrdersAvailable ? `${{num(k.returnsOrdersCount || 0)}} de ${{num(k.returnsOrdersTotal || 0)}} · ${{pct(k.returnsOrdersRate || 0)}}` : `${{num(k.returnsOrdersCount || 0)}} · taxa N/D`) : 'N/D', k.returnsAvailable && k.returnsOrdersCount > 0 ? 'danger' : ''],
         ['Receita atribuida ADS', brl(k.adsRevenue), ''],
@@ -3018,7 +3049,7 @@ def render_dashboard(data):
         ['ROAS Ads', k.roas.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + 'x', '', k.investment > 0 ? `Faturamento total / investimento Ads: ${{(k.revenue / k.investment).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}x` : 'Faturamento total / investimento Ads: N/D'],
         ['Investiu sem venda ADS', num(k.adsNoSales), k.adsNoSales ? 'danger' : 'good'],
         ['Valor sem venda ADS', brl(k.investmentNoAdsSales), k.investmentNoAdsSales ? 'danger' : 'good']
-      ].map(([label,value,cls,secondary]) => `<div class="card kpi ${{cls}}"><small>${{label}}</small><strong>${{value}}</strong>${{secondary ? `<span class="kpi-secondary">${{secondary}}</span>` : ''}}</div>`).join('');
+      ].map(([label,value,cls,secondary]) => `<div class="card kpi ${{cls}}"><small>${{label}}</small><strong>${{value}}</strong>${{periodComparisonInline(metricKeys[label])}}${{secondary ? `<span class="kpi-secondary">${{secondary}}</span>` : ''}}</div>`).join('');
     }}
     function renderAlerts() {{
       const k = DATA.kpis;
@@ -3359,6 +3390,8 @@ def render_dashboard(data):
         units:{{label:'Unidades vendidas', color:'#1570ef', format:value => num(value)}},
         orders:{{label:'Pedidos', color:'#12b76a', format:value => num(value)}},
         price:{{label:'Preco medio vendido', color:'#f79009', format:brl}},
+        visits:{{label:'Visitas dos produtos', color:'#087f5b', format:num}},
+        cancelledOrders:{{label:'Vendas canceladas', color:'#c92a2a', format:num}},
       }};
       return configs[metric] || configs.revenue;
     }}
@@ -3436,6 +3469,14 @@ def render_dashboard(data):
       const rows = sourceRows;
       const hasPartial = rows.some(row => row.partial);
       const config = chartMetricConfig(metric);
+      const comparisonRoot = root.querySelector('.period-chart-comparison');
+      if (comparisonRoot) comparisonRoot.innerHTML = periodComparisonInline(metric);
+      if (comparisonRoot && ['visits','cancelledOrders'].includes(metric) && (DATA.periodSummary || {{}})[metric] == null) {{
+        root.querySelector('.chart-summary').textContent = config.label + ': N/D — fonte ou cobertura do período indisponível.';
+        root.querySelector('.chart-canvas').innerHTML = '<div class="muted" style="padding:28px">Nenhum zero foi inferido. Cancelamentos não são devoluções; visitas de 7 dias não substituem o período selecionado.</div>';
+        root.querySelectorAll('[data-chart-metric]').forEach(button => button.classList.toggle('active', button.dataset.chartMetric === metric));
+        return;
+      }}
       const values = rows.map(row => Number(row[metric] || 0));
       const totals = rows.reduce((sum, row) => ({{
         adsRevenue:sum.adsRevenue + Number(row.adsRevenue || 0),
