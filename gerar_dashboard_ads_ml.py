@@ -3229,8 +3229,8 @@ def render_dashboard(data):
       const rows = rowsByViewMode();
       const stats = [
         ['Todos os itens', rows.length, 'Base completa da visao atual.'],
-        ['Publicidade ativa', rows.some(item => matchesContext(item, 'unknownAds')) ? null : rows.filter(item => matchesContext(item, 'active')).length, 'Status confirmado no cache; N/D quando a classificacao esta incompleta.'],
-        ['Publicidade encerrada', rows.some(item => matchesContext(item, 'unknownAds')) ? null : rows.filter(item => matchesContext(item, 'ended')).length, 'Somente encerramento explicito; ausencia, pausa e falta de campanha nao significam encerramento.'],
+        ['Publicidade ativa confirmada', rows.filter(item => matchesContext(item, 'active')).length, 'Contagem somente dos status ativos confirmados; itens sem status aparecem separadamente.'],
+        ['Publicidade encerrada confirmada', rows.filter(item => matchesContext(item, 'ended')).length, 'Somente encerramento explicito; ausencia, pausa e falta de campanha nao significam encerramento.'],
         ['Publicidade sem status confirmado', rows.filter(item => matchesContext(item, 'unknownAds')).length, 'Status indisponivel ou insuficiente. Nao implica anuncio encerrado.'],
         ['Gasto sem retorno ADS', rows.filter(item => matchesContext(item, 'noReturn')).length, 'Houve gasto, mas nao houve receita ADS atribuida.'],
         ['TACOS fora da meta', rows.filter(item => matchesContext(item, 'highTacos')).length, 'Itens com TACOS acima da meta de 3%.'],
