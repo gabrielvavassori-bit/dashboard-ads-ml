@@ -2000,14 +2000,6 @@ def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_fro
                     return (
                         _normalize_mlb_code(row.get("item_id") or row.get("id")),
                         str(row.get("campaign_id") or "").strip(),
-                        str(row.get("ad_group_id") or "").strip(),
-                        *(
-                            _number(row.get(field))
-                            for field in (
-                                "cost", "total_amount", "direct_amount", "units_quantity",
-                                "direct_units_quantity", "indirect_units_quantity", "prints", "clicks",
-                            )
-                        ),
                     )
 
                 for row in committed_rows:

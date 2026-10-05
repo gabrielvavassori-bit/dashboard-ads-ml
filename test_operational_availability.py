@@ -14,7 +14,10 @@ class OperationalAvailabilityTests(unittest.TestCase):
         committed.update(complete_integrity_contract("demo", "7", "2026-09-01", "2026-09-02"))
         committed["latest"]["sales"]["complete"] = True
         payload["ads"]["items"][0].update(title="Original product", family_id="family-original", thumbnail="original.jpg")
-        committed["ads"]["items"][0].update(status="active", title="Committed title", cost=10, total_amount=40)
+        committed["ads"]["items"][0].update(
+            status="active", title="Committed title", ad_group_id="group-only-in-commit",
+            cost=999, total_amount=999,
+        )
         payload["committed_period"] = committed
         with patch.object(app, "_fetch_dash_ads_json", return_value=payload), patch.object(
             app, "_load_snapshot_completeness_governance_rule", return_value=active_snapshot_completeness_rule()
