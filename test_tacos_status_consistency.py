@@ -37,7 +37,9 @@ class TacosStatusConsistencyTests(unittest.TestCase):
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(result.stdout), [[False, False, True]] * 4 +
                          [[True, False, False], [False, True, False], [False, False, True]])
-        self.assertIn("stat[1] === null ? 'N/D'", html)
+        self.assertIn("['Publicidade ativa confirmada', rows.filter", html)
+        self.assertIn("['Publicidade encerrada confirmada', rows.filter", html)
+        self.assertNotIn("rows.some(item => matchesContext(item, 'unknownAds')) ? null", html)
 
 
 if __name__ == '__main__':
