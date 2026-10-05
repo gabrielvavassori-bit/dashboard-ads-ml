@@ -1985,7 +1985,51 @@ def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_fro
         integrity = _online_cache_integrity_state(committed, client, advertiser_id, date_from, date_to)
         if integrity["ready"]:
             # Keep operational product metadata and table values intact.
-            # The exact committed contract certifies only the daily chart path.
+            # The exact committed contract certifies the daily chart and may
+            # also carry a fresher advertising status for the same immutable
+            # row.  Copy only that status: financial values and product
+            # metadata continue coming from the operational cache.
+            operational_ads = payload.get("ads") if isinstance(payload.get("ads"), dict) else {}
+            committed_ads = committed.get("ads") if isinstance(committed.get("ads"), dict) else {}
+            operational_rows = operational_ads.get("items") if isinstance(operational_ads.get("items"), list) else []
+            committed_rows = committed_ads.get("items") if isinstance(committed_ads.get("items"), list) else []
+            if operational_rows and committed_rows:
+                statuses_by_key = {}
+
+                def status_key(row):
+                    return (
+                        _normalize_mlb_code(row.get("item_id") or row.get("id")),
+                        str(row.get("campaign_id") or "").strip(),
+                        str(row.get("ad_group_id") or "").strip(),
+                        *(
+                            _number(row.get(field))
+                            for field in (
+                                "cost", "total_amount", "direct_amount", "units_quantity",
+                                "direct_units_quantity", "indirect_units_quantity", "prints", "clicks",
+                            )
+                        ),
+                    )
+
+                for row in committed_rows:
+                    if not isinstance(row, dict):
+                        continue
+                    status = str(row.get("status") or "").strip()
+                    if status:
+                        statuses_by_key.setdefault(status_key(row), []).append(status)
+                merged_rows = []
+                for row in operational_rows:
+                    if not isinstance(row, dict) or str(row.get("status") or "").strip():
+                        merged_rows.append(row)
+                        continue
+                    candidates = statuses_by_key.get(status_key(row)) or []
+                    if candidates:
+                        merged_rows.append({**row, "status": candidates.pop(0)})
+                    else:
+                        merged_rows.append(row)
+                payload = {
+                    **payload,
+                    "ads": {**operational_ads, "items": merged_rows},
+                }
             return {**payload, "chart_period_verified": True}, ""
     return payload, ""
 
