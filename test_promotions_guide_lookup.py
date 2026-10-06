@@ -570,7 +570,9 @@ class PromotionsGuideLookupTests(unittest.TestCase):
     def test_target_margin_solver_preserves_saved_item_cost(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         solver = source[source.index('    async function promotionRequoteTargetMargin'):source.index('    function activatePromotionPanels')]
-        self.assertIn('const item = {{...apiItem, code', solver)
+        self.assertIn("const guideItem = (promotionGuideItem?.children || []).find", solver)
+        self.assertIn('const item = {{...guideItem, ...apiItem, code', solver)
+        self.assertIn("apiItem.sku || guideItem.sku || ''", solver)
         self.assertNotIn('const item = {{code, sku:apiItem', solver)
 
     def test_promotion_simulators_use_delegated_events_after_async_rerenders(self):
