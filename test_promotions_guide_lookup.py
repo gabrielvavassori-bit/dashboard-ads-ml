@@ -62,7 +62,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
             source.index('    function promotionMarginCell'):
             source.index('    function promotionTableRow')
         ].replace('{{', '{').replace('}}', '}')
-        stubs = "const safe = value => String(value ?? ''); const brl = value => `R$ ${Number(value).toFixed(2)}`; const promotionEffectivePrice = row => Number(row.price || row.receipt_quote?.price || 0); const promotionQuoteMatchesPrice = (row, price) => Math.abs(Number(row.receipt_quote?.price) - price) < 0.01; const promotionFinancialResult=()=>({available:false});\n"
+        stubs = "const safe = value => String(value ?? ''); const brl = value => `R$ ${Number(value).toFixed(2)}`; const promotionEffectivePrice = row => Number(row.price || row.receipt_quote?.price || 0); const promotionQuoteMatchesPrice = (row, price) => Math.abs(Number(row.receipt_quote?.price) - price) < 0.01; const promotionFinancialResult=()=>({available:false}); const promotionSkuFinance=()=>({hasCost:false,cost:NaN,profile:null});\n"
         script = stubs + function + "\nconsole.log(promotionMarginCell({price:74.9,receipt_quote:{available:true,price:74.9,sale_fee:8.61,shipping_cost:8.75,rebate:0,receipt_before_cost_tax:57.54}})); console.log(promotionMarginCell({receipt_quote:{available:false,reason:'Frete ausente'}})); console.log(promotionMarginCell({price:19.94,receipt_quote:{available:true,price:27.97,sale_fee:3.22,shipping_cost:7.45,rebate:0,receipt_before_cost_tax:17.30}}));"
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout.splitlines()
         self.assertIn('R$ 57.54', result[0])
@@ -78,6 +78,35 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('N/D', result[2])
         self.assertIn('Cotação divergente', result[2])
         self.assertNotIn('R$ 17.30', result[2])
+
+    def test_saved_cost_is_applied_even_when_tax_profile_is_pending(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        helpers = source[
+            source.index('    function financeSkuKey'):
+            source.index('    function promotionFinancialResult')
+        ].replace('{{', '{').replace('}}', '}')
+        margin = source[
+            source.index('    function promotionMarginCell'):
+            source.index('    function promotionTableRow')
+        ].replace('{{', '{').replace('}}', '}')
+        stubs = """
+        const financeProfile={costBySku:{'  xt2502-preto-pink   29  ':140},fiscalBySku:{}};
+        const safe=value=>String(value ?? '');
+        const brl=value=>`R$ ${Number(value).toFixed(2)}`;
+        const promotionEffectivePrice=row=>Number(row.price || row.receipt_quote?.price || 0);
+        const promotionQuoteMatchesPrice=(row,price)=>Math.abs(Number(row.receipt_quote?.price)-price)<.01;
+        const promotionFinancialResult=()=>({available:false});
+        """
+        row = {'price': 289.9, 'receipt_quote': {'available': True, 'price': 289.9,
+               'sale_fee': 55.08, 'shipping_cost': 25.45, 'rebate': 0,
+               'receipt_before_cost_tax': 209.37}}
+        script = stubs + helpers + margin + '\nconsole.log(promotionMarginCell(' + json.dumps(row) + ',{sku:"XT2502-PRETO-PINK 29"}));'
+        html = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout
+        tooltip = unquote(html.split('data-metrics-tip="')[1].split('"')[0])
+        self.assertIn('Custo do produto</span><b>−R$ 140.00', tooltip)
+        self.assertIn('Saldo após custo · antes de imposto</span><b>R$ 69.37', tooltip)
+        self.assertIn('Custo aplicado · imposto pendente', html)
+        self.assertNotIn('Custo do produto</span><b>Não informado', tooltip)
 
     def test_effective_offer_price_precedes_unconfirmed_api_suggestion(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
@@ -100,6 +129,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const safe = value => String(value ?? '');
         const brl = value => `R$ ${Number(value).toFixed(2)}`;
         const promotionFinancialResult=()=>({available:false});
+        const promotionSkuFinance=()=>({hasCost:false,cost:NaN,profile:null});
         const promotionPriority = () => [0,0,1,-50];
         const productImage = () => '<img src="foto.jpg">';
         const promotionDisplayName = row => row.name;
