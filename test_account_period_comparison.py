@@ -17,8 +17,9 @@ class AccountPeriodComparisonTests(unittest.TestCase):
         previous['accountDailySeries'][0]['partial']=True
         def attach(data,client,start,end):
             data['accountMetrics']={'visits':{'complete':True,'total':60 if start=='2026-09-01' else 30},'cancelledOrders':{'complete':True,'total':2}}
-        with patch.object(app,'_build_online_dashboard_data',return_value=(previous,'')), patch.object(app,'_attach_official_account_metrics',side_effect=attach):
+        with patch.object(app,'_build_online_dashboard_data',side_effect=AssertionError('must not allocate a second dashboard for partial finances')) as build, patch.object(app,'_attach_official_account_metrics',side_effect=attach):
             app._attach_account_period_comparison(current,'future-client','7',period)
+        build.assert_not_called()
         metrics=current['periodComparison']['metrics']
         self.assertEqual(metrics['visits']['change'],1)
         self.assertEqual(metrics['cancelledOrders']['status'],'available')
