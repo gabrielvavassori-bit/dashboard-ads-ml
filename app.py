@@ -1490,19 +1490,22 @@ def _attach_account_period_comparison(data, client, advertiser_id, period):
         'dateFrom': selected['dateFrom'], 'dateTo': selected['dateTo']})
     current_exact = data.get('meta', {}).get('period') == {
         'dateFrom': period['dateFrom'], 'dateTo': period['dateTo']}
-    if exact:
-        _attach_official_account_metrics(previous, client, selected['dateFrom'], selected['dateTo'])
+    # A failed financial reader must not suppress independently certified
+    # visits/cancellations for the requested comparison window.
+    official_previous = previous if exact else {'meta': {'period': {
+        'dateFrom': selected['dateFrom'], 'dateTo': selected['dateTo']}}}
+    _attach_official_account_metrics(official_previous, client, selected['dateFrom'], selected['dateTo'])
     # Use positive daily certification, never a global health status or an old window.
     verified = bool(exact and current_exact and all(
         d.get('accountDailySeries') and not any(r.get('partial', True) for r in d['accountDailySeries'])
         for d in (data, previous)))
     verified_metrics = {key: verified for key in data['periodSummary']}
     for key in ('visits','cancelledOrders'):
-        verified_metrics[key] = bool(exact and current_exact and all(
-            d.get('accountMetrics', {}).get(key, {}).get('complete') is True for d in (data,previous)))
+        verified_metrics[key] = bool(current_exact and all(
+            d.get('accountMetrics', {}).get(key, {}).get('complete') is True for d in (data,official_previous)))
     data['periodComparison'] = {
         'enabled': True, 'period': selected,
-        'metrics': compare(data['periodSummary'], summary(previous) if exact else {}, verified=verified_metrics),
+        'metrics': compare(data['periodSummary'], summary(official_previous), verified=verified_metrics),
         'available': verified,
         'reason': '' if verified else 'Comparacao N/D: cobertura dos dois periodos ainda nao comprovada.',
     }
