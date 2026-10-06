@@ -6,6 +6,35 @@ from gerar_dashboard_ads_ml import render_dashboard
 
 
 class OperationalAvailabilityTests(unittest.TestCase):
+    def test_status_overlay_is_generic_for_existing_and_future_accounts(self):
+        from test_online_periods import complete_integrity_contract, active_snapshot_completeness_rule
+        for client_id in ("conta-existente-generica", "conta-futura-generica"):
+            with self.subTest(client_id=client_id):
+                payload = self.payload(client_id)
+                committed = copy.deepcopy(payload)
+                committed.pop("operational_partial")
+                committed.update(complete_integrity_contract(
+                    client_id, "7", "2026-09-01", "2026-09-02"
+                ))
+                committed["latest"]["sales"]["complete"] = True
+                committed["ads"]["items"][0].update(
+                    status="active", ad_group_id="grupo-apenas-no-commit",
+                    cost=999, total_amount=999,
+                )
+                payload["committed_period"] = committed
+                with patch.object(app, "_fetch_dash_ads_json", return_value=payload), patch.object(
+                    app, "_load_snapshot_completeness_governance_rule",
+                    return_value=active_snapshot_completeness_rule(),
+                ):
+                    result, error = app._dash_ads_fetch_operational_latest(
+                        client_id, "7", "2026-09-01", "2026-09-02"
+                    )
+                self.assertEqual(error, "")
+                self.assertTrue(result["chart_period_verified"])
+                self.assertEqual(result["ads"]["items"][0]["status"], "active")
+                self.assertEqual(result["ads"]["items"][0]["cost"], 10)
+                self.assertEqual(result["ads"]["items"][0]["total_amount"], 40)
+
     def test_committed_period_is_scoped_and_partial_fallback_preserved(self):
         from test_online_periods import complete_integrity_contract, active_snapshot_completeness_rule
         payload = self.payload()
@@ -55,9 +84,9 @@ class OperationalAvailabilityTests(unittest.TestCase):
             result, _ = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
             self.assertIs(result, payload)
 
-    def payload(self):
-        identity = dict(client_id="demo", advertiser_id="7", date_from="2026-09-01", date_to="2026-09-02")
-        return dict(ok=True, operational_partial=True, client_id="demo", period_cache_hit=True,
+    def payload(self, client_id="demo"):
+        identity = dict(client_id=client_id, advertiser_id="7", date_from="2026-09-01", date_to="2026-09-02")
+        return dict(ok=True, operational_partial=True, client_id=client_id, period_cache_hit=True,
                     latest={**identity, "sales": {"complete": False}},
                     ads={**identity, "items": [{"item_id": "MLB123", "cost": 10, "clicks": 20, "prints": 100, "total_amount": 40}]},
                     sales={**identity, "items": {"MLB123": {"revenue_total": 20, "units_total": 1, "orders_count": 1}}},
