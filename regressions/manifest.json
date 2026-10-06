@@ -227,6 +227,51 @@
           "blocking": true
         }
       ]
+    },
+{
+  "id": "REGRESSION-029",
+  "title": "Visitas e cancelamentos oficiais independentes de Ads parcial",
+  "severity": "ALTA",
+  "components": [
+    "dash_ads_operational_metrics",
+    "visits_recovery",
+    "account_period_comparison"
+  ],
+  "domains": [
+    "mercado_livre_visits",
+    "orders",
+    "operational_reporting"
+  ],
+  "tags": [
+    "all_accounts",
+    "future_accounts",
+    "durable_fairness",
+    "exact_period",
+    "no_false_zero"
+  ],
+  "invariant": "Cada conta tem recuperacao periodica independente de Ads/Billing, com tentativas persistidas justas entre anuncios e reinicios. Visitas e cancelamentos completos da conta e janela exatas alimentam KPIs e comparacoes independentemente da cobertura financeira. Cancelamentos contam pedidos criados no periodo com status atual cancelled; devolucoes nao sao cancelamentos. Ausencia, duplicidade, conta divergente e numeros invalidos nunca viram zero. Leituras nao coletam nem escrevem.",
+  "file_globs": [
+    "app.py",
+    "dash_ads_operational_metrics.py",
+    "period_comparison.py",
+    "gerar_dashboard_ads_ml.py",
+    "test_dash_ads_operational_metrics.py",
+    "test_account_period_comparison.py",
+    "test_operational_availability.py"
+  ],
+  "protections": [
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "-v",
+        "test_account_period_comparison",
+        "test_operational_availability"
+      ],
+      "blocking": true
     }
   ]
+}
+]
 }
