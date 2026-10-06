@@ -2,6 +2,48 @@
   "schema_version": "1.0.0",
   "canonical_catalog": "https://github.com/gabrielvavassori-bit/marketplace-governance/blob/master/knowledge/regression_catalog.json",
   "regressions": [
+{
+  "id": "REGRESSION-008",
+  "title": "Pendencias identificadas e graficos isolados por conta e periodo",
+  "severity": "ALTA",
+  "components": [
+    "dash_ads_snapshot_integrity",
+    "operational_cache",
+    "advertising_status_overlay",
+    "advertising_status_summary"
+  ],
+  "domains": [
+    "cache_integrity"
+  ],
+  "tags": [
+    "account_isolation",
+    "chart",
+    "all_accounts",
+    "future_accounts",
+    "no_false_ended"
+  ],
+  "file_globs": [
+    "app.py",
+    "gerar_dashboard_ads_ml.py",
+    "test_operational_availability.py",
+    "test_tacos_status_consistency.py",
+    "regressions/manifest.json"
+  ],
+  "invariant": "Saude global nao certifica nem invalida uma conta. Graficos completos exigem contrato exato ou derivacao comprovada; leitura nao coleta nem repara. TACOS online usa faturamento sem somar atribuicao indireta, no KPI, itens, grupos e serie diaria. O cache operacional pode receber somente status nao vazio do contrato comprometido da mesma conta e periodo, associado por item e campanha unicos; valores financeiros e metadados operacionais nunca sao substituidos. Status ausente, pausado ou indefinido nunca significa publicidade encerrada nem zero confirmado de ativas. Ativas confirmadas, encerradas confirmadas e sem status confirmado permanecem contagens separadas e visiveis. A regra nao possui allowlist e vale para contas existentes e futuras.",
+  "protections": [
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "test_operational_availability",
+        "test_tacos_status_consistency",
+        "test_account_period_comparison"
+      ],
+      "blocking": true
+    }
+  ]
+},
     {
       "id": "REGRESSION-001",
       "title": "Integridade dos snapshots financeiros do Dash Ads",
@@ -68,6 +110,7 @@
             "test_fiscal_profile_ui.py",
             "test_regression_001_snapshot_integrity.py",
             "test_operational_availability.py",
+            "test_tacos_status_consistency.py",
             "test_online_periods.OnlinePeriodTests.test_never_sold_listing_requires_active_status_and_creation_coverage",
             "test_antiregression_hook.AntiregressionStopHookTests"
           ],
@@ -120,7 +163,7 @@
       "components": ["promotion_margin_tooltip", "seller_promotions"],
       "domains": ["financial_reporting", "mercado_livre_promotions"],
       "tags": ["receipt_quote", "offer_price", "editable_offer_price", "preview_before_confirmation", "descriptive_hover", "no_invented_cost", "promotion_table"],
-      "invariant": "A tabela por MLB ou campanha deve priorizar o preco efetivo da oportunidade sobre sugestoes adicionais da API e manter o recebimento cotado e o flutuante descritivo de tarifa, frete, custo e imposto. O preco sugerido editavel fica na coluna Preco promocional, respeita os limites minimo e maximo da oportunidade e gera nova cotacao de recebimento e margem antes de qualquer confirmacao. A margem desejada pode recalcular o preco apenas por previas consultivas dentro desses limites. A selecao e a previa coletiva devem existir nas visoes Campanha, SKU, Hibrida e Anuncio/variacao e abranger somente os itens carregados que continuam visiveis pelo filtro e pela campanha escolhida. Depois de uma confirmacao, preco, campanha, periodo e estado devem atualizar nas visoes carregadas sem F5. Se a cotacao pertencer a outro preco, recebimento, margem e aplicacao ficam bloqueados ate nova previa. Custo e imposto ausentes aparecem como nao informados, nunca como zero real. Cotacao indisponivel permanece N/D sem alargar a tabela.",
+      "invariant": "A tabela por MLB ou campanha deve priorizar o preco efetivo da oportunidade sobre sugestoes adicionais da API e manter o recebimento cotado e o flutuante descritivo de tarifa, frete, custo e imposto. O preco sugerido editavel fica na coluna Preco promocional, respeita os limites minimo e maximo da oportunidade e gera nova cotacao de recebimento e margem antes de qualquer confirmacao. Preco e margem editaveis sao simuladores consultivos: nunca aplicam promocao sozinhos, preservam a entrada durante cotacoes e erros e atualizam Voce recebe e MC parcial. A margem desejada pode recalcular o preco apenas por previas consultivas dentro de limites aceitos; o preco atual do anuncio nunca pode ser usado como preco promocional valido. Uma rejeicao de limite nao pode apagar o preco ou a margem informados. A selecao e a previa coletiva devem existir nas visoes Campanha, SKU, Hibrida e Anuncio/variacao e abranger somente os itens carregados que continuam visiveis pelo filtro e pela campanha escolhida. Depois de uma confirmacao, preco, campanha, periodo e estado devem atualizar nas visoes carregadas sem F5. Se a cotacao pertencer a outro preco, recebimento, margem e aplicacao ficam bloqueados ate nova previa. Custo e imposto ausentes aparecem como nao informados, nunca como zero real. Cotacao indisponivel permanece N/D sem alargar a tabela. O piso minimo de margem por SKU do beta deve ser preservado quando for superior a meta global.",
       "file_globs": ["gerar_dashboard_ads_ml.py", "test_promotions_guide_lookup.py", "test_promotion_price_reference.py"],
       "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_promotions_guide_lookup.py", "test_promotion_price_reference.py"], "blocking": true}]
     },
@@ -131,7 +174,7 @@
       "components": ["dash_ads_returns_bridge", "returns_kpis"],
       "domains": ["financial_reporting", "mercado_livre_returns"],
       "tags": ["returns", "rolling_period", "returned_orders", "no_false_nd"],
-      "invariant": "O beta mostra valor e contagem de pedidos devolvidos quando a ponte comprova a janela exata; a taxa por pedidos continua N/D sem universo de pedidos comprovado, sem ocultar a contagem nem inventar denominador.",
+      "invariant": "O beta mostra valor e contagem de pedidos devolvidos somente quando a ponte comprova a conta e janela exatas e declara o contrato ml_business_returns_v1 conciliado com Metricas de negocio. Recibo legado de eventos por data nao preenche os cartoes. A taxa por pedidos continua N/D sem universo de pedidos comprovado.",
       "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "test_operational_availability.py"],
       "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_operational_availability.py"], "blocking": true}]
     },
@@ -145,6 +188,45 @@
       "invariant": "O peso faturavel recebido da cotacao do Mercado Livre deve ser normalizado de gramas para quilogramas e acompanhado de unidade explicita. Peso ausente, legado ou sem unidade comprovada usa consultivamente 2 kg, na faixa de 0,5 a 5 kg; nunca pode ser inferido como acima de 5 kg pelo valor bruto ou pelo frete.",
       "file_globs": ["gerar_dashboard_ads_ml.py", "test_promotions_guide_lookup.py", "regressions/manifest.json"],
       "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_promotions_guide_lookup.py"], "blocking": true}]
+    },
+    {
+      "id": "REGRESSION-009",
+      "title": "Abas principais acompanham a rolagem sob banner responsivo",
+      "severity": "ALTA",
+      "components": ["responsive_layout", "dashboard_navigation", "admin_impersonation"],
+      "domains": ["dashboard_ui"],
+      "tags": ["sticky_navigation", "responsive", "mobile", "tablet", "desktop", "all_accounts", "future_accounts"],
+      "invariant": "As abas Operacional, Curva ABC, Promocoes e Custos e impostos permanecem visiveis e utilizaveis durante a rolagem em qualquer largura. Quando existe banner administrativo, o deslocamento sticky acompanha a altura real do banner inclusive apos quebra de linha ou redimensionamento; sem banner, o deslocamento e zero.",
+      "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "test_fiscal_profile_ui.py", "regressions/manifest.json"],
+      "protections": [
+        {
+          "command": [
+            "{python}",
+            "-m",
+            "unittest",
+            "-v",
+            "test_fiscal_profile_ui.FiscalProfileUiTests.test_primary_navigation_is_sticky_and_hides_technical_online_beta_tab",
+            "test_fiscal_profile_ui.FiscalProfileUiTests.test_admin_banner_exposes_dynamic_sticky_navigation_offset"
+          ],
+          "blocking": true
+        }
+      ]
+    },
+    {
+      "id": "REGRESSION-028",
+      "title": "Custo cadastrado sempre participa da leitura promocional",
+      "severity": "ALTA",
+      "components": ["seller_promotions", "promotion_margin_tooltip", "finance_profile"],
+      "domains": ["financial_reporting", "mercado_livre_promotions"],
+      "tags": ["saved_cost", "partial_tax_profile", "normalized_sku", "no_false_missing_cost", "all_accounts", "future_accounts"],
+      "invariant": "Toda cotacao promocional deve aguardar o cadastro financeiro e aplicar o custo comprovadamente salvo para o SKU, inclusive quando o perfil fiscal ainda estiver incompleto. Imposto ausente permanece nao informado e nunca vira zero. Variacoes apenas de caixa, espacos e Unicode na chave do SKU nao podem ocultar custo ou perfil fiscal.",
+      "file_globs": ["gerar_dashboard_ads_ml.py", "test_promotions_guide_lookup.py", "regressions/manifest.json"],
+      "protections": [
+        {
+          "command": ["{python}", "-m", "unittest", "-v", "test_promotions_guide_lookup.PromotionsGuideLookupTests.test_saved_cost_is_applied_even_when_tax_profile_is_pending", "test_promotions_guide_lookup.PromotionsGuideLookupTests.test_partial_margin_shows_breakdown_without_inventing_cost_or_tax"],
+          "blocking": true
+        }
+      ]
     }
   ]
 }

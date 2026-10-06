@@ -399,10 +399,28 @@ def render_admin_login(error: str = "") -> str:
     return _layout("Admin - Login", body)
 
 
-def render_admin_users(users, query: str = "", info: str = "", recovery_view: dict | None = None) -> str:
+def render_admin_users(users, query: str = "", info: str = "", recovery_view: dict | None = None, demo_accounts=(), demo_account_id=None) -> str:
     import time
     info_html = f'<div class="alert ok">{_html.escape(info)}</div>' if info else ""
     recovery_view = recovery_view if isinstance(recovery_view, dict) else {"available": False, "rows": []}
+    demo_accounts = list(demo_accounts or [])
+    active_demo = next((account for account in demo_accounts if int(account.get("id") or 0) == int(demo_account_id or 0)), None)
+    demo_options = "".join(
+        f'<option value="{int(account["id"])}">{_html.escape(str(account.get("official_store") or account.get("nickname") or account.get("client_id") or "Conta"))} · {_html.escape(str(account.get("user_email") or ""))}</option>'
+        for account in demo_accounts
+    )
+    demo_html = (
+        f'''<div class="alert err" style="margin:18px 0"><b>MODO DEMO ATIVO</b> para a conta selecionada. Nenhum dado persistido foi alterado. <form method="post" action="/admin/demo/deactivate" style="display:inline"><button type="submit" class="danger" style="width:auto;margin:0 0 0 8px">Desativar agora</button></form></div>'''
+        if active_demo else
+        f'''<div style="border:1px solid #f79009;border-radius:12px;padding:16px;margin:18px 0 22px;background:#fffaeb">
+          <div style="font-weight:800;font-size:16px;margin-bottom:6px">Modo Demo / Privacidade</div>
+          <div style="font-size:13px;color:#7a2e0e;margin-bottom:14px">Abre o Dash Ads com valores reais e identificadores anonimizados. A seleção é temporária e não grava nem altera dados do cliente.</div>
+          <form method="post" action="/admin/demo/activate" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <label style="margin:0;min-width:320px;flex:1">Conta existente<select name="account_id" required style="width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px"><option value="">Selecione uma conta</option>{demo_options}</select></label>
+            <button type="submit" style="width:auto;margin:0">Ativar Modo Demo</button>
+          </form>
+        </div>'''
+    ) if demo_options else '<div class="alert err" style="margin:18px 0">Nenhuma conta Mercado Livre ativa está disponível para o Modo Demo.</div>'
 
     def fmt_ts(ts):
         if not ts:
@@ -559,6 +577,7 @@ def render_admin_users(users, query: str = "", info: str = "", recovery_view: di
       <div><a href="/admin/logout">sair</a></div>
     </div>
     {info_html}
+    {demo_html}
     {recovery_html}
     <form method="get" action="/admin" style="margin:18px 0">
       <input type="text" name="q" value="{_html.escape(query)}" placeholder="Buscar por email ou nome">

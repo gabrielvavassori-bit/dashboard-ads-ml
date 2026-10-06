@@ -27,6 +27,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionReceiptCell = () => 'Não calculado';
         const promotionMarginCell = () => 'MC parcial';
         const promotionFinancialResult = () => ({available:false});
+        const promotionSimulationFinancialResult = promotionFinancialResult;
         const promotionPriority = () => [0,0,1,-50];
         const promotionSameOpportunity = () => true;
         const promotionPreviewHtml = () => '';
@@ -62,7 +63,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
             source.index('    function promotionMarginCell'):
             source.index('    function promotionTableRow')
         ].replace('{{', '{').replace('}}', '}')
-        stubs = "const safe = value => String(value ?? ''); const brl = value => `R$ ${Number(value).toFixed(2)}`; const promotionEffectivePrice = row => Number(row.price || row.receipt_quote?.price || 0); const promotionQuoteMatchesPrice = (row, price) => Math.abs(Number(row.receipt_quote?.price) - price) < 0.01; const promotionFinancialResult=()=>({available:false});\n"
+        stubs = "const safe = value => String(value ?? ''); const brl = value => `R$ ${Number(value).toFixed(2)}`; const promotionEffectivePrice = row => Number(row.price || row.receipt_quote?.price || 0); const promotionQuoteMatchesPrice = (row, price) => Math.abs(Number(row.receipt_quote?.price) - price) < 0.01; const promotionFinancialResult=()=>({available:false}); const promotionSkuFinance=()=>({hasCost:false,cost:NaN,profile:null});\n"
         script = stubs + function + "\nconsole.log(promotionMarginCell({price:74.9,receipt_quote:{available:true,price:74.9,sale_fee:8.61,shipping_cost:8.75,rebate:0,receipt_before_cost_tax:57.54}})); console.log(promotionMarginCell({receipt_quote:{available:false,reason:'Frete ausente'}})); console.log(promotionMarginCell({price:19.94,receipt_quote:{available:true,price:27.97,sale_fee:3.22,shipping_cost:7.45,rebate:0,receipt_before_cost_tax:17.30}}));"
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout.splitlines()
         self.assertIn('R$ 57.54', result[0])
@@ -78,6 +79,35 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('N/D', result[2])
         self.assertIn('Cotação divergente', result[2])
         self.assertNotIn('R$ 17.30', result[2])
+
+    def test_saved_cost_is_applied_even_when_tax_profile_is_pending(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        helpers = source[
+            source.index('    function financeSkuKey'):
+            source.index('    function promotionFinancialResult')
+        ].replace('{{', '{').replace('}}', '}')
+        margin = source[
+            source.index('    function promotionMarginCell'):
+            source.index('    function promotionTableRow')
+        ].replace('{{', '{').replace('}}', '}')
+        stubs = """
+        const financeProfile={costBySku:{'  xt2502-preto-pink   29  ':140},fiscalBySku:{}};
+        const safe=value=>String(value ?? '');
+        const brl=value=>`R$ ${Number(value).toFixed(2)}`;
+        const promotionEffectivePrice=row=>Number(row.price || row.receipt_quote?.price || 0);
+        const promotionQuoteMatchesPrice=(row,price)=>Math.abs(Number(row.receipt_quote?.price)-price)<.01;
+        const promotionFinancialResult=()=>({available:false});
+        """
+        row = {'price': 289.9, 'receipt_quote': {'available': True, 'price': 289.9,
+               'sale_fee': 55.08, 'shipping_cost': 25.45, 'rebate': 0,
+               'receipt_before_cost_tax': 209.37}}
+        script = stubs + helpers + margin + '\nconsole.log(promotionMarginCell(' + json.dumps(row) + ',{sku:"XT2502-PRETO-PINK 29"}));'
+        html = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8', check=True).stdout
+        tooltip = unquote(html.split('data-metrics-tip="')[1].split('"')[0])
+        self.assertIn('Custo do produto</span><b>−R$ 140.00', tooltip)
+        self.assertIn('Saldo após custo · antes de imposto</span><b>R$ 69.37', tooltip)
+        self.assertIn('Custo aplicado · imposto pendente', html)
+        self.assertNotIn('Custo do produto</span><b>Não informado', tooltip)
 
     def test_effective_offer_price_precedes_unconfirmed_api_suggestion(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
@@ -100,6 +130,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const safe = value => String(value ?? '');
         const brl = value => `R$ ${Number(value).toFixed(2)}`;
         const promotionFinancialResult=()=>({available:false});
+        const promotionSkuFinance=()=>({hasCost:false,cost:NaN,profile:null});
         const promotionPriority = () => [0,0,1,-50];
         const productImage = () => '<img src="foto.jpg">';
         const promotionDisplayName = row => row.name;
@@ -491,7 +522,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
         self.assertIn('const priceCell = editablePrice', row)
         self.assertIn('data-promo-campaign-price=', row)
-        self.assertIn('Preço sugerido; edite para recalcular antes de aprovar', row)
+        self.assertIn('Preço para simular', row)
         self.assertIn('min_discounted_price', row)
         self.assertIn('max_discounted_price', row)
         self.assertIn('<td class="num">${{priceCell}}${{referenceHtml}}</td><td class="num">${{promotionReceiptCell(row)}}</td>', row)
@@ -505,17 +536,63 @@ class PromotionsGuideLookupTests(unittest.TestCase):
     def test_target_margin_requotes_price_within_marketplace_limits(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
-        self.assertIn('Margem desejada (%)', row)
+        self.assertIn('Margem para simular (%)', row)
         self.assertIn('data-promo-target-margin=', row)
         self.assertIn('min_discounted_price', row)
         self.assertIn('max_discounted_price', row)
         solver = source[source.index('    async function promotionPreviewAtPrice'):source.index('    function activatePromotionPanels')]
         self.assertIn("promotionApiRequest('/api/promotions/preview'", solver)
-        self.assertIn('promotionFinancialResult(quotedRow, item)', solver)
-        self.assertIn('for (let attempt = 0; attempt < 8', solver)
+        self.assertIn('promotionSimulationFinancialResult(quotedRow, item)', solver)
+        self.assertIn('for (let attempt = 0; attempt < 6', solver)
         self.assertIn('(target - lower.financial.margin)', solver)
         self.assertIn('Margem de ${{target.toLocaleString', solver)
+        self.assertIn('target_margin:target', solver)
+        self.assertIn('const storedTargetMargin = Number(row.target_margin)', row)
+        self.assertIn('targetMarginValue.toFixed(2)', row)
+        self.assertIn('originalPrice - 0.01', solver)
+        self.assertIn('const effectivePrice = Number(promotionEffectivePrice(row, item))', solver)
+        self.assertIn('lower.price * 0.9', solver)
+        self.assertIn('upper.price * 1.1', solver)
+        self.assertNotIn('let low = Number.isFinite(minimum) && minimum > 0 ? minimum : 0.01', solver)
+        self.assertIn('Simulação não concluída:', solver)
         self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", solver)
+
+    def test_target_margin_can_use_partial_margin_when_cost_is_known(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        helper = source[source.index('    function promotionSimulationFinancialResult'):source.index('    function promotionTableRow')]
+        self.assertIn('if (complete.available)', helper)
+        self.assertIn('promotionSkuFinance(item)', helper)
+        self.assertIn('!finance.hasCost', helper)
+        self.assertIn('profit = receipt - finance.cost', helper)
+        self.assertIn('partial:true', helper)
+        self.assertNotIn('tax:0', helper)
+
+    def test_target_margin_solver_preserves_saved_item_cost(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        solver = source[source.index('    async function promotionRequoteTargetMargin'):source.index('    function activatePromotionPanels')]
+        self.assertIn("const guideItem = (promotionGuideItem?.children || []).find", solver)
+        self.assertIn('const item = {{...guideItem, ...apiItem, code', solver)
+        self.assertIn("apiItem.sku || guideItem.sku || ''", solver)
+        self.assertNotIn('const item = {{code, sku:apiItem', solver)
+
+    def test_promotion_simulators_use_delegated_events_after_async_rerenders(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        handlers = source[source.index('    function activatePromotionPanels'):source.index('    function pricingPreviewBlock')]
+        self.assertIn("document.getElementById('promotionGuideResult')", handlers)
+        self.assertIn("promotionGuide.dataset.promoSimulationBound !== 'true'", handlers)
+        self.assertIn("promotionGuide.addEventListener('input'", handlers)
+        self.assertIn("event.target.closest?.('[data-promo-campaign-price]')", handlers)
+        self.assertIn("promotionGuide.addEventListener('change'", handlers)
+        self.assertIn("event.target.closest?.('[data-promo-target-margin]')", handlers)
+        self.assertNotIn("document.querySelectorAll('[data-promo-target-margin]').forEach", handlers)
+
+    def test_price_and_margin_fields_are_identified_as_simulators(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
+        self.assertIn('Preço para simular', row)
+        self.assertIn('Margem para simular (%)', row)
+        self.assertIn('Simulação apenas:', row)
+        self.assertIn('Nada é aplicado até abrir a revisão', row)
 
     def test_confirmed_promotion_refreshes_loaded_scope_without_page_reload(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')

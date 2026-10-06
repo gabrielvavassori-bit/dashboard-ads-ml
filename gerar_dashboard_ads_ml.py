@@ -1325,11 +1325,24 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
 
 
 def anonymize_dashboard_data(data):
-    demo = copy.deepcopy(data)
+    """Returns an in-memory, presentation-only copy safe for the Admin Demo mode.
+
+    Financial values and dates are preserved.  Every presentation identifier is
+    replaced consistently in the copied payload, and image URLs are removed so
+    a browser cannot request a real product image before any CSS can hide it.
+    """
+    # ``onlineBeta.latest`` can contain a large raw cache.  It is unnecessary
+    # in a presentation and must not be copied before being removed.
+    source = dict(data)
+    source["onlineBeta"] = {"enabled": False, "demo": True}
+    demo = copy.deepcopy(source)
     sku_map = {}
     code_map = {}
     title_map = {}
     campaign_map = {}
+    family_map = {}
+    variation_map = {}
+    account_map = {}
 
     def mapped(mapping, value, prefix):
         value = text(value)
@@ -1345,25 +1358,53 @@ def anonymize_dashboard_data(data):
             return text(value)
         return ", ".join(mapped(mapping, part.rstrip("."), prefix) for part in parts)
 
-    demo.get("kpis", {})["clientName"] = "Cliente demonstracao"
-    for list_name in ("items", "decisionItems", "skuAds", "campaignAds", "salesNoAds", "adsNoSales", "highTacos", "adsByProduct", "finishedNoSku"):
-        for item in demo.get(list_name, []):
-            if item.get("sku"):
-                item["sku"] = mapped(sku_map, item.get("sku"), "SKU DEMO")
-            if item.get("code"):
-                item["code"] = mapped_list(item.get("code"), code_map, "ANUNCIO DEMO")
-            if item.get("allCodes"):
-                item["allCodes"] = mapped_list(item.get("allCodes"), code_map, "ANUNCIO DEMO")
-            if item.get("title"):
-                item["title"] = mapped(title_map, item.get("title"), "Produto demonstracao")
-            if item.get("campaign"):
-                item["campaign"] = mapped_list(item.get("campaign"), campaign_map, "Campanha demo")
-            if item.get("adsCampaigns"):
-                item["adsCampaigns"] = mapped_list(item.get("adsCampaigns"), campaign_map, "Campanha demo")
-            if item.get("allCampaigns"):
-                item["allCampaigns"] = mapped_list(item.get("allCampaigns"), campaign_map, "Campanha demo")
-            if item.get("relatedActiveCampaigns"):
-                item["relatedActiveCampaigns"] = mapped_list(item.get("relatedActiveCampaigns"), campaign_map, "Campanha demo")
+    identifier_keys = {
+        "code", "allCodes", "all_codes", "itemId", "item_id", "detailId", "detail_id",
+        "catalogProductId", "catalog_product_id",
+    }
+    sku_keys = {"sku"}
+    title_keys = {"title", "topInvestmentLabel"}
+    campaign_keys = {"campaign", "adsCampaigns", "allCampaigns", "relatedActiveCampaigns"}
+    family_keys = {"familyId", "familyName", "family_id", "family_name"}
+    variation_keys = {
+        "parentId", "parent_id", "userProductId", "user_product_id", "userProductName",
+        "user_product_name", "conditionLabel", "condition_label", "catalogLabel", "catalog_label",
+    }
+    account_keys = {
+        "client", "clientId", "client_id", "advertiserId", "advertiser_id", "sellerId",
+        "seller_id", "nickname", "official_store", "officialStore", "ml_user_id", "mlUserId",
+    }
+
+    def scrub(value, key=""):
+        if isinstance(value, dict):
+            return {child_key: scrub(child_value, child_key) for child_key, child_value in value.items()}
+        if isinstance(value, list):
+            return [scrub(child, key) for child in value]
+        key_lower = str(key).lower()
+        if "thumbnail" in key_lower or "picture" in key_lower or "image" in key_lower or key_lower.endswith("url") or key_lower == "permalink":
+            return ""
+        if key in account_keys:
+            return mapped(account_map, value, "Conta demonstracao")
+        if key in sku_keys:
+            return mapped(sku_map, value, "SKU DEMO")
+        if key in identifier_keys:
+            return mapped_list(value, code_map, "ANUNCIO DEMO")
+        if key in title_keys:
+            return mapped(title_map, value, "Produto demonstracao")
+        if key in campaign_keys:
+            return mapped_list(value, campaign_map, "Campanha demo")
+        if key in family_keys:
+            return mapped(family_map, value, "Familia demo")
+        if key in variation_keys:
+            return mapped(variation_map, value, "Variacao demo")
+        return value
+
+    demo = scrub(demo)
+    demo.setdefault("kpis", {})["clientName"] = "Cliente demonstracao"
+    # The compact browser payload previously retained reconciliation metadata.
+    # It is not required for a presentation and may contain raw seller context.
+    demo["onlineBeta"] = {"enabled": False, "demo": True}
+    demo.setdefault("meta", {})["demoMode"] = {"enabled": True}
     return demo
 
 
@@ -1404,6 +1445,10 @@ def render_dashboard(data):
     client_name = data.get("kpis", {}).get("clientName") or ""
     title_suffix = f" - {html.escape(client_name)}" if client_name else ""
     online_mode = ((data.get("meta") or {}).get("onlineMode") or {})
+    demo_mode = ((data.get("meta") or {}).get("demoMode") or {})
+    demo_notice = """
+    <section class="demo-mode-notice" role="status"><strong>MODO DEMO ATIVO</strong><span>Dados comerciais anonimizados somente nesta visualização.</span><a href="/admin">Voltar ao Admin para desativar</a></section>
+    """ if demo_mode.get("enabled") else ""
     online_notice = html.escape(str(online_mode.get("notice") or ""))
     online_period = online_mode.get("onlinePeriod") or {}
     period_mode = str(online_period.get("mode") or "30d")
@@ -1488,7 +1533,7 @@ def render_dashboard(data):
         account_daily_chart = """
     <section class="card daily-chart-card account-daily-chart-card" data-account-daily-chart data-daily-chart data-chart-key="account">
       <div class="chart-head">
-        <div><h3>Desempenho diário da conta</h3><div class="chart-summary">Selecione uma metrica para visualizar.</div></div>
+        <div><h3>Desempenho diário da conta</h3><div class="chart-summary">Selecione uma metrica para visualizar.</div><div class="period-chart-comparison"></div></div>
         <div class="chart-metric-tabs" role="group" aria-label="Metrica do grafico da conta">
           <button class="chart-metric-button" type="button" data-chart-metric="revenue">Faturamento</button>
           <button class="chart-metric-button" type="button" data-chart-metric="adsRevenue">Receita Ads</button>
@@ -1498,6 +1543,8 @@ def render_dashboard(data):
           <button class="chart-metric-button" type="button" data-chart-metric="units">Unidades</button>
           <button class="chart-metric-button" type="button" data-chart-metric="orders">Pedidos</button>
           <button class="chart-metric-button" type="button" data-chart-metric="price">Preco medio</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="visits">Visitas</button>
+          <button class="chart-metric-button" type="button" data-chart-metric="cancelledOrders">Cancelamentos</button>
         </div>
       </div>
       <div class="chart-stage"><div class="chart-canvas"></div><div class="chart-tooltip"></div></div>
@@ -1580,7 +1627,7 @@ def render_dashboard(data):
     .top-actions {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }}
     .primary-action {{ background:var(--navy); color:#fff; border-color:var(--navy); white-space:nowrap; }}
     .secondary-action {{ color:var(--navy); background:#fff; border:1px solid var(--line); padding:9px 12px; border-radius:8px; font-weight:800; text-decoration:none; white-space:nowrap; }}
-    .page-nav {{ position:sticky; top:0; display:flex; gap:8px; align-items:center; margin:0 0 12px; padding:10px 0; background:rgba(244,247,251,.96); box-shadow:0 8px 14px -14px rgba(16,32,51,.55); backdrop-filter:blur(8px); z-index:30; }}
+    .page-nav {{ position:sticky; top:var(--admin-impersonation-banner-height, 0px); display:flex; gap:8px; align-items:center; margin:0 0 12px; padding:10px 0; background:rgba(244,247,251,.96); box-shadow:0 8px 14px -14px rgba(16,32,51,.55); backdrop-filter:blur(8px); z-index:30; }}
     .page-tab {{ background:#fff; border-color:var(--line); color:#344054; }}
     .page-tab.active {{ background:var(--navy); color:#fff; border-color:var(--navy); }}
     .view {{ display:none; }}
@@ -1637,6 +1684,7 @@ def render_dashboard(data):
     .scroll-frame {{ height:56vh; min-height:330px; max-height:560px; width:100%; max-width:100%; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#fff; overscroll-behavior:contain; }}
     .scroll-frame table {{ border:0; border-radius:0; margin:0; }}
     .ops-table {{ width:1420px; table-layout:fixed; }}
+    #table .ops-table {{ width:1610px; }}
     .abc-table {{ width:1280px; table-layout:fixed; }}
     .scroll-frame thead th {{ top:0; }}
     .muted {{ color:var(--muted); font-size:12px; }}
@@ -1731,7 +1779,10 @@ def render_dashboard(data):
     .detail-modal-body {{ position:relative; z-index:1; min-width:0; min-height:0; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; padding:18px 20px 28px; }}
     .detail-modal-body .detail-grid {{ grid-template-columns:repeat(3,minmax(260px,1fr)); }}
     .detail-modal-body .detail-block-wide {{ min-width:0; overflow-x:auto; }}
+    .detail-modal-body .campaign-child-block {{ min-width:0; }}
+    .campaign-child-scroll {{ width:100%; max-width:100%; max-height:min(58vh,560px); overflow:auto; scrollbar-gutter:stable; touch-action:pan-x pan-y; -webkit-overflow-scrolling:touch; border:1px solid var(--line); border-radius:8px; }}
     .detail-modal-body .child-table {{ min-width:1200px; }}
+    .campaign-child-scroll .child-table {{ margin:0; }}
     .detail-modal-body .child-table thead th {{ position:static; }}
     .campaign-child-tools {{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin:0 0 10px; }}
     .campaign-child-tools input {{ width:min(330px,100%); min-width:0; }}
@@ -1740,6 +1791,9 @@ def render_dashboard(data):
     .listing-fact b {{ display:block; margin-top:3px; color:var(--ink); }}
     .readonly-badge {{ display:inline-block; margin-bottom:8px; padding:4px 8px; border-radius:999px; background:#eef4ff; color:#1849a9; font-size:12px; font-weight:800; }}
     .price-signal {{ border-left:4px solid var(--orange); }}
+    .demo-mode-notice {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 12px; padding:11px 14px; border:1px solid #f79009; border-radius:10px; background:#fffaeb; color:#7a2e0e; font-size:13px; }}
+    .demo-mode-notice strong {{ letter-spacing:.04em; }}
+    .demo-mode-notice a {{ color:#7a2e0e; font-weight:800; }}
     .promotion-panel {{ margin-top:12px; padding:12px; border:1px solid #b2ddff; border-radius:10px; background:#f5fbff; }}
     .promotion-panel h4 {{ margin:0 0 8px; font-size:14px; }}
     .promotion-panel-grid {{ display:grid; grid-template-columns:repeat(2,minmax(240px,1fr)); gap:10px; margin-top:10px; }}
@@ -1913,6 +1967,23 @@ def render_dashboard(data):
     .listing-mini-badge.shipping-off {{ background:#fef3f2; color:#b42318; }}
     .child-table {{ margin-top:10px; border-spacing:0; }}
     .child-table th, .child-table td {{ font-size:12px; }}
+    .ops-table .metrics-7d-cell {{ min-width:170px; white-space:normal; text-align:left; line-height:1.5; }}
+    .metrics-7d-cell span {{ display:block; }}
+    .metrics-7d-cell b {{ color:var(--ink); }}
+    .metrics-7d-cell .up {{ color:var(--green); }}
+    .metrics-7d-cell .down {{ color:var(--red); }}
+    .metrics-7d {{ cursor:help; border-radius:5px; }}
+    .metrics-7d:focus-visible {{ outline:2px solid #2563eb; outline-offset:3px; }}
+    .metrics-float {{ position:fixed; z-index:10000; width:410px; max-width:calc(100vw - 24px); box-sizing:border-box; padding:14px; border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--ink); box-shadow:0 5px 22px #10182830; font:12px/1.5 Arial,sans-serif; pointer-events:none; }}
+    .metrics-float[hidden] {{ display:none; }}
+    .metrics-float strong {{ display:block; margin-bottom:7px; }}
+    .metrics-float-period, .metrics-float-note {{ color:var(--muted); font-size:11px; }}
+    .metrics-float-period {{ margin-bottom:8px; }}
+    .metrics-float-note {{ margin-top:9px; }}
+    .metrics-float-grid {{ display:grid; grid-template-columns:minmax(68px,1fr) repeat(4,minmax(48px,auto)); gap:5px 9px; align-items:center; }}
+    .metrics-float-grid .muted {{ color:var(--muted); font-size:10px; }}
+    .metrics-float-grid .down {{ color:var(--red); }}
+    .metrics-float-grid .up {{ color:var(--green); }}
       .period-picker {{ position:relative; z-index:30; margin:0 0 12px; overflow:visible; }}
       .period-picker summary {{ list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; }}
       .period-picker summary::-webkit-details-marker {{ display:none; }}
@@ -1930,7 +2001,23 @@ def render_dashboard(data):
       .period-warning {{ margin-top:10px; color:var(--orange); font-weight:800; }}
       @media (max-width:700px) {{ .period-popover {{ position:static; width:auto; }} .period-form {{ align-items:stretch; }} .period-form label, .period-form select, .period-form input, .period-form button {{ width:100%; min-width:0; }} .period-form .field-group {{ grid-template-columns:1fr; }} }}
     @media (max-width:1100px) {{ main {{ width:calc(100vw - 16px); }} .kpis {{ grid-template-columns:repeat(2,1fr); }} .grid {{ grid-template-columns:1fr; }} .abc-summary {{ grid-template-columns:1fr; }} .topbar {{ align-items:flex-start; flex-direction:column; }} .scroll-frame {{ height:58vh; max-height:58vh; min-height:300px; }} .detail-grid {{ grid-template-columns:1fr; }} .listing-facts {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .table-help {{ flex-direction:column; }} .table-help-side {{ justify-content:flex-start; text-align:left; }} .chart-head {{ align-items:stretch; }} .chart-metric-tabs {{ width:100%; }} .chart-metric-button {{ flex:1 1 auto; }} .campaign-config-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .campaign-child-tools {{ align-items:stretch; flex-direction:column; }} .campaign-child-tools input {{ width:100%; }} .campaign-child-count {{ white-space:normal; }} .whatsapp-support span {{ display:none; }} .whatsapp-support {{ right:14px; bottom:14px; padding:12px; }} }}
-    @media (max-width:700px) {{ .detail-modal-backdrop {{ padding:0; }} .detail-modal-shell {{ width:100vw; max-width:100vw; height:100dvh; max-height:none; border:0; border-radius:0; }} .detail-modal-head {{ padding:12px; }} .detail-modal-tabs {{ grid-auto-flow:row; grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-columns:auto; min-width:0; min-height:98px; padding:8px 12px; overflow:hidden; }} .detail-modal-tabs button {{ width:100%; min-width:0; }} .detail-modal-body {{ padding:12px; }} .detail-modal-body .detail-grid {{ grid-template-columns:1fr; }} }}
+    @media (max-width:700px) {{
+      .detail-modal-backdrop {{ padding:0; }}
+      .detail-modal-shell {{ width:100vw; max-width:100vw; height:100dvh; max-height:none; border:0; border-radius:0; }}
+      .detail-modal-head {{ padding:12px; }}
+      .detail-modal-tabs {{ grid-auto-flow:row; grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-columns:auto; min-width:0; min-height:98px; padding:8px 12px; overflow:hidden; }}
+      .detail-modal-tabs button {{ width:100%; min-width:0; }}
+      .detail-modal-body {{ padding:12px; }}
+      .detail-modal-body .detail-grid {{ grid-template-columns:1fr; }}
+      .detail-modal-body .detail-block {{ min-width:0; }}
+      .detail-modal-body .child-table {{ display:block; width:100%; min-width:0; border:0; background:transparent; }}
+      .detail-modal-body .child-table thead {{ display:none; }}
+      .detail-modal-body .child-table tbody {{ display:grid; gap:10px; }}
+      .detail-modal-body .child-table tr {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:12px; border:1px solid var(--line); border-radius:10px; background:#fff; }}
+      .detail-modal-body .child-table td {{ display:block; min-width:0; padding:0; border:0; overflow-wrap:anywhere; white-space:normal; text-align:left; }}
+      .detail-modal-body .child-table td::before {{ content:attr(data-label); display:block; margin-bottom:2px; color:var(--muted); font-size:10px; font-weight:800; text-transform:uppercase; }}
+      .detail-modal-body .child-table td:nth-child(-n+4), .detail-modal-body .child-table td:last-child {{ grid-column:1/-1; }}
+    }}
     @media (max-width:900px) {{ .finance-grid {{ grid-template-columns:repeat(2,minmax(150px,1fr)); }} }}
     @media (max-width:700px) {{ .promotion-panel-grid {{ grid-template-columns:1fr; }} .promotion-discount-breakdown {{ grid-template-columns:1fr; }} .promotion-form label, .promotion-form input, .promotion-form button {{ width:100%; }} .page-nav {{ overflow-x:auto; padding-bottom:4px; }} .page-tab {{ flex:0 0 auto; }} .finance-grid {{ grid-template-columns:1fr; }} }}
   </style>
@@ -1954,6 +2041,7 @@ def render_dashboard(data):
     </div>
   </header>
   <main>
+    {demo_notice}
     <nav class="page-nav" aria-label="Visoes do dashboard">
       <button class="page-tab active" data-view="operational" type="button">Operacional</button>
       <button class="page-tab" data-view="abc" type="button">Curva ABC</button>
@@ -1994,7 +2082,8 @@ def render_dashboard(data):
             <select id="contextSelect">
               <option value="all" selected>Todos os itens</option>
               <option value="active">Publicidade ativa</option>
-              <option value="ended">Publicidade encerrada</option>
+              <option value="ended">Publicidade encerrada (confirmada)</option>
+              <option value="unknownAds">Publicidade sem status confirmado</option>
               <option value="noReturn">Gasto sem retorno ADS</option>
               <option value="highTacos">TACOS fora da meta</option>
               <option value="adsDependency">Dependencia de Ads &gt; 50%</option>
@@ -2177,6 +2266,7 @@ def render_dashboard(data):
   </a>
   <script>
     const DATA = {payload};
+    const PROMOTION_BULK_ENABLED = DATA.promotionApi?.bulkEnabled === true;
     const allItems = Array.isArray(DATA.items) ? DATA.items : [];
     DATA.decisionItems ??= allItems.filter(item => item && item.sku);
     DATA.adsNoSales ??= allItems.filter(item => Number(item?.investment || 0) > 0 && Number(item?.adsRevenue || 0) <= 0);
@@ -2260,7 +2350,7 @@ def render_dashboard(data):
     }};
     const viewLabels = {{ hybrid:'Híbrida', family:'Família', variation:'Variação/MLBU', mlb:'MLB', sku:'SKU', campaign:'Campanha' }};
     const contextLabels = {{
-      all:'Todos os itens', active:'Publicidade ativa', ended:'Publicidade encerrada',
+      all:'Todos os itens', active:'Publicidade ativa', ended:'Publicidade encerrada (confirmada)', unknownAds:'Publicidade sem status confirmado',
       noReturn:'Gasto sem retorno ADS', highTacos:'TACOS fora da meta',
       adsDependency:'Dependencia de Ads > 50%', priceAboveAvg:'Preco acima da media > 5%', attention:'Requer atencao',
       opportunity:'Oportunidade para anunciar'
@@ -2446,6 +2536,7 @@ def render_dashboard(data):
       const stored = payload.profile;
       if (!stored || typeof stored !== 'object') throw new Error('O servidor não confirmou a leitura dos dados salvos.');
       financeProfile = {{...financeProfile, ...stored, costBySku:stored.costBySku || {{}}, costByKey:stored.costByKey || {{}}, fiscalProfile:stored.fiscalProfile || {{}}, fiscalBySku:stored.fiscalBySku || {{}}}};
+      if (promotionGuideItem) renderPromotionGuide();
       financeSetStatus(successMessage, 'success');
     }}
     async function saveFinanceSku() {{
@@ -2509,6 +2600,7 @@ def render_dashboard(data):
         financeProfile = {{...financeProfile, ...stored, costBySku:stored.costBySku || {{}}, costByKey:stored.costByKey || {{}}, fiscalProfile:stored.fiscalProfile || {{}}, fiscalBySku:stored.fiscalBySku || {{}}}};
         financeLoaded = true;
         fillFinanceForm();
+        if (promotionGuideItem) renderPromotionGuide();
         financeSetStatus('Cadastro carregado.');
       }} catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
     }}
@@ -2979,11 +3071,40 @@ def render_dashboard(data):
       URL.revokeObjectURL(link.href);
       link.remove();
     }}
+    function periodMetricFormat(key, value) {{
+      if (value == null || !Number.isFinite(value)) return 'N/D';
+      if (['revenue','adsRevenue','organicRevenue','investment','tacosBaseRevenue','investmentNoAdsSales','price','returnsAmount'].includes(key)) return brl(value);
+      if (key === 'tacos') return pct(value);
+      if (key === 'roas') return value.toLocaleString('pt-BR', {{maximumFractionDigits:2}}) + 'x';
+      return num(value);
+    }}
+    function periodComparisonInline(key) {{
+      const comparison = DATA.periodComparison;
+      if (!comparison || !comparison.enabled || !key) return '';
+      const metric = (comparison.metrics || {{}})[key];
+      const period = comparison.period || {{}};
+      const dates = `${{period.dateFrom || ''}} a ${{period.dateTo || ''}}`;
+      if (!metric || metric.status === 'unavailable') return `<span class="kpi-secondary" title="${{safe(dates)}}">Comparação N/D — dados insuficientes</span>`;
+      const delta = metric.change;
+      const label = metric.status === 'zero_baseline' ? 'Sem base percentual (anterior zero)' : `${{delta > 0 ? '▲ +' : delta < 0 ? '▼ ' : '▬ '}}${{(delta * 100).toLocaleString('pt-BR', {{maximumFractionDigits:1}})}}%`;
+      const lowerBetter = ['investment','tacos','adsNoSales','investmentNoAdsSales','returnsAmount','returnsOrdersCount','cancelledOrders'].includes(key);
+      const color = !delta ? 'var(--muted)' : (delta > 0) !== lowerBetter ? '#087f5b' : '#c92a2a';
+      return `<details class="kpi-secondary"><summary style="cursor:pointer;color:${{color}}">${{safe(label)}} vs. período comparado</summary><span>Anterior (${{safe(dates)}}): ${{safe(periodMetricFormat(key, metric.previous))}}</span></details>`;
+    }}
     function renderKpis() {{
       const k = DATA.kpis;
+      const summary = DATA.periodSummary || {{}};
+      const metricKeys = {{'Receita total':'revenue','Unidades vendidas':'units','Pedidos por item':'orders','Preço médio por unidade':'price','Visitas dos produtos':'visits','Vendas canceladas':'cancelledOrders','Devolucoes confirmadas':'returnsAmount','Pedidos devolvidos':'returnsOrdersCount','Receita atribuida ADS':'adsRevenue','Receita organica estimada':'organicRevenue','Investimento ADS':'investment','Base TACOS comercial':'tacosBaseRevenue','TACOS geral':'tacos','ROAS Ads':'roas','Investiu sem venda ADS':'adsNoSales','Valor sem venda ADS':'investmentNoAdsSales'}};
       document.getElementById('kpis').innerHTML = [
         ['Produtos analisados', num(k.products), ''],
         ['Receita total', brl(k.revenue), 'good'],
+        ...(DATA.periodSummary ? [
+          ['Unidades vendidas', periodMetricFormat('units', summary.units), ''],
+          ['Pedidos por item', periodMetricFormat('orders', summary.orders), '', 'Soma por anúncio; não equivale a pedidos únicos da conta.'],
+          ['Preço médio por unidade', periodMetricFormat('price', summary.price), ''],
+          ['Visitas dos produtos', periodMetricFormat('visits', summary.visits), '', 'N/D quando o histórico do período está incompleto.'],
+          ['Vendas canceladas', periodMetricFormat('cancelledOrders', summary.cancelledOrders), '', 'Fonte de cancelamentos não disponível; devoluções são separadas.']
+        ] : []),
         ['Devolucoes confirmadas', k.returnsAvailable ? `${{brl(k.returnsAmount || 0)}} · ${{pct(k.returnsRate || 0)}} da receita` : 'N/D', k.returnsAvailable && k.returnsAmount > 0 ? 'danger' : ''],
         ['Pedidos devolvidos', k.returnsAvailable ? (k.returnsOrdersAvailable ? `${{num(k.returnsOrdersCount || 0)}} de ${{num(k.returnsOrdersTotal || 0)}} · ${{pct(k.returnsOrdersRate || 0)}}` : `${{num(k.returnsOrdersCount || 0)}} · taxa N/D`) : 'N/D', k.returnsAvailable && k.returnsOrdersCount > 0 ? 'danger' : ''],
         ['Receita atribuida ADS', brl(k.adsRevenue), ''],
@@ -2994,7 +3115,7 @@ def render_dashboard(data):
         ['ROAS Ads', k.roas.toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + 'x', '', k.investment > 0 ? `Faturamento total / investimento Ads: ${{(k.revenue / k.investment).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}x` : 'Faturamento total / investimento Ads: N/D'],
         ['Investiu sem venda ADS', num(k.adsNoSales), k.adsNoSales ? 'danger' : 'good'],
         ['Valor sem venda ADS', brl(k.investmentNoAdsSales), k.investmentNoAdsSales ? 'danger' : 'good']
-      ].map(([label,value,cls,secondary]) => `<div class="card kpi ${{cls}}"><small>${{label}}</small><strong>${{value}}</strong>${{secondary ? `<span class="kpi-secondary">${{secondary}}</span>` : ''}}</div>`).join('');
+      ].map(([label,value,cls,secondary]) => `<div class="card kpi ${{cls}}"><small>${{label}}</small><strong>${{value}}</strong>${{periodComparisonInline(metricKeys[label])}}${{secondary ? `<span class="kpi-secondary">${{secondary}}</span>` : ''}}</div>`).join('');
     }}
     function renderAlerts() {{
       const k = DATA.kpis;
@@ -3102,10 +3223,22 @@ def render_dashboard(data):
       if (currentViewMode === 'campaign') return DATA.campaignAds || [];
       return DATA.items || [];
     }}
+    function advertisingState(item) {{
+      // Group defaults and absence of status are not proof of termination.
+      if (Array.isArray(item.children) && item.children.length) {{
+        const states = item.children.map(advertisingState);
+        if (states.includes('active')) return 'active';
+        return states.every(state => state === 'ended') ? 'ended' : 'unknown';
+      }}
+      const status = String(item.campaignStatus || '').trim().toLowerCase();
+      if (status === 'ativa' || status === 'ativa por sku') return 'active';
+      if (status === 'encerrada' || status === 'deleted' || status === 'finished') return 'ended';
+      return 'unknown';
+    }}
     function matchesContext(item, context = currentContext) {{
-      const status = String(item.campaignStatus || '').toLowerCase();
-      if (context === 'active') return status.startsWith('ativa');
-      if (context === 'ended') return !status.startsWith('ativa');
+      if (context === 'active') return advertisingState(item) === 'active';
+      if (context === 'ended') return advertisingState(item) === 'ended';
+      if (context === 'unknownAds') return advertisingState(item) === 'unknown';
       if (context === 'noReturn') return (item.investment || 0) > 0 && (item.adsRevenue || 0) <= 0;
       if (context === 'highTacos') return (item.investment || 0) > 0 && (item.tacos || 0) > .03;
       if (context === 'adsDependency') return (item.adsDependencyRatio || 0) > .50;
@@ -3118,8 +3251,9 @@ def render_dashboard(data):
       const rows = rowsByViewMode();
       const stats = [
         ['Todos os itens', rows.length, 'Base completa da visao atual.'],
-        ['Publicidade ativa', rows.filter(item => matchesContext(item, 'active')).length, 'Itens com campanha ativa no periodo.'],
-        ['Publicidade encerrada', rows.filter(item => matchesContext(item, 'ended')).length, 'Itens sem campanha ativa no periodo.'],
+        ['Publicidade ativa confirmada', rows.filter(item => matchesContext(item, 'active')).length, 'Contagem somente dos status ativos confirmados; itens sem status aparecem separadamente.'],
+        ['Publicidade encerrada confirmada', rows.filter(item => matchesContext(item, 'ended')).length, 'Somente encerramento explicito; ausencia, pausa e falta de campanha nao significam encerramento.'],
+        ['Publicidade sem status confirmado', rows.filter(item => matchesContext(item, 'unknownAds')).length, 'Status indisponivel ou insuficiente. Nao implica anuncio encerrado.'],
         ['Gasto sem retorno ADS', rows.filter(item => matchesContext(item, 'noReturn')).length, 'Houve gasto, mas nao houve receita ADS atribuida.'],
         ['TACOS fora da meta', rows.filter(item => matchesContext(item, 'highTacos')).length, 'Itens com TACOS acima da meta de 3%.'],
         ['Dependencia de Ads > 50%', rows.filter(item => matchesContext(item, 'adsDependency')).length, 'Mais de 50% da receita direta veio de ADS.'],
@@ -3129,7 +3263,7 @@ def render_dashboard(data):
       ];
       document.getElementById('alerts').innerHTML = `<table>
         <tr><th>Filtro de analise</th><th class="num">Qtd.</th><th>Leitura</th></tr>
-        ${{stats.map(stat => `<tr><td>${{safe(stat[0])}}</td><td class="num">${{num(stat[1])}}</td><td>${{safe(stat[2])}}</td></tr>`).join('')}}
+        ${{stats.map(stat => `<tr><td>${{safe(stat[0])}}</td><td class="num">${{stat[1] === null ? 'N/D' : num(stat[1])}}</td><td>${{safe(stat[2])}}</td></tr>`).join('')}}
       </table>`;
     }}
     function detailKey(item) {{
@@ -3145,10 +3279,10 @@ def render_dashboard(data):
       const title = item.detailScope === 'family' ? 'Condições da família' : item.detailScope === 'mlbu' ? 'Condições da variação/MLBU' : 'Itens da campanha';
       const children = campaignChildrenForDisplay(sourceChildren);
       const countText = children.length === sourceChildren.length ? `${{num(children.length)}} item(ns)` : `${{num(children.length)}} de ${{num(sourceChildren.length)}} item(ns)`;
-      return `<div class="detail-block" style="grid-column:1/-1"><h3>${{safe(title)}}</h3><div class="campaign-child-tools"><input type="search" data-campaign-child-search value="${{safe(campaignChildQuery)}}" placeholder="Pesquisar SKU, anúncio, título, condição ou alerta"><span class="campaign-child-count">${{countText}}</span></div><table class="child-table">
+      return `<div class="detail-block campaign-child-block" style="grid-column:1/-1"><h3>${{safe(title)}}</h3><div class="campaign-child-tools"><input type="search" data-campaign-child-search value="${{safe(campaignChildQuery)}}" placeholder="Pesquisar SKU, anúncio, título, condição ou alerta"><span class="campaign-child-count">${{countText}}</span></div><div class="campaign-child-scroll" tabindex="0" aria-label="Tabela de itens da campanha; role horizontal e verticalmente"><table class="child-table">
         <thead><tr><th>${{campaignChildSortable('SKU', 'sku')}}</th><th>${{campaignChildSortable('Anúncio', 'code')}}</th><th>${{campaignChildSortable('Condição/opção', 'condition')}}</th><th>${{campaignChildSortable('Título', 'title')}}</th><th class="num">${{campaignChildSortable('Pedidos', 'orders')}}</th><th class="num">${{campaignChildSortable('Unidades', 'units')}}</th><th class="num">${{campaignChildSortable('Receita', 'revenue')}}</th><th class="num">${{campaignChildSortable('Receita ADS', 'adsRevenue')}}</th><th class="num">${{campaignChildSortable('Invest.', 'investment')}}</th><th class="num">${{campaignChildSortable('CTR', 'ctr')}}</th><th class="num">${{campaignChildSortable('CVR', 'cvr')}}</th><th class="num">${{campaignChildSortable('TACOS', 'tacos')}}</th><th>${{campaignChildSortable('Alerta', 'alert')}}</th></tr></thead>
-        <tbody>${{children.map(child => `<tr><td>${{safe(child.sku || '(sem SKU)')}}</td><td>${{safe(child.code || '')}}</td><td>${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td>${{safe(child.title || '')}}</td><td class="num">${{num(child.orders || 0)}}</td><td class="num">${{num(child.units || 0)}}</td><td class="num">${{brl(child.totalRevenue || 0)}}</td><td class="num">${{brl(child.adsRevenue || 0)}}</td><td class="num">${{brl(child.investment || 0)}}</td><td class="num">${{pct(child.ctr || 0)}}</td><td class="num">${{pct(child.cvr || 0)}}</td><td class="num">${{pct(child.tacos || 0)}}</td><td>${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
-      </table></div>`;
+        <tbody>${{children.map(child => `<tr><td data-label="SKU">${{safe(child.sku || '(sem SKU)')}}</td><td data-label="Anúncio">${{safe(child.code || '')}}</td><td data-label="Condição/opção">${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td data-label="Título">${{safe(child.title || '')}}</td><td class="num" data-label="Pedidos">${{num(child.orders || 0)}}</td><td class="num" data-label="Unidades">${{num(child.units || 0)}}</td><td class="num" data-label="Receita">${{brl(child.totalRevenue || 0)}}</td><td class="num" data-label="Receita ADS">${{brl(child.adsRevenue || 0)}}</td><td class="num" data-label="Invest.">${{brl(child.investment || 0)}}</td><td class="num" data-label="CTR">${{pct(child.ctr || 0)}}</td><td class="num" data-label="CVR">${{pct(child.cvr || 0)}}</td><td class="num" data-label="TACOS">${{pct(child.tacos || 0)}}</td><td data-label="Alerta">${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
+      </table></div></div>`;
     }}
     const campaignChildSortKeys = {{
       sku: child => child.sku || '', code: child => child.code || '',
@@ -3198,6 +3332,9 @@ def render_dashboard(data):
         if (!date) return;
         const current = byDate.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, visits:0, priceFallback:0}};
         current.orders += Number(row.orders || 0);
+        current.partial = Boolean(current.partial || row.partial);
+        current.salesPresent = Boolean(current.salesPresent || row.salesPresent);
+        current.adsPresent = Boolean(current.adsPresent || row.adsPresent);
         current.units += Number(row.units || 0);
         current.revenue += Number(row.revenue || 0);
         current.adsRevenue += Number(row.adsRevenue || 0);
@@ -3231,7 +3368,7 @@ def render_dashboard(data):
       const end = new Date(`${{dateTo}}T12:00:00`);
       while (cursor <= end) {{
         const date = cursor.toISOString().slice(0, 10);
-        complete.push(indexed.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, visits:0, roas:0, tacos:0, price:0, priceFallback:0}});
+        complete.push(indexed.get(date) || {{date, orders:0, units:0, revenue:0, adsRevenue:0, adsDirectRevenue:0, adsIndirectRevenue:0, investment:0, tacosBaseRevenue:0, impressions:0, clicks:0, adsUnits:0, visits:0, roas:0, tacos:0, price:0, priceFallback:0, partial:true, salesPresent:false, adsPresent:false}});
         cursor.setDate(cursor.getDate() + 1);
       }}
       return complete;
@@ -3304,39 +3441,6 @@ def render_dashboard(data):
       const tip = `<strong>Em comparação ao período anterior:</strong><div class="metrics-float-period">Atual: ${{dateLabel(window.current_from)}} a ${{dateLabel(window.date_to)}}<br>Anterior: ${{dateLabel(window.date_from)}} a ${{dateLabel(window.previous_to)}}</div><div class="metrics-float-grid"><span></span><span class="muted">Anterior</span><span class="muted">Variação</span>${{tipRow('Visitas',visits)}}${{tipRow('Vendas',sales)}}${{tipRow('Conversão',conversion,true)}}</div><div class="metrics-float-note">Vendas = pedidos. Conversão = pedidos ÷ visitas do anúncio. N/D indica histórico incompleto ou ausência de base para comparação.</div>`;
       return `<div class="metrics-7d" tabindex="0" aria-label="Comparação de desempenho dos últimos 7 dias" data-metrics-tip="${{encodeURIComponent(tip)}}">${{line('Vendas 7d', sales)}}${{line('Visitas', visits)}}<div>${{cvr}}</div></div>`;
     }}
-    // Portal outside the scrolling/zoomed table keeps the comparison visible.
-    let metricsFloat = null, metricsAnchor = null;
-    function hideMetricsFloat() {{
-      if (metricsFloat) metricsFloat.hidden = true;
-      if (metricsAnchor) metricsAnchor.removeAttribute('aria-describedby');
-      metricsAnchor = null;
-    }}
-    function showMetricsFloat(anchor) {{
-      if (!metricsFloat) {{
-        metricsFloat = document.createElement('div');
-        metricsFloat.className = 'metrics-float';
-        metricsFloat.id = 'metrics-comparison-tooltip';
-        metricsFloat.setAttribute('role','tooltip');
-        document.body.appendChild(metricsFloat);
-      }}
-      if (metricsAnchor && metricsAnchor !== anchor) metricsAnchor.removeAttribute('aria-describedby');
-      metricsAnchor = anchor;
-      metricsFloat.className = 'metrics-float' + (anchor.hasAttribute('data-promotion-margin-tip') ? ' promotion-margin-float' : '');
-      metricsFloat.innerHTML = decodeURIComponent(anchor.dataset.metricsTip);
-      metricsFloat.hidden = false;
-      anchor.setAttribute('aria-describedby',metricsFloat.id);
-      const rect = anchor.getBoundingClientRect(), box = metricsFloat.getBoundingClientRect();
-      metricsFloat.style.left = Math.max(12,Math.min(innerWidth-box.width-12,rect.left)) + 'px';
-      metricsFloat.style.top = Math.max(12,rect.top-box.height-10 >= 12 ? rect.top-box.height-10 : Math.min(innerHeight-box.height-12,rect.bottom+10)) + 'px';
-    }}
-    document.addEventListener('pointerover', event => {{ const anchor=event.target.closest('[data-metrics-tip]'); if(anchor) showMetricsFloat(anchor); }});
-    document.addEventListener('pointerout', event => {{ if(metricsAnchor && !metricsAnchor.contains(event.relatedTarget)) hideMetricsFloat(); }});
-    document.addEventListener('focusin', event => {{ const anchor=event.target.closest('[data-metrics-tip]'); if(anchor) showMetricsFloat(anchor); }});
-    document.addEventListener('focusout', hideMetricsFloat);
-    document.addEventListener('keydown', event => {{ if(event.key === 'Escape') hideMetricsFloat(); }});
-    document.addEventListener('click', event => {{ const anchor=event.target.closest('[data-metrics-tip]'); if(anchor) showMetricsFloat(anchor); else hideMetricsFloat(); }});
-    window.addEventListener('scroll',hideMetricsFloat,true);
-    window.addEventListener('resize',hideMetricsFloat);
     function chartLongDate(value) {{
       const parsed = new Date(`${{value}}T12:00:00`);
       if (Number.isNaN(parsed.getTime())) return value;
@@ -3352,6 +3456,8 @@ def render_dashboard(data):
         units:{{label:'Unidades vendidas', color:'#1570ef', format:value => num(value)}},
         orders:{{label:'Pedidos', color:'#12b76a', format:value => num(value)}},
         price:{{label:'Preco medio vendido', color:'#f79009', format:brl}},
+        visits:{{label:'Visitas dos produtos', color:'#087f5b', format:num}},
+        cancelledOrders:{{label:'Vendas canceladas', color:'#c92a2a', format:num}},
       }};
       return configs[metric] || configs.revenue;
     }}
@@ -3418,10 +3524,25 @@ def render_dashboard(data):
       const padding = (rawMax - rawMin) * .18;
       return {{min:Math.max(0, rawMin - padding), max:rawMax + padding}};
     }}
+    function chartMetricAvailable(row, metric) {{
+      if (!row.partial) return true;
+      if (['adsRevenue', 'investment', 'roas'].includes(metric)) return Boolean(row.adsPresent);
+      if (metric === 'tacos') return Boolean(row.adsPresent && row.salesPresent);
+      return Boolean(row.salesPresent);
+    }}
     function renderDailyMetric(root, metric) {{
       const sourceRows = JSON.parse(decodeURIComponent(root.dataset.chartSeries || '%5B%5D'));
-      const rows = metric === 'price' ? sourceRows.filter(row => Number(row.price || 0) > 0) : sourceRows;
+      const rows = sourceRows;
+      const hasPartial = rows.some(row => row.partial);
       const config = chartMetricConfig(metric);
+      const comparisonRoot = root.querySelector('.period-chart-comparison');
+      if (comparisonRoot) comparisonRoot.innerHTML = periodComparisonInline(metric);
+      if (comparisonRoot && ['visits','cancelledOrders'].includes(metric) && (DATA.periodSummary || {{}})[metric] == null) {{
+        root.querySelector('.chart-summary').textContent = config.label + ': N/D — fonte ou cobertura do período indisponível.';
+        root.querySelector('.chart-canvas').innerHTML = '<div class="muted" style="padding:28px">Nenhum zero foi inferido. Cancelamentos não são devoluções; visitas de 7 dias não substituem o período selecionado.</div>';
+        root.querySelectorAll('[data-chart-metric]').forEach(button => button.classList.toggle('active', button.dataset.chartMetric === metric));
+        return;
+      }}
       const values = rows.map(row => Number(row[metric] || 0));
       const totals = rows.reduce((sum, row) => ({{
         adsRevenue:sum.adsRevenue + Number(row.adsRevenue || 0),
@@ -3444,6 +3565,7 @@ def render_dashboard(data):
       root.querySelectorAll('[data-chart-metric]').forEach(button => button.classList.toggle('active', button.dataset.chartMetric === metric));
       const summaryLabel = ['roas', 'tacos'].includes(metric) ? 'Resultado do periodo' : 'Media do periodo';
       root.querySelector('.chart-summary').textContent = `${{config.label}} por dia. ${{summaryLabel}}: ${{config.format(average)}}.`;
+      if (hasPartial) root.querySelector('.chart-summary').textContent = 'Dados parciais / cobertura nao comprovada: valores disponiveis, sujeitos a atualizacao. N/D = sem dados. Media e tendencia omitidas.';
       if (!rows.length || (metric === 'price' && !values.some(value => value > 0))) {{
         canvas.innerHTML = '<div class="muted" style="padding:28px">O snapshot ainda nao possui preco diario suficiente para esta visualizacao.</div>';
         return;
@@ -3474,14 +3596,16 @@ def render_dashboard(data):
       const barWidth = Math.max(8, Math.min(34, step * .62));
       const lineOnly = ['price', 'roas', 'tacos'].includes(metric);
       const bars = lineOnly ? '' : rows.map((row,index) => {{
+        if (!chartMetricAvailable(row, metric)) return '';
         const barY = y(values[index]);
         return `<rect class="chart-bar" x="${{(x(index)-barWidth/2).toFixed(1)}}" y="${{barY.toFixed(1)}}" width="${{barWidth.toFixed(1)}}" height="${{Math.max(0, top+chartH-barY).toFixed(1)}}" rx="${{Math.min(7,barWidth/3).toFixed(1)}}" fill="${{config.color}}" fill-opacity=".46"/>`;
       }}).join('');
       const trendValues = lineOnly ? values : movingAverage(values);
       const points = trendValues.map((value,index) => [x(index), y(value)]);
-      const path = smoothChartPath(points);
+      const path = hasPartial ? '' : smoothChartPath(points);
       const area = lineOnly && path ? `${{path}} L ${{x(rows.length-1).toFixed(1)}} ${{(top+chartH).toFixed(1)}} L ${{x(0).toFixed(1)}} ${{(top+chartH).toFixed(1)}} Z` : '';
-      const dots = lineOnly ? points.map(point => `<circle cx="${{point[0].toFixed(1)}}" cy="${{point[1].toFixed(1)}}" r="4" fill="#fff" stroke="${{config.color}}" stroke-width="2"/>`).join('') : '';
+      const dots = lineOnly ? points.map((point,index) => chartMetricAvailable(rows[index], metric) ? `<circle cx="${{point[0].toFixed(1)}}" cy="${{point[1].toFixed(1)}}" r="4" fill="#fff" stroke="${{rows[index].partial ? '#b45309' : config.color}}" stroke-width="2"/>` : '').join('') : '';
+      const partialMarks = rows.map((row,index) => row.partial ? `<text x="${{x(index)}}" y="${{top+12}}" text-anchor="middle" fill="#92400e" font-size="12">${{chartMetricAvailable(row, metric) ? '*' : 'N/D'}}</text>` : '').join('');
       const extremes = metric === 'tacos' ? rows.map((row,index) => {{
         const actual = Number(row.tacos || 0);
         if (actual <= scale.max) return '';
@@ -3491,7 +3615,7 @@ def render_dashboard(data):
       const hitWidth = Math.max(12, step);
       const hits = rows.map((row,index) => `<g><rect class="chart-hit" data-chart-index="${{index}}" x="${{(x(index)-hitWidth/2).toFixed(1)}}" y="${{top}}" width="${{hitWidth.toFixed(1)}}" height="${{chartH}}"/><line class="chart-hover-line" x1="${{x(index).toFixed(1)}}" y1="${{top}}" x2="${{x(index).toFixed(1)}}" y2="${{top+chartH}}"/></g>`).join('');
       canvas.innerHTML = `<svg class="daily-chart" viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="${{safe(config.label)}} por dia">
-        ${{grid}}${{averageLine}}${{referenceLine}}${{area ? `<path d="${{area}}" fill="${{config.color}}" fill-opacity=".10"/>` : ''}}${{bars}}<path d="${{path}}" fill="none" stroke="${{config.color}}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>${{dots}}${{extremes}}${{hits}}${{xLabels}}
+        ${{grid}}${{hasPartial ? '' : averageLine}}${{referenceLine}}${{area ? `<path d="${{area}}" fill="${{config.color}}" fill-opacity=".10"/>` : ''}}${{bars}}<path d="${{path}}" fill="none" stroke="${{config.color}}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>${{dots}}${{extremes}}${{partialMarks}}${{hits}}${{xLabels}}
       </svg>`;
       const tooltip = root.querySelector('.chart-tooltip');
       root.querySelectorAll('[data-chart-index]').forEach(hit => {{
@@ -3515,6 +3639,13 @@ def render_dashboard(data):
         <div class="chart-tooltip-row ${{metric === 'orders' ? 'active' : ''}}"><span>Pedidos</span><span>${{num(Number(row.orders || 0))}}</span></div>
         <div class="chart-tooltip-row ${{metric === 'price' ? 'active' : ''}}"><span>Preco medio</span><span>${{safe(priceText)}}</span></div>`;
       const relativeX = hitRect.left - stageRect.left + hitRect.width / 2;
+      if (row.partial) {{
+        tooltip.insertAdjacentHTML('afterbegin', '<div style="color:#92400e;font-weight:700">* Parcial — cobertura nao comprovada</div>');
+        const metrics = ['revenue','adsRevenue','investment','roas','tacos','units','orders','price'];
+        tooltip.querySelectorAll('.chart-tooltip-row').forEach((entry,index) => {{
+          if (!chartMetricAvailable(row, metrics[index])) entry.lastElementChild.textContent = 'N/D — sem dados';
+        }});
+      }}
       tooltip.classList.add('visible');
       const halfWidth = tooltip.getBoundingClientRect().width / 2;
       tooltip.style.left = `${{Math.max(halfWidth + 8, Math.min(stageRect.width - halfWidth - 8, relativeX))}}px`;
@@ -3914,6 +4045,21 @@ def render_dashboard(data):
         weightSource:weightEstimated ? 'faixa intermediária estimada' : apiWeightSource,
         fullBonus, fixedFee, bonus, priceBand}};
     }}
+    function financeSkuKey(value) {{
+      return String(value || '').normalize('NFKC').trim().replace(/ +/g, ' ').toLocaleUpperCase('pt-BR');
+    }}
+    function promotionSkuFinance(item) {{
+      const sku = String(item?.sku || '').trim();
+      const target = financeSkuKey(sku);
+      const costMap = financeProfile.costBySku || {{}};
+      const fiscalMap = financeProfile.fiscalBySku || {{}};
+      const costKey = Object.prototype.hasOwnProperty.call(costMap, sku)
+        ? sku : Object.keys(costMap).find(key => financeSkuKey(key) === target);
+      const fiscalKey = Object.prototype.hasOwnProperty.call(fiscalMap, sku)
+        ? sku : Object.keys(fiscalMap).find(key => financeSkuKey(key) === target);
+      const cost = costKey == null ? NaN : Number(costMap[costKey]);
+      return {{sku, hasCost:Number.isFinite(cost), cost, profile:fiscalKey == null ? null : fiscalMap[fiscalKey]}};
+    }}
     function promotionFinancialResult(row, item) {{
       const quote = row.receipt_quote || {{}};
       const price = Number(quote.price);
@@ -3921,10 +4067,9 @@ def render_dashboard(data):
       const fee = Number(quote.sale_fee);
       const freight = Number(quote.shipping_cost);
       const rebate = Number(quote.rebate || 0);
-      const sku = String(item?.sku || '').trim();
-      const hasCost = sku && Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku);
-      const cost = hasCost ? Number(financeProfile.costBySku[sku]) : NaN;
-      const profile = (financeProfile.fiscalBySku || {{}})[sku];
+      const skuFinance = promotionSkuFinance(item);
+      const cost = skuFinance.cost;
+      const profile = skuFinance.profile;
       if (!promotionQuoteMatchesPrice(row, promotionEffectivePrice(row, item)) || ![price,receipt,fee,freight,rebate,cost].every(Number.isFinite) || !profile)
         return {{available:false}};
       const legacyRegime = ['simple','presumed','real'].includes(financeProfile.taxRegime) ? financeProfile.taxRegime : null;
@@ -4008,7 +4153,6 @@ def render_dashboard(data):
       const freight = Number(quote.shipping_cost);
       const rebate = Number(quote.rebate || 0);
       if (![fee, freight, rebate].every(Number.isFinite)) return '<span class="muted">N/D</span>';
-      const percentage = (receipt / price * 100).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
       const line = (label, value) => `<div class="promotion-margin-line"><span>${{label}}</span><b>${{value}}</b></div>`;
       const result = promotionFinancialResult(row, item);
       if (result.available) {{
@@ -4023,8 +4167,26 @@ def render_dashboard(data):
         const skuFloor = effectiveMarginTarget > promotionMarginTarget ? `<small>Piso do SKU: ${{effectiveMarginTarget.toLocaleString('pt-BR')}}%</small>` : '';
         return `<span class="promotion-margin-value ${{result.margin < effectiveMarginTarget ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small>${{skuFloor}}${{flexWarning ? `<span class="promotion-flex-warning">⚠ Flex ativo: margem ${{flexMargin}}%, abaixo da meta de ${{effectiveMarginTarget.toLocaleString('pt-BR')}}%</span>` : (result.flexActive && !result.flexAvailable ? '<small>Flex ativo · cálculo pendente</small>' : '')}}</span>`;
       }}
-      const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{line('Custo do produto', 'Não informado')}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line('Saldo antes de custo e imposto', brl(receipt))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. A margem de contribuição real depende do custo e do imposto cadastrados; estes não foram assumidos como zero.</div>`;
-      return `<span class="promotion-margin-value" style="background:#eef0f3;color:#526071" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small><small>Margem não apurada</small></span>`;
+      const skuFinance = promotionSkuFinance(item);
+      const balanceAfterKnownCost = skuFinance.hasCost ? receipt - skuFinance.cost : receipt;
+      const percentage = (balanceAfterKnownCost / price * 100).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
+      const costLine = skuFinance.hasCost ? line('Custo do produto', '−' + brl(skuFinance.cost)) : line('Custo do produto', 'Não informado');
+      const balanceLabel = skuFinance.hasCost ? 'Saldo após custo · antes de imposto' : 'Saldo antes de custo e imposto';
+      const missingLabel = skuFinance.hasCost ? 'Imposto não informado' : 'Custo e imposto não informados';
+      const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{costLine}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line(balanceLabel, brl(balanceAfterKnownCost))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. Todo valor conhecido foi aplicado; dados fiscais ausentes não foram assumidos como zero.</div>`;
+      return `<span class="promotion-margin-value" style="background:#eef0f3;color:#526071" tabindex="0" aria-label="MC parcial ${{brl(balanceAfterKnownCost)}}, ${{percentage}} por cento; ${{missingLabel.toLocaleLowerCase('pt-BR')}}" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(balanceAfterKnownCost)}}<small>${{percentage}}%</small><small>${{skuFinance.hasCost ? 'Custo aplicado · imposto pendente' : 'Margem não apurada'}}</small></span>`;
+    }}
+    function promotionSimulationFinancialResult(row, item) {{
+      const complete = promotionFinancialResult(row, item);
+      if (complete.available) return {{...complete, partial:false}};
+      const quote = row.receipt_quote || {{}};
+      const price = Number(quote.price);
+      const receipt = Number(quote.receipt_before_cost_tax);
+      const finance = promotionSkuFinance(item);
+      if (quote.available !== true || !Number.isFinite(price) || price <= 0 || !Number.isFinite(receipt) || !finance.hasCost)
+        return {{available:false}};
+      const profit = receipt - finance.cost;
+      return {{available:true, price, receipt, cost:finance.cost, profit, margin:profit / price * 100, partial:true}};
     }}
     function promotionTableRow(item, entry, allowAction, listing = null, selection = null) {{
       // Resolve history by exact MLB, never by the parent SKU/family. Ads rows
@@ -4088,16 +4250,20 @@ def render_dashboard(data):
       const payoutBadge = bestPayout ? '<span class="promotion-rank">Maior recebimento estimado — confira a margem</span>' : '';
       const discountBadge = bestDiscount ? '<span class="promotion-rank">Maior desconto</span>' : '';
       const subsidyBadge = bestSubsidy ? '<span class="promotion-rank">Maior subsídio</span>' : '';
-      const selectionControl = selection ? `<input class="promotion-bulk-select" type="checkbox" data-promo-bulk-select="${{safe(selection.key)}}" data-promo-scope-key="${{safe(selection.scopeKey)}}"${{selection.checked ? ' checked' : ''}} aria-label="Selecionar ${{safe(item.code)}} para prévia coletiva">` : '';
+      const bulkEnabled = typeof PROMOTION_BULK_ENABLED !== 'undefined' && PROMOTION_BULK_ENABLED;
+      const selectionControl = bulkEnabled && selection ? `<input class="promotion-bulk-select" type="checkbox" data-promo-bulk-select="${{safe(selection.key)}}" data-promo-scope-key="${{safe(selection.scopeKey)}}"${{selection.checked ? ' checked' : ''}} aria-label="Selecionar ${{safe(item.code)}} para prévia coletiva">` : '';
       const identity = listing ? `<div class="promotion-listing-select">${{selectionControl}}<div class="promotion-listing-identity">${{productImage({{thumbnailUrl:listing.thumbnailUrl, title:listing.title}})}}<div><b>${{safe(listing.code)}}</b><small class="promotion-listing-name">${{safe(listing.title)}}</small>${{listing.sku ? `<small class="promotion-listing-sku">SKU ${{safe(listing.sku)}}</small>` : ''}}${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}<small class="promotion-listing-campaign">${{safe(promotionDisplayName(row))}}</small><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span></div></div></div>` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
       const editablePrice = (canJoin || canUpdate) && row.action_mode !== 'join_fixed_offer';
       const minimumPrice = Number(row.min_discounted_price);
       const maximumPrice = Number(row.max_discounted_price);
       const priceLimits = `${{Number.isFinite(minimumPrice) && minimumPrice > 0 ? ` min="${{minimumPrice}}"` : ' min="0.01"'}}${{Number.isFinite(maximumPrice) && maximumPrice > 0 ? ` max="${{maximumPrice}}"` : ''}}`;
       const financial = promotionFinancialResult(row, item);
-      const currentMargin = financial.available && Number.isFinite(financial.margin) ? financial.margin : null;
+      const simulationFinancial = promotionSimulationFinancialResult(row, item);
+      const currentMargin = simulationFinancial.available && Number.isFinite(simulationFinancial.margin) ? simulationFinancial.margin : null;
+      const storedTargetMargin = Number(row.target_margin);
+      const targetMarginValue = Number.isFinite(storedTargetMargin) ? storedTargetMargin : currentMargin;
       const priceCell = editablePrice
-        ? `<div class="promotion-price-editor"><label><span>Preço promocional</span><input type="number"${{priceLimits}} step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"></label><label><span>Margem desejada (%)</span><input class="promotion-target-margin" type="number" min="-99" max="99" step="0.01" value="${{currentMargin == null ? '' : currentMargin.toFixed(2)}}" data-promo-target-margin="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"${{currentMargin == null ? ' disabled' : ''}}></label><span class="promotion-target-feedback" data-promo-target-feedback="${{index}}">${{currentMargin == null ? 'Cadastre custo e impostos para calcular por margem.' : 'Altere o preço ou informe a margem desejada.'}}</span><small>Preço sugerido; edite para recalcular antes de aprovar</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></div>`
+        ? `<div class="promotion-price-editor"><label><span>Preço para simular</span><input type="number"${{priceLimits}} step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"></label><label><span>Margem para simular (%)</span><input class="promotion-target-margin" type="number" min="-99" max="99" step="0.01" value="${{targetMarginValue == null ? '' : targetMarginValue.toFixed(2)}}" data-promo-target-margin="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"${{currentMargin == null ? ' disabled' : ''}}></label><span class="promotion-target-feedback" data-promo-target-feedback="${{index}}">${{currentMargin == null ? 'Cadastre custo e impostos para simular a margem.' : 'Simulação apenas: altere um campo para recalcular Você recebe e MC parcial.'}}</span><small>Nada é aplicado até abrir a revisão no botão ${{canUpdate ? 'Alterar' : 'Participar'}} e confirmar.</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></div>`
         : `<b>${{price > 0 ? brl(price) : '—'}}</b><small>${{active ? 'Preço promocional ativo' : 'Preço da oportunidade retornado pela API'}}</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small>`;
       return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}" data-promotion-priority="${{promotionPriority(row, item).join(',')}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionAllocationCell(allocation.meli, original, allocation.meliDerived)}}${{subsidyBadge}}</td><td class="num">${{promotionAllocationCell(allocation.seller, original, allocation.sellerDerived, allocation.sellerEstimatedFromTotal ? 'Estimado pelo total; subsídio ML não informado' : '')}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b><small>Preço original</small></td><td class="num">${{priceCell}}${{referenceHtml}}</td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{promotionMarginCell(row, item)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
@@ -4162,6 +4328,7 @@ def render_dashboard(data):
         }});
     }}
     function promotionScopeBulkToolbarHtml(state, scopeKey) {{
+      if (!PROMOTION_BULK_ENABLED) return '';
       const listings = promotionVisibleListings(state);
       const selected = new Set(state.selectedListingKeys || []);
       const visibleKeys = listings.map(listing => listing.selectionKey);
@@ -4193,6 +4360,7 @@ def render_dashboard(data):
       promotionStateUpdate(scopeKey, {{bulkRun:{{...bulkRun, items}}}});
     }}
     function promotionBulkSummaryHtml(state, scopeKey) {{
+      if (!PROMOTION_BULK_ENABLED) return '';
       const run = state.bulkRun;
       if (!run?.items?.length) return '';
       const ready = run.items.filter(item => item.status === 'ready').length;
@@ -4269,6 +4437,7 @@ def render_dashboard(data):
       return {{recommended, qualifying:candidates.length, blocked, belowTarget, unavailable, flexAlerts, flexPending}};
     }}
     function promotionRecommendationHtml(recommendation, scopeKey, target, campaignKey, selectedListingKeys = []) {{
+      if (!PROMOTION_BULK_ENABLED) return '';
       const count = recommendation.recommended.length;
       const selected = new Set(selectedListingKeys || []);
       const selectedRecommended = recommendation.recommended.filter(item => selected.has(item.selectionKey)).length;
@@ -4836,7 +5005,7 @@ def render_dashboard(data):
       const quotedRow = {{...row, preview_price:price,
         receipt_quote:preview.summary?.receipt_quote || {{available:false, reason:'O Mercado Livre não retornou a cotação deste preço.'}},
         flex_receipt_quote:preview.summary?.flex_receipt_quote || row.flex_receipt_quote}};
-      return {{preview, quotedRow, financial:promotionFinancialResult(quotedRow, item)}};
+      return {{preview, quotedRow, financial:promotionSimulationFinancialResult(quotedRow, item)}};
     }}
     async function promotionRequoteTargetMargin(input) {{
       const code = input.dataset.promoItem;
@@ -4849,30 +5018,69 @@ def render_dashboard(data):
       const rows = [...(state.data?.promotions || [])];
       const row = rows[index];
       if (!row) return;
+      // This field is a simulator, not a write action. Keep the user's target
+      // in live state before any async quote so a rejected boundary probe does
+      // not redraw the row with the old calculated margin.
+      rows[index] = {{...row, target_margin:target}};
+      const dataWithTarget = {{...(state.data || {{}}), promotions:rows}};
       const apiItem = state.data?.item || {{}};
-      const item = {{code, sku:apiItem.seller_sku || apiItem.sku || '', currentPrice:apiItem.price || row.original_price || 0}};
+      const guideItem = (promotionGuideItem?.children || []).find(candidate =>
+        String(candidate.code || '').toUpperCase() === String(code || '').toUpperCase()) || {{}};
+      // The row is rendered with the guide child, which carries the normalized
+      // SKU used by financeProfile. The promotions endpoint may omit seller_sku;
+      // preserve both sources so the solver uses the same saved cost as the row.
+      const item = {{...guideItem, ...apiItem, code,
+        sku:apiItem.seller_sku || apiItem.sku || guideItem.sku || '',
+        currentPrice:apiItem.price || guideItem.currentPrice || row.original_price || 0}};
       const minimum = Number(row.min_discounted_price);
       const maximum = Number(row.max_discounted_price);
-      let low = Number.isFinite(minimum) && minimum > 0 ? minimum : 0.01;
-      let high = Number.isFinite(maximum) && maximum > 0 ? maximum : Number(row.original_price || item.currentPrice || 0);
-      if (!(high >= low)) {{
+      const originalPrice = Number(row.original_price || item.currentPrice || 0);
+      const effectivePrice = Number(promotionEffectivePrice(row, item));
+      // When the opportunity omits explicit limits, never probe R$ 0,01. That
+      // invalid endpoint can leave the upstream preview waiting indefinitely.
+      // Start from the already quoted price and expand only toward the target.
+      const floor = Number.isFinite(minimum) && minimum > 0 ? minimum : Math.max(0.01, originalPrice * 0.2);
+      let ceiling = Number.isFinite(maximum) && maximum > 0 ? maximum : originalPrice;
+      // Mercado Livre rejects a promotional price equal to the current item
+      // price. The old solver tested that invalid endpoint, received HTTP 400
+      // and then erased the simulation fields during the error re-render.
+      if (Number.isFinite(originalPrice) && originalPrice > 0) ceiling = Math.min(ceiling, Math.floor((originalPrice - 0.01) * 100) / 100);
+      if (!(ceiling >= floor) || !(effectivePrice >= floor && effectivePrice <= ceiling)) {{
         if (feedback) {{ feedback.textContent = 'O Mercado Livre não informou uma faixa de preço válida para esta oportunidade.'; feedback.classList.add('error'); }}
         return;
       }}
       input.disabled = true;
       if (feedback) {{ feedback.textContent = 'Calculando o preço para a margem desejada…'; feedback.classList.remove('error'); }}
-      promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
+      promotionStateUpdate(code, {{loading:true, data:dataWithTarget, error:'', preview:null, result:null}});
       try {{
         const evaluated = new Map();
         const evaluate = async value => {{
-          const price = Math.round(Math.max(low, Math.min(high, value)) * 100) / 100;
+          const price = Math.round(Math.max(floor, Math.min(ceiling, value)) * 100) / 100;
           const key = price.toFixed(2);
           if (!evaluated.has(key)) evaluated.set(key, await promotionPreviewAtPrice(code, row, action, price, item));
           return {{price, ...evaluated.get(key)}};
         }};
-        let lower = await evaluate(low);
-        let upper = await evaluate(high);
-        if (!lower.financial.available || !upper.financial.available) throw new Error('Custo, impostos ou cotação insuficientes para calcular o preço pela margem.');
+        const currentFinancial = promotionSimulationFinancialResult(row, item);
+        if (!currentFinancial.available) throw new Error('Custo ou cotação insuficientes para calcular o preço pela margem.');
+        const current = {{price:effectivePrice, preview:null, quotedRow:row, financial:currentFinancial}};
+        evaluated.set(effectivePrice.toFixed(2), current);
+        let lower = current;
+        let upper = current;
+        if (target < currentFinancial.margin - 0.01) {{
+          for (let attempt = 0; attempt < 6 && lower.price > floor + 0.009; attempt += 1) {{
+            upper = lower;
+            lower = await evaluate(Math.max(floor, lower.price * 0.9));
+            if (!lower.financial.available) throw new Error('O Mercado Livre não retornou cotação completa durante o cálculo da margem.');
+            if (lower.financial.margin <= target + 0.01) break;
+          }}
+        }} else if (target > currentFinancial.margin + 0.01) {{
+          for (let attempt = 0; attempt < 6 && upper.price < ceiling - 0.009; attempt += 1) {{
+            lower = upper;
+            upper = await evaluate(Math.min(ceiling, upper.price * 1.1));
+            if (!upper.financial.available) throw new Error('O Mercado Livre não retornou cotação completa durante o cálculo da margem.');
+            if (upper.financial.margin >= target - 0.01) break;
+          }}
+        }}
         if (lower.financial.margin > upper.financial.margin) throw new Error('A margem não evoluiu de forma previsível dentro da faixa permitida; ajuste o preço manualmente.');
         const minMargin = Math.min(lower.financial.margin, upper.financial.margin);
         const maxMargin = Math.max(lower.financial.margin, upper.financial.margin);
@@ -4880,7 +5088,9 @@ def render_dashboard(data):
           throw new Error(`Margem de ${{target.toLocaleString('pt-BR')}}% fora da faixa permitida. Nesta promoção, a margem calculável vai de ${{minMargin.toLocaleString('pt-BR',{{minimumFractionDigits:2,maximumFractionDigits:2}})}}% a ${{maxMargin.toLocaleString('pt-BR',{{minimumFractionDigits:2,maximumFractionDigits:2}})}}%.`);
         }}
         let best = Math.abs(lower.financial.margin - target) <= Math.abs(upper.financial.margin - target) ? lower : upper;
-        for (let attempt = 0; attempt < 8 && high - low > 0.01; attempt += 1) {{
+        let low = lower.price;
+        let high = upper.price;
+        for (let attempt = 0; attempt < 6 && high - low > 0.01; attempt += 1) {{
           const marginSpan = upper.financial.margin - lower.financial.margin;
           const interpolated = marginSpan > 0.0001
             ? lower.price + (target - lower.financial.margin) * (upper.price - lower.price) / marginSpan
@@ -4897,7 +5107,10 @@ def render_dashboard(data):
         updatedRows[index] = {{...(updatedRows[index] || row), ...best.quotedRow, target_margin:target}};
         promotionStateUpdate(code, {{loading:false, data:{{...(latest.data || {{}}), promotions:updatedRows}}, preview:best.preview, error:''}});
       }} catch (error) {{
-        promotionStateUpdate(code, {{loading:false, preview:null, error:error.message}});
+        const latest = promotionState.get(code) || {{}};
+        const updatedRows = [...(latest.data?.promotions || [])];
+        updatedRows[index] = {{...(updatedRows[index] || row), target_margin:target}};
+        promotionStateUpdate(code, {{loading:false, data:{{...(latest.data || {{}}), promotions:updatedRows}}, preview:null, error:`Simulação não concluída: ${{error.message}}`}});
       }}
     }}
     function activatePromotionPanels() {{
@@ -4908,12 +5121,24 @@ def render_dashboard(data):
         dialog?.showModal();
       }}));
       document.querySelectorAll('[data-promo-config-close]').forEach(button => button.addEventListener('click', () => {{ activePromotionConfigKey = ''; button.closest('dialog')?.close(); }}));
-      document.querySelectorAll('[data-promo-campaign-price]').forEach(input => input.addEventListener('input', () => {{
-        const timerKey = `${{input.dataset.promoItem}}:${{input.dataset.promoCampaignPrice}}`;
-        clearTimeout(promotionPriceTimers.get(timerKey));
-        promotionPriceTimers.set(timerKey, setTimeout(() => {{ promotionPriceTimers.delete(timerKey); promotionRequoteEditedPrice(input); }}, 650));
-      }}));
-      document.querySelectorAll('[data-promo-target-margin]').forEach(input => input.addEventListener('change', () => promotionRequoteTargetMargin(input)));
+      // Promotion rows are replaced whenever one of their async reads finishes.
+      // Bind the simulators once on the stable guide container so newly rendered
+      // price/margin inputs keep working without duplicate API requests.
+      const promotionGuide = document.getElementById('promotionGuideResult');
+      if (promotionGuide && promotionGuide.dataset.promoSimulationBound !== 'true') {{
+        promotionGuide.dataset.promoSimulationBound = 'true';
+        promotionGuide.addEventListener('input', event => {{
+          const input = event.target.closest?.('[data-promo-campaign-price]');
+          if (!input || !promotionGuide.contains(input)) return;
+          const timerKey = `${{input.dataset.promoItem}}:${{input.dataset.promoCampaignPrice}}`;
+          clearTimeout(promotionPriceTimers.get(timerKey));
+          promotionPriceTimers.set(timerKey, setTimeout(() => {{ promotionPriceTimers.delete(timerKey); promotionRequoteEditedPrice(input); }}, 650));
+        }});
+        promotionGuide.addEventListener('change', event => {{
+          const input = event.target.closest?.('[data-promo-target-margin]');
+          if (input && promotionGuide.contains(input)) promotionRequoteTargetMargin(input);
+        }});
+      }}
       document.querySelectorAll('[data-promo-scope-view]').forEach(button => button.addEventListener('click', () => {{
         promotionStateUpdate(button.dataset.promoScopeKey, {{view:button.dataset.promoScopeView}});
       }}));
@@ -5076,6 +5301,7 @@ def render_dashboard(data):
         const code = button.dataset.promoLoad;
         promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
         try {{
+          await loadFinanceProfile();
           const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
           promotionStateUpdate(code, {{loading:false, data, error:''}});
         }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
@@ -5085,6 +5311,7 @@ def render_dashboard(data):
         const codes = [...new Set(String(button.dataset.promoScopeCodes || '').split(',').map(code => code.trim().toUpperCase()).filter(code => /^MLB\\d+$/.test(code)))];
         if (!codes.length) {{ promotionStateUpdate(key, {{loading:false, results:[], error:'Nenhum MLB individual foi encontrado neste grupo.'}}); return; }}
         promotionStateUpdate(key, {{loading:true, results:null, error:''}});
+        await loadFinanceProfile();
         const pending = [...codes];
         const results = [];
         const worker = async () => {{
@@ -5363,7 +5590,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div>${{campaignConfigInline(item)}}</td>
         <td class="text-cell">${{safe(item.parentId)}} · ${{num(item.optionCount)}} opcao(oes)<div class="muted">${{safe(item.catalogLabel)}}</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="text-cell metrics-7d">${{salesTrendInline(item)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(item.children || [item])}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
@@ -5378,7 +5605,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
         <td class="text-cell">${{num(variationCount)}} MLBU(s)<div class="muted">${{num(group.children.length)}} MLB(s)</div></td>
         <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="text-cell metrics-7d">${{salesTrendInline(item)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(group.children)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
@@ -5397,7 +5624,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(summary.campaignCount || 0)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
         <td class="text-cell">${{num(familyCount)}} família(s) · ${{num(variationCount)}} MLBU(s)<div class="muted">${{num(mlbCount)}} MLB(s)</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item,'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="text-cell metrics-7d">${{salesTrendInline(item)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(children)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
@@ -5478,6 +5705,7 @@ def render_dashboard(data):
       return {{
         ...representative,
         ...summary,
+        children,
         detailScope:meta.scope,
         detailId:meta.id,
         code:meta.id,
@@ -5569,7 +5797,7 @@ def render_dashboard(data):
         <td class="text-cell">${{safe(item.campaign || item.adsCampaigns || 'Sem campanha')}}<div class="muted">${{safe(item.campaignStatus || '')}}</div>${{campaignMode ? '' : campaignConfigInline(item)}}</td>
         <td class="text-cell">${{safe(item.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(item.catalogLabel || '')}}</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
-        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="text-cell metrics-7d">${{salesTrendInline(item)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
+        <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(item)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td>
         <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{safe(item.ctrClass || '')}}</div></td><td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{safe(item.cvrClass || '')}}</div></td>
         <td class="num">${{pct(item.tacos || 0)}}<div class="muted">${{safe(tacosNote)}}</div></td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
@@ -5579,6 +5807,83 @@ def render_dashboard(data):
         <div class="decision-summary-side"><span class="summary-chip">${{safe(item.adsDependencyLabel || 'Dependencia nao calculada')}}</span><span class="summary-chip">Alerta principal: ${{safe((item.alerts || [])[0] || 'Sem alerta')}}</span><button class="secondary-action detail-toggle" type="button" data-detail-toggle="${{safe(key)}}">Ver leitura</button></div>
       </div></td></tr>`;
     }}
+    function performance7dInline(source) {{
+      const byCode = new Map();
+      function add(item) {{
+        if (item.children && item.children.length) item.children.forEach(add);
+        else if (item.code && !byCode.has(item.code)) byCode.set(item.code, item);
+      }}
+      (Array.isArray(source) ? source : [source]).forEach(add);
+      const items = [...byCode.values()];
+      const first = items[0] && items[0].performance7d;
+      const sameWindow = first && items.every(item => item.performance7d &&
+        ['date_from', 'previous_to', 'current_from', 'date_to'].every(key => item.performance7d[key] === first[key]));
+      function sumMetric(name, period) {{
+        if (!sameWindow) return null;
+        const values = items.map(item => item.performance7d[name]);
+        if (values.some(value => !value || value.complete !== true || !Number.isFinite(value[period]))) return null;
+        return values.reduce((sum, value) => sum + value[period], 0);
+      }}
+      const sales = sumMetric('sales', 'current');
+      const priorSales = sumMetric('sales', 'previous');
+      const visits = sumMetric('visits', 'current');
+      const priorVisits = sumMetric('visits', 'previous');
+      const formatted = value => value.toLocaleString('pt-BR', {{maximumFractionDigits:1}});
+      const conversion = sales !== null && visits > 0 ? sales / visits * 100 : null;
+      const priorConversion = priorSales !== null && priorVisits > 0 ? priorSales / priorVisits * 100 : null;
+      function trend(value, previous, points = false) {{
+        if (value === null || previous === null || (!points && previous === 0)) return '';
+        const delta = points ? value - previous : (value / previous - 1) * 100;
+        if (!Number.isFinite(delta)) return '';
+        const arrow = delta > 0 ? '▲' : delta < 0 ? '▼' : '•';
+        return ` <small class="${{delta < 0 ? 'down' : delta > 0 ? 'up' : 'muted'}}">${{arrow}} ${{formatted(Math.abs(delta))}}${{points ? ' pp' : '%'}}</small>`;
+      }}
+      const dateLabel = value => /^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}$/.test(value || '') ? value.split('-').reverse().join('/') : 'N/D';
+      function tipRow(label, current, previous, points = false) {{
+        const available = current !== null && previous !== null;
+        const difference = available ? current - previous : null;
+        const variation = !available ? null : points ? difference : previous > 0 ? difference / previous * 100 : current === 0 ? 0 : null;
+        const signed = value => `${{value > 0 ? '+' : value < 0 ? '−' : ''}}${{formatted(Math.abs(value))}}`;
+        const suffix = points ? '%' : '';
+        return `<span>${{label}}</span><span>${{previous === null ? 'N/D' : formatted(previous) + suffix}}</span><b>${{current === null ? 'N/D' : formatted(current) + suffix}}</b><span class="${{difference < 0 ? 'down' : difference > 0 ? 'up' : ''}}">${{difference === null ? 'N/D' : signed(difference) + (points ? ' pp' : '')}}</span><span class="${{variation < 0 ? 'down' : variation > 0 ? 'up' : ''}}">${{variation === null ? 'N/D' : signed(variation) + (points ? ' pp' : '%')}}</span>`;
+      }}
+      const tip = `<strong>Em comparação ao período anterior:</strong><div class="metrics-float-period">Atual: ${{dateLabel(first?.current_from)}} a ${{dateLabel(first?.date_to)}}<br>Anterior: ${{dateLabel(first?.date_from)}} a ${{dateLabel(first?.previous_to)}}</div><div class="metrics-float-grid"><span></span><span class="muted">Anterior</span><span class="muted">Atual</span><span class="muted">Diferença</span><span class="muted">Variação</span>${{tipRow('Visitas', visits, priorVisits)}}${{tipRow('Vendas', sales, priorSales)}}${{tipRow('Conversão', conversion, priorConversion, true)}}</div><div class="metrics-float-note">Vendas = pedidos. Conversão = pedidos ÷ visitas. A diferença da conversão é em pontos percentuais. N/D indica histórico incompleto ou ausência de base para comparação.</div>`;
+      return `<div class="metrics-7d" tabindex="0" aria-label="Comparação de desempenho dos últimos 7 dias" data-metrics-tip="${{encodeURIComponent(tip)}}"><span>Vendas 7d: <b>${{sales === null ? 'N/D' : formatted(sales)}}</b>${{trend(sales, priorSales)}}</span>
+        <span>Visitas: <b>${{visits === null ? 'N/D' : formatted(visits)}}</b>${{trend(visits, priorVisits)}}</span>
+        <span>Conversão: <b>${{conversion === null ? 'N/D' : formatted(conversion) + '%'}}</b>${{trend(conversion, priorConversion, true)}}</span></div>`;
+    }}
+    let metricsFloat = null, metricsAnchor = null;
+    function hideMetricsFloat() {{
+      if (metricsFloat) metricsFloat.hidden = true;
+      if (metricsAnchor) metricsAnchor.removeAttribute('aria-describedby');
+      metricsAnchor = null;
+    }}
+    function showMetricsFloat(anchor) {{
+      if (!metricsFloat) {{
+        metricsFloat = document.createElement('div');
+        metricsFloat.className = 'metrics-float';
+        metricsFloat.id = 'metrics-comparison-tooltip';
+        metricsFloat.setAttribute('role', 'tooltip');
+        document.body.appendChild(metricsFloat);
+      }}
+      if (metricsAnchor && metricsAnchor !== anchor) metricsAnchor.removeAttribute('aria-describedby');
+      metricsAnchor = anchor;
+      metricsFloat.className = 'metrics-float' + (anchor.hasAttribute('data-promotion-margin-tip') ? ' promotion-margin-float' : '');
+      metricsFloat.innerHTML = decodeURIComponent(anchor.dataset.metricsTip);
+      metricsFloat.hidden = false;
+      anchor.setAttribute('aria-describedby', metricsFloat.id);
+      const rect = anchor.getBoundingClientRect(), box = metricsFloat.getBoundingClientRect();
+      metricsFloat.style.left = Math.max(12, Math.min(innerWidth - box.width - 12, rect.left)) + 'px';
+      metricsFloat.style.top = Math.max(12, rect.top - box.height - 10 >= 12 ? rect.top - box.height - 10 : Math.min(innerHeight - box.height - 12, rect.bottom + 10)) + 'px';
+    }}
+    document.addEventListener('pointerover', event => {{ const anchor = event.target.closest('[data-metrics-tip]'); if (anchor) showMetricsFloat(anchor); }});
+    document.addEventListener('pointerout', event => {{ if (metricsAnchor && !metricsAnchor.contains(event.relatedTarget)) hideMetricsFloat(); }});
+    document.addEventListener('focusin', event => {{ const anchor = event.target.closest('[data-metrics-tip]'); if (anchor) showMetricsFloat(anchor); }});
+    document.addEventListener('focusout', hideMetricsFloat);
+    document.addEventListener('keydown', event => {{ if (event.key === 'Escape') hideMetricsFloat(); }});
+    document.addEventListener('click', event => {{ const anchor = event.target.closest('[data-metrics-tip]'); if (anchor) showMetricsFloat(anchor); else hideMetricsFloat(); }});
+    window.addEventListener('scroll', hideMetricsFloat, true);
+    window.addEventListener('resize', hideMetricsFloat);
     function renderTable() {{
       renderAlerts();
       detailItems.clear();
