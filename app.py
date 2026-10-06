@@ -1474,9 +1474,18 @@ def _attach_account_period_comparison(data, client, advertiser_id, period):
     if not selected or period.get('compareMode') == 'none':
         data['periodComparison'] = {'enabled': False}
         return
-    previous, error = _build_online_dashboard_data(
-        client, advertiser_id, selected['dateFrom'], selected['dateTo']
-    )
+    current_financial_verified = bool(data.get('accountDailySeries')) and not any(
+        row.get('partial', True) for row in data['accountDailySeries'])
+    if current_financial_verified:
+        previous, error = _build_online_dashboard_data(
+            client, advertiser_id, selected['dateFrom'], selected['dateTo']
+        )
+    else:
+        # Financial comparison cannot be certified from a partial current
+        # window. Do not allocate a second full product/history dashboard just
+        # to discard it; independent official metrics need only their own rows.
+        previous = {'meta': {'period': {'dateFrom': selected['dateFrom'],
+                                      'dateTo': selected['dateTo']}}}
     exact = bool(previous and previous.get('meta', {}).get('period') == {
         'dateFrom': selected['dateFrom'], 'dateTo': selected['dateTo']})
     current_exact = data.get('meta', {}).get('period') == {
