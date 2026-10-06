@@ -11,6 +11,18 @@ from test_online_memory_guard import OnlineMemoryGuardTests
 
 
 class AccountPeriodComparisonTests(unittest.TestCase):
+    def test_failed_previous_financial_reader_preserves_official_comparison(self):
+        period=app._resolve_online_period('30d',compare='previous',now=datetime(2026,10,1))
+        current=self.data()
+        def attach(data,client,start,end):
+            data['accountMetrics']={'visits':{'complete':True,'total':60 if start=='2026-09-01' else 30},'cancelledOrders':{'complete':True,'total':2}}
+        with patch.object(app,'_build_online_dashboard_data',return_value=(None,'daily source timeout')), patch.object(app,'_attach_official_account_metrics',side_effect=attach):
+            app._attach_account_period_comparison(current,'future-client','7',period)
+        metrics=current['periodComparison']['metrics']
+        self.assertEqual(metrics['visits']['change'],1)
+        self.assertEqual(metrics['cancelledOrders']['status'],'available')
+        self.assertEqual(metrics['revenue']['status'],'unavailable')
+
     def test_official_counts_compare_independently_from_partial_finances(self):
         period=app._resolve_online_period('30d',compare='previous',now=datetime(2026,10,1))
         current=self.data(); previous=self.data('2026-08-02','2026-08-31')
