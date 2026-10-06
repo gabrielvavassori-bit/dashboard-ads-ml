@@ -4224,7 +4224,7 @@ def render_dashboard(data):
       const financial = promotionFinancialResult(row, item);
       const currentMargin = financial.available && Number.isFinite(financial.margin) ? financial.margin : null;
       const priceCell = editablePrice
-        ? `<div class="promotion-price-editor"><label><span>Preço promocional</span><input type="number"${{priceLimits}} step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"></label><label><span>Margem desejada (%)</span><input class="promotion-target-margin" type="number" min="-99" max="99" step="0.01" value="${{currentMargin == null ? '' : currentMargin.toFixed(2)}}" data-promo-target-margin="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"${{currentMargin == null ? ' disabled' : ''}}></label><span class="promotion-target-feedback" data-promo-target-feedback="${{index}}">${{currentMargin == null ? 'Cadastre custo e impostos para calcular por margem.' : 'Altere o preço ou informe a margem desejada.'}}</span><small>Preço sugerido; edite para recalcular antes de aprovar</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></div>`
+        ? `<div class="promotion-price-editor"><label><span>Preço para simular</span><input type="number"${{priceLimits}} step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"></label><label><span>Margem para simular (%)</span><input class="promotion-target-margin" type="number" min="-99" max="99" step="0.01" value="${{currentMargin == null ? '' : currentMargin.toFixed(2)}}" data-promo-target-margin="${{index}}" data-promo-item="${{safe(item.code)}}" data-promo-operation="${{canUpdate ? 'update' : 'join'}}"${{currentMargin == null ? ' disabled' : ''}}></label><span class="promotion-target-feedback" data-promo-target-feedback="${{index}}">${{currentMargin == null ? 'Cadastre custo e impostos para simular a margem.' : 'Simulação apenas: altere um campo para recalcular Você recebe e MC parcial.'}}</span><small>Nada é aplicado até abrir a revisão no botão ${{canUpdate ? 'Alterar' : 'Participar'}} e confirmar.</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small></div>`
         : `<b>${{price > 0 ? brl(price) : '—'}}</b><small>${{active ? 'Preço promocional ativo' : 'Preço da oportunidade retornado pela API'}}</small><small>${{row.min_discounted_price != null || row.max_discounted_price != null ? safe(promotionLimits(row)) : ''}}</small>`;
       return `<tr class="${{classes}}" data-promotion-item="${{safe(item.code)}}" data-promotion-priority="${{promotionPriority(row, item).join(',')}}"><td>${{identity}}${{payoutBadge}}${{discountBadge}}</td><td class="num">${{promotionAllocationCell(allocation.meli, original, allocation.meliDerived)}}${{subsidyBadge}}</td><td class="num">${{promotionAllocationCell(allocation.seller, original, allocation.sellerDerived, allocation.sellerEstimatedFromTotal ? 'Estimado pelo total; subsídio ML não informado' : '')}}</td><td class="num">${{promotionTotalCell(row)}}</td><td class="num"><b>${{original > 0 ? brl(original) : '—'}}</b><small>Preço original</small></td><td class="num">${{priceCell}}${{referenceHtml}}</td><td class="num">${{promotionReceiptCell(row)}}</td><td class="num">${{promotionMarginCell(row, item)}}</td><td class="num">${{rebateText}}</td><td>${{action}}</td></tr>`;
     }}
@@ -4856,19 +4856,29 @@ def render_dashboard(data):
       const rows = [...(state.data?.promotions || [])];
       const row = rows[index];
       if (!row) return;
+      // This field is a simulator, not a write action. Keep the user's target
+      // in live state before any async quote so a rejected boundary probe does
+      // not redraw the row with the old calculated margin.
+      rows[index] = {{...row, target_margin:target}};
+      const dataWithTarget = {{...(state.data || {{}}), promotions:rows}};
       const apiItem = state.data?.item || {{}};
       const item = {{code, sku:apiItem.seller_sku || apiItem.sku || '', currentPrice:apiItem.price || row.original_price || 0}};
       const minimum = Number(row.min_discounted_price);
       const maximum = Number(row.max_discounted_price);
       let low = Number.isFinite(minimum) && minimum > 0 ? minimum : 0.01;
-      let high = Number.isFinite(maximum) && maximum > 0 ? maximum : Number(row.original_price || item.currentPrice || 0);
+      const currentPrice = Number(row.original_price || item.currentPrice || 0);
+      let high = Number.isFinite(maximum) && maximum > 0 ? maximum : currentPrice;
+      // Mercado Livre rejects a promotional price equal to the current item
+      // price. The old solver tested that invalid endpoint, received HTTP 400
+      // and then erased the simulation fields during the error re-render.
+      if (Number.isFinite(currentPrice) && currentPrice > 0) high = Math.min(high, Math.floor((currentPrice - 0.01) * 100) / 100);
       if (!(high >= low)) {{
         if (feedback) {{ feedback.textContent = 'O Mercado Livre não informou uma faixa de preço válida para esta oportunidade.'; feedback.classList.add('error'); }}
         return;
       }}
       input.disabled = true;
       if (feedback) {{ feedback.textContent = 'Calculando o preço para a margem desejada…'; feedback.classList.remove('error'); }}
-      promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
+      promotionStateUpdate(code, {{loading:true, data:dataWithTarget, error:'', preview:null, result:null}});
       try {{
         const evaluated = new Map();
         const evaluate = async value => {{
@@ -4904,7 +4914,10 @@ def render_dashboard(data):
         updatedRows[index] = {{...(updatedRows[index] || row), ...best.quotedRow, target_margin:target}};
         promotionStateUpdate(code, {{loading:false, data:{{...(latest.data || {{}}), promotions:updatedRows}}, preview:best.preview, error:''}});
       }} catch (error) {{
-        promotionStateUpdate(code, {{loading:false, preview:null, error:error.message}});
+        const latest = promotionState.get(code) || {{}};
+        const updatedRows = [...(latest.data?.promotions || [])];
+        updatedRows[index] = {{...(updatedRows[index] || row), target_margin:target}};
+        promotionStateUpdate(code, {{loading:false, data:{{...(latest.data || {{}}), promotions:updatedRows}}, preview:null, error:`Simulação não concluída: ${{error.message}}`}});
       }}
     }}
     function activatePromotionPanels() {{
