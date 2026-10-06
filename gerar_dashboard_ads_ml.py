@@ -1419,6 +1419,27 @@ def _compact_dashboard_transport(data):
     transport = dict(data)
     for key in ("decisionItems", "adsNoSales", "highTacos", "salesNoAds", "adsByProduct", "finishedNoSku"):
         transport.pop(key, None)
+    # Group children repeat the same potentially large daily histories. Ship
+    # each identical history once and restore references before rendering.
+    candidates = {}
+    for index, item in enumerate(data.get('items', [])):
+        candidates.setdefault((item.get('code'), item.get('campaignId'), item.get('sku')), []).append(index)
+    for group_key in ('skuAds', 'campaignAds'):
+        if not isinstance(data.get(group_key), list): continue
+        groups = []
+        for group in data[group_key]:
+            children = []
+            for child in group.get('children', []):
+                indexes = candidates.get((child.get('code'), child.get('campaignId'), child.get('sku')), [])
+                matching = next((i for i in indexes if child.get('dailySeries') is not None
+                                 and child['dailySeries'] == data['items'][i].get('dailySeries')), None)
+                if matching is not None:
+                    child = dict(child)
+                    child.pop('dailySeries')
+                    child['dailySeriesItemIndex'] = matching
+                children.append(child)
+            groups.append({**group, 'children': children})
+        transport[group_key] = groups
 
     online_beta = transport.get("onlineBeta")
     if isinstance(online_beta, dict):
@@ -2252,6 +2273,14 @@ def render_dashboard(data):
     const DATA = {payload};
     const PROMOTION_BULK_ENABLED = DATA.promotionApi?.bulkEnabled === true;
     const allItems = Array.isArray(DATA.items) ? DATA.items : [];
+    for (const groups of [DATA.skuAds, DATA.campaignAds]) {{
+      for (const group of groups || []) for (const child of group.children || []) {{
+        if (Number.isInteger(child.dailySeriesItemIndex)) {{
+          child.dailySeries = allItems[child.dailySeriesItemIndex]?.dailySeries || [];
+          delete child.dailySeriesItemIndex;
+        }}
+      }}
+    }}
     DATA.decisionItems ??= allItems.filter(item => item && item.sku);
     DATA.adsNoSales ??= allItems.filter(item => Number(item?.investment || 0) > 0 && Number(item?.adsRevenue || 0) <= 0);
     DATA.highTacos ??= allItems.filter(item => Number(item?.investment || 0) > 0 && Number(item?.tacos || 0) > 0.03);

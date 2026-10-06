@@ -7,6 +7,7 @@ from datetime import datetime
 import app
 from period_comparison import summary, compare
 from gerar_dashboard_ads_ml import render_dashboard
+from test_online_memory_guard import OnlineMemoryGuardTests
 
 
 class AccountPeriodComparisonTests(unittest.TestCase):
