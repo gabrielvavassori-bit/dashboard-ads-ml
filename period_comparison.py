@@ -20,6 +20,10 @@ def summary(data):
         returnsAmount=k.get('returnsAmount') if k.get('returnsAvailable') else None,
         returnsOrdersCount=k.get('returnsOrdersCount') if k.get('returnsAvailable') else None,
     )
+    for metric in ('visits', 'cancelledOrders'):
+        official = data.get('accountMetrics', {}).get(metric, {})
+        if official.get('complete') is True:
+            values[metric] = official.get('total')
     return values
 
 
@@ -27,7 +31,8 @@ def compare(current, previous, *, verified):
     result = {}
     for key, value in current.items():
         old = previous.get(key)
-        available = verified and all(isinstance(x, (int, float)) and math.isfinite(x) for x in (value, old))
+        proven = verified.get(key, False) if isinstance(verified, dict) else verified
+        available = proven and all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in (value, old))
         status = 'available' if available else 'unavailable'
         change = None
         if available:

@@ -884,11 +884,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         daily_sales_coverage_days = {}
     else:
         daily_sales_rows, daily_sales_coverage_days, daily_sales_error = daily_sales_result
-    daily_visits_rows, daily_visits_coverage_by_item, daily_visits_error = (
-        ([], {}, "partial_operational_cache")
-        if daily_partial
-        else _sales_intelligence_fetch_daily_visits(client, latest_date_from, latest_date_to)
-    )
+    # Listing visits are independent facts; incomplete Ads cannot suppress them.
+    daily_visits_rows, daily_visits_coverage_by_item, daily_visits_error = _sales_intelligence_fetch_daily_visits(
+        client, latest_date_from, latest_date_to)
     daily_ads_rows, daily_ads_coverage_days, daily_ads_error = (latest_payload.get("daily_ads", []), {}, "partial_operational_cache") if daily_partial else _sales_intelligence_fetch_daily_ads(
         client,
         latest_date_from,
@@ -1427,8 +1425,50 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     }, ""
 
 
+def _attach_official_account_metrics(data, client, start, end):
+    """Read persisted official counts; opening the dashboard never backfills."""
+    try:
+        payload = _fetch_dash_ads_json('/internal/dash-ads/account-metrics',
+            {'client': client, 'date_from': start, 'date_to': end})
+    except Exception:
+        return
+    if not isinstance(payload, dict) or (payload.get('client_id'), payload.get('date_from'), payload.get('date_to')) != (client,start,end):
+        return
+    from datetime import date, timedelta
+    expected = {(date.fromisoformat(start)+timedelta(days=n)).isoformat()
+                for n in range((date.fromisoformat(end)-date.fromisoformat(start)).days+1)}
+    series = {r['date']: r for r in data.get('accountDailySeries', [])}
+    accepted = {}
+    metrics = payload.get('metrics')
+    if not isinstance(metrics, dict):
+        return
+    for metric in ('visits', 'cancelledOrders'):
+        record = metrics.get(metric, {})
+        if not isinstance(record, dict):
+            continue
+        rows = record.get('rows', [])
+        if record.get('complete') is not True or not isinstance(rows,list):
+            continue
+        if len(rows)!=len(expected) or not all(isinstance(r,dict) for r in rows) or {r.get('date') for r in rows}!=expected:
+            continue
+        values=[r.get('value') for r in rows]
+        if not all(isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v) and v>=0 for v in values):
+            continue
+        if record.get('total') != sum(values):
+            continue
+        accepted[metric]=record
+        for row in rows:
+            day=series.setdefault(row['date'], {'date':row['date'], 'partial':True, 'salesPresent':False, 'adsPresent':False})
+            day[metric]=row['value']
+    data['accountMetrics']=accepted
+    data['accountDailySeries']=[series[d] for d in sorted(series)]
+
+
 def _attach_account_period_comparison(data, client, advertiser_id, period):
     from period_comparison import summary, compare
+    current_period = data.get('meta', {}).get('period', {})
+    if current_period.get('dateFrom') and current_period.get('dateTo'):
+        _attach_official_account_metrics(data, client, current_period['dateFrom'], current_period['dateTo'])
     data['periodSummary'] = summary(data)
     selected = period.get('comparePeriod')
     if not selected or period.get('compareMode') == 'none':
@@ -1441,13 +1481,19 @@ def _attach_account_period_comparison(data, client, advertiser_id, period):
         'dateFrom': selected['dateFrom'], 'dateTo': selected['dateTo']})
     current_exact = data.get('meta', {}).get('period') == {
         'dateFrom': period['dateFrom'], 'dateTo': period['dateTo']}
+    if exact:
+        _attach_official_account_metrics(previous, client, selected['dateFrom'], selected['dateTo'])
     # Use positive daily certification, never a global health status or an old window.
     verified = bool(exact and current_exact and all(
         d.get('accountDailySeries') and not any(r.get('partial', True) for r in d['accountDailySeries'])
         for d in (data, previous)))
+    verified_metrics = {key: verified for key in data['periodSummary']}
+    for key in ('visits','cancelledOrders'):
+        verified_metrics[key] = bool(exact and current_exact and all(
+            d.get('accountMetrics', {}).get(key, {}).get('complete') is True for d in (data,previous)))
     data['periodComparison'] = {
         'enabled': True, 'period': selected,
-        'metrics': compare(data['periodSummary'], summary(previous) if exact else {}, verified=verified),
+        'metrics': compare(data['periodSummary'], summary(previous) if exact else {}, verified=verified_metrics),
         'available': verified,
         'reason': '' if verified else 'Comparacao N/D: cobertura dos dois periodos ainda nao comprovada.',
     }

@@ -3082,8 +3082,8 @@ def render_dashboard(data):
           ['Unidades vendidas', periodMetricFormat('units', summary.units), ''],
           ['Pedidos por item', periodMetricFormat('orders', summary.orders), '', 'Soma por anúncio; não equivale a pedidos únicos da conta.'],
           ['Preço médio por unidade', periodMetricFormat('price', summary.price), ''],
-          ['Visitas dos produtos', periodMetricFormat('visits', summary.visits), '', 'N/D quando o histórico do período está incompleto.'],
-          ['Vendas canceladas', periodMetricFormat('cancelledOrders', summary.cancelledOrders), '', 'Fonte de cancelamentos não disponível; devoluções são separadas.']
+          ['Visitas dos produtos', periodMetricFormat('visits', summary.visits), '', 'Visitas totais dos anúncios da conta pela fonte oficial. N/D quando falta cobertura.'],
+          ['Vendas canceladas', periodMetricFormat('cancelledOrders', summary.cancelledOrders), '', 'Pedidos criados no período e atualmente cancelados. Devoluções são separadas.']
         ] : []),
         ['Devolucoes confirmadas', k.returnsAvailable ? `${{brl(k.returnsAmount || 0)}} · ${{pct(k.returnsRate || 0)}} da receita` : 'N/D', k.returnsAvailable && k.returnsAmount > 0 ? 'danger' : ''],
         ['Pedidos devolvidos', k.returnsAvailable ? (k.returnsOrdersAvailable ? `${{num(k.returnsOrdersCount || 0)}} de ${{num(k.returnsOrdersTotal || 0)}} · ${{pct(k.returnsOrdersRate || 0)}}` : `${{num(k.returnsOrdersCount || 0)}} · taxa N/D`) : 'N/D', k.returnsAvailable && k.returnsOrdersCount > 0 ? 'danger' : ''],
@@ -3505,6 +3505,7 @@ def render_dashboard(data):
       return {{min:Math.max(0, rawMin - padding), max:rawMax + padding}};
     }}
     function chartMetricAvailable(row, metric) {{
+      if (['visits','cancelledOrders'].includes(metric)) return typeof row[metric] === 'number' && Number.isFinite(row[metric]);
       if (!row.partial) return true;
       if (['adsRevenue', 'investment', 'roas'].includes(metric)) return Boolean(row.adsPresent);
       if (metric === 'tacos') return Boolean(row.adsPresent && row.salesPresent);
@@ -3513,7 +3514,8 @@ def render_dashboard(data):
     function renderDailyMetric(root, metric) {{
       const sourceRows = JSON.parse(decodeURIComponent(root.dataset.chartSeries || '%5B%5D'));
       const rows = sourceRows;
-      const hasPartial = rows.some(row => row.partial);
+      const independentMetric = ['visits','cancelledOrders'].includes(metric);
+      const hasPartial = independentMetric ? rows.some(row => !chartMetricAvailable(row, metric)) : rows.some(row => row.partial);
       const config = chartMetricConfig(metric);
       const comparisonRoot = root.querySelector('.period-chart-comparison');
       if (comparisonRoot) comparisonRoot.innerHTML = periodComparisonInline(metric);
@@ -3585,7 +3587,7 @@ def render_dashboard(data):
       const path = hasPartial ? '' : smoothChartPath(points);
       const area = lineOnly && path ? `${{path}} L ${{x(rows.length-1).toFixed(1)}} ${{(top+chartH).toFixed(1)}} L ${{x(0).toFixed(1)}} ${{(top+chartH).toFixed(1)}} Z` : '';
       const dots = lineOnly ? points.map((point,index) => chartMetricAvailable(rows[index], metric) ? `<circle cx="${{point[0].toFixed(1)}}" cy="${{point[1].toFixed(1)}}" r="4" fill="#fff" stroke="${{rows[index].partial ? '#b45309' : config.color}}" stroke-width="2"/>` : '').join('') : '';
-      const partialMarks = rows.map((row,index) => row.partial ? `<text x="${{x(index)}}" y="${{top+12}}" text-anchor="middle" fill="#92400e" font-size="12">${{chartMetricAvailable(row, metric) ? '*' : 'N/D'}}</text>` : '').join('');
+      const partialMarks = rows.map((row,index) => hasPartial && row.partial ? `<text x="${{x(index)}}" y="${{top+12}}" text-anchor="middle" fill="#92400e" font-size="12">${{chartMetricAvailable(row, metric) ? '*' : 'N/D'}}</text>` : '').join('');
       const extremes = metric === 'tacos' ? rows.map((row,index) => {{
         const actual = Number(row.tacos || 0);
         if (actual <= scale.max) return '';
@@ -3625,6 +3627,10 @@ def render_dashboard(data):
         tooltip.querySelectorAll('.chart-tooltip-row').forEach((entry,index) => {{
           if (!chartMetricAvailable(row, metrics[index])) entry.lastElementChild.textContent = 'N/D — sem dados';
         }});
+      }}
+      if (['visits','cancelledOrders'].includes(metric)) {{
+        const value = chartMetricAvailable(row, metric) ? num(row[metric]) : 'N/D — sem dados';
+        tooltip.insertAdjacentHTML('beforeend', `<div class="chart-tooltip-row active"><span>${{safe(chartMetricConfig(metric).label)}}</span><span>${{safe(value)}}</span></div>`);
       }}
       tooltip.classList.add('visible');
       const halfWidth = tooltip.getBoundingClientRect().width / 2;

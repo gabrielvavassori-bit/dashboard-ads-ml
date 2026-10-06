@@ -10,6 +10,37 @@ from gerar_dashboard_ads_ml import render_dashboard
 
 
 class AccountPeriodComparisonTests(unittest.TestCase):
+    def test_official_counts_compare_independently_from_partial_finances(self):
+        period=app._resolve_online_period('30d',compare='previous',now=datetime(2026,10,1))
+        current=self.data(); previous=self.data('2026-08-02','2026-08-31')
+        current['accountDailySeries'][0]['partial']=True
+        previous['accountDailySeries'][0]['partial']=True
+        def attach(data,client,start,end):
+            data['accountMetrics']={'visits':{'complete':True,'total':60 if start=='2026-09-01' else 30},'cancelledOrders':{'complete':True,'total':2}}
+        with patch.object(app,'_build_online_dashboard_data',return_value=(previous,'')), patch.object(app,'_attach_official_account_metrics',side_effect=attach):
+            app._attach_account_period_comparison(current,'future-client','7',period)
+        metrics=current['periodComparison']['metrics']
+        self.assertEqual(metrics['visits']['change'],1)
+        self.assertEqual(metrics['cancelledOrders']['status'],'available')
+        self.assertEqual(metrics['revenue']['status'],'unavailable')
+
+    def test_official_snapshot_requires_identity_exact_days_and_total(self):
+        def payload():
+            return dict(client_id='a',date_from='2026-10-01',date_to='2026-10-02',metrics={'visits':dict(complete=True,total=5,rows=[dict(date='2026-10-01',value=2),dict(date='2026-10-02',value=3)])})
+        good=payload()
+        cases=[good]
+        bad=payload(); bad['client_id']='b'; cases.append(bad)
+        bad=payload(); bad['metrics']['visits']['rows'].pop(); cases.append(bad)
+        bad=payload(); bad['metrics']['visits']['total']=9; cases.append(bad)
+        for index,body in enumerate(cases):
+            data={'accountDailySeries':[]}
+            with patch.object(app,'_fetch_dash_ads_json',return_value=body):
+                app._attach_official_account_metrics(data,'a','2026-10-01','2026-10-02')
+            self.assertEqual(bool(data.get('accountMetrics')),index==0)
+            if index==0:
+                self.assertNotIn('revenue',data['accountDailySeries'][0])
+                self.assertEqual(summary(data)['visits'],5)
+
     def data(self, start='2026-09-01', end='2026-09-30'):
         return {'meta': {'period': {'dateFrom': start, 'dateTo': end}},
                 'kpis': {'revenue': 300, 'units': 3},

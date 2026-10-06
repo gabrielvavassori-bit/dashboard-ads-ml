@@ -102,9 +102,10 @@ class OperationalAvailabilityTests(unittest.TestCase):
         self.assertEqual(len(data["accountDailySeries"]), 2)
         self.assertTrue(all(row["partial"] and not row["salesPresent"] and not row["adsPresent"]
                             for row in data["accountDailySeries"]))
-        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(fetch.call_count, 3)
         self.assertEqual(fetch.call_args_list[0].args[0], "/internal/dash-ads/operational-cache")
-        self.assertEqual(fetch.call_args_list[1].args[0], "/internal/dash-ads/returns-summary")
+        self.assertEqual(fetch.call_args_list[1].args[0], "/internal/dash-ads/visits-daily")
+        self.assertEqual(fetch.call_args_list[2].args[0], "/internal/dash-ads/returns-summary")
 
     def test_partial_cache_still_reads_independent_returns(self):
         returns = {
@@ -114,13 +115,13 @@ class OperationalAvailabilityTests(unittest.TestCase):
             "returned_orders_count": 1, "orders_total": 10,
             "orders_total_available": True,
         }
-        with patch.object(app, "_fetch_dash_ads_json", side_effect=[self.payload(), returns]) as fetch:
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=[self.payload(), {}, returns]) as fetch:
             data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
         self.assertEqual(error, "")
         self.assertTrue(data["kpis"]["returnsAvailable"])
         self.assertTrue(data["kpis"]["returnsOrdersAvailable"])
         self.assertEqual(data["kpis"]["returnsAmount"], 12.50)
-        self.assertEqual(fetch.call_args_list[1].args[0], "/internal/dash-ads/returns-summary")
+        self.assertEqual(fetch.call_args_list[2].args[0], "/internal/dash-ads/returns-summary")
 
     def test_confirmed_returned_orders_count_remains_visible_without_order_universe(self):
         returns = {
@@ -129,7 +130,7 @@ class OperationalAvailabilityTests(unittest.TestCase):
             "amount": 12.50, "returns_count": 1,
             "returned_orders_count": 2, "orders_total_available": False,
         }
-        with patch.object(app, "_fetch_dash_ads_json", side_effect=[self.payload(), returns]):
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=[self.payload(), {}, returns]):
             data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
         self.assertEqual(error, "")
         self.assertTrue(data["kpis"]["returnsAvailable"])
