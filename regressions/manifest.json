@@ -272,6 +272,44 @@
       "blocking": true
     }
   ]
+},
+{
+  "id": "REGRESSION-031",
+  "title": "Series diarias por anuncio cortadas no limite de 8 MB",
+  "severity": "ALTA",
+  "components": [
+    "dash_ads_internal_client",
+    "visits_daily",
+    "sales_daily",
+    "ads_daily"
+  ],
+  "domains": [
+    "mercado_livre_visits",
+    "dash_ads_financial"
+  ],
+  "tags": [
+    "all_accounts",
+    "future_accounts",
+    "no_false_zero",
+    "large_catalog"
+  ],
+  "invariant": "Series diarias por anuncio (visits/sales/ads-daily) e order-financials sao lidas ate 64 MB. Resposta acima do limite vira erro explicito agent_response_too_large e nunca e interpretada parcialmente.",
+  "file_globs": [
+    "app.py",
+    "test_dash_ads_response_size.py"
+  ],
+  "protections": [
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "-v",
+        "test_dash_ads_response_size"
+      ],
+      "blocking": true
+    }
+  ]
 }
 ]
 }

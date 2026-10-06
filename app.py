@@ -287,6 +287,15 @@ def _inject_admin_impersonation_banner(handler, page_html: str) -> str:
     return banner + page_html
 
 
+# Séries diárias por anúncio crescem com o catálogo (Lonas: visits-daily 8,6 MB em 06/10/2026
+# com 1.054 anúncios × 30 dias) e eram cortadas no limite antigo de 8 MB.
+_DASH_ADS_LARGE_RESPONSE_PATHS = ("/order-financials", "/visits-daily", "/sales-daily", "/ads-daily")
+
+
+def _dash_ads_max_response_bytes(path: str) -> int:
+    return 64_000_000 if path.endswith(_DASH_ADS_LARGE_RESPONSE_PATHS) else 8_000_000
+
+
 def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
     secret = os.environ.get("DASH_ADS_INTERNAL_SECRET") or os.environ.get("COMPETITIVE_WORKER_SECRET", "")
     if not secret:
@@ -305,12 +314,13 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
         method="GET",
     )
     try:
-        max_response_bytes = 64_000_000 if path.endswith('/order-financials') else 8_000_000
+        max_response_bytes = _dash_ads_max_response_bytes(path)
         with urlopen(req, timeout=18) as response:
-            raw = response.read(max_response_bytes)
+            # +1 byte: distingue resposta que coube exatamente de resposta cortada.
+            raw = response.read(max_response_bytes + 1)
             status = response.status
     except HTTPError as exc:
-        raw = exc.read(max_response_bytes)
+        raw = exc.read(max_response_bytes + 1)
         status = exc.code
     except (URLError, TimeoutError) as exc:
         return {
@@ -318,6 +328,16 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
             "http_status": 502,
             "message": "Falha ao consultar agente-ml.",
             "error": exc.__class__.__name__,
+        }
+    if len(raw) > max_response_bytes:
+        # Nunca interpretar uma resposta cortada: vira erro explícito (N/D), não "formato inválido".
+        return {
+            "ok": False,
+            "http_status": 502,
+            "error": "agent_response_too_large",
+            "message": "Resposta do agente acima do limite de leitura.",
+            "limit_bytes": max_response_bytes,
+            "token_exposed": False,
         }
     try:
         payload = json.loads(raw.decode("utf-8", errors="replace"))
