@@ -27,6 +27,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionReceiptCell = () => 'Não calculado';
         const promotionMarginCell = () => 'MC parcial';
         const promotionFinancialResult = () => ({available:false});
+        const promotionSimulationFinancialResult = promotionFinancialResult;
         const promotionPriority = () => [0,0,1,-50];
         const promotionSameOpportunity = () => true;
         const promotionPreviewHtml = () => '';
@@ -541,7 +542,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('max_discounted_price', row)
         solver = source[source.index('    async function promotionPreviewAtPrice'):source.index('    function activatePromotionPanels')]
         self.assertIn("promotionApiRequest('/api/promotions/preview'", solver)
-        self.assertIn('promotionFinancialResult(quotedRow, item)', solver)
+        self.assertIn('promotionSimulationFinancialResult(quotedRow, item)', solver)
         self.assertIn('for (let attempt = 0; attempt < 8', solver)
         self.assertIn('(target - lower.financial.margin)', solver)
         self.assertIn('Margem de ${{target.toLocaleString', solver)
@@ -551,6 +552,16 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('currentPrice - 0.01', solver)
         self.assertIn('Simulação não concluída:', solver)
         self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", solver)
+
+    def test_target_margin_can_use_partial_margin_when_cost_is_known(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        helper = source[source.index('    function promotionSimulationFinancialResult'):source.index('    function promotionTableRow')]
+        self.assertIn('if (complete.available)', helper)
+        self.assertIn('promotionSkuFinance(item)', helper)
+        self.assertIn('!finance.hasCost', helper)
+        self.assertIn('profit = receipt - finance.cost', helper)
+        self.assertIn('partial:true', helper)
+        self.assertNotIn('tax:0', helper)
 
     def test_price_and_margin_fields_are_identified_as_simulators(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
