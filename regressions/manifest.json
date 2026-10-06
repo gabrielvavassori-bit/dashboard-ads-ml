@@ -188,6 +188,29 @@
       "invariant": "O peso faturavel recebido da cotacao do Mercado Livre deve ser normalizado de gramas para quilogramas e acompanhado de unidade explicita. Peso ausente, legado ou sem unidade comprovada usa consultivamente 2 kg, na faixa de 0,5 a 5 kg; nunca pode ser inferido como acima de 5 kg pelo valor bruto ou pelo frete.",
       "file_globs": ["gerar_dashboard_ads_ml.py", "test_promotions_guide_lookup.py", "regressions/manifest.json"],
       "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_promotions_guide_lookup.py"], "blocking": true}]
+    },
+    {
+      "id": "REGRESSION-009",
+      "title": "Abas principais acompanham a rolagem sob banner responsivo",
+      "severity": "ALTA",
+      "components": ["responsive_layout", "dashboard_navigation", "admin_impersonation"],
+      "domains": ["dashboard_ui"],
+      "tags": ["sticky_navigation", "responsive", "mobile", "tablet", "desktop", "all_accounts", "future_accounts"],
+      "invariant": "As abas Operacional, Curva ABC, Promocoes e Custos e impostos permanecem visiveis e utilizaveis durante a rolagem em qualquer largura. Quando existe banner administrativo, o deslocamento sticky acompanha a altura real do banner inclusive apos quebra de linha ou redimensionamento; sem banner, o deslocamento e zero.",
+      "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "test_fiscal_profile_ui.py", "regressions/manifest.json"],
+      "protections": [
+        {
+          "command": [
+            "{python}",
+            "-m",
+            "unittest",
+            "-v",
+            "test_fiscal_profile_ui.FiscalProfileUiTests.test_primary_navigation_is_sticky_and_hides_technical_online_beta_tab",
+            "test_fiscal_profile_ui.FiscalProfileUiTests.test_admin_banner_exposes_dynamic_sticky_navigation_offset"
+          ],
+          "blocking": true
+        }
+      ]
     }
   ]
 }

@@ -1627,7 +1627,7 @@ def render_dashboard(data):
     .top-actions {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }}
     .primary-action {{ background:var(--navy); color:#fff; border-color:var(--navy); white-space:nowrap; }}
     .secondary-action {{ color:var(--navy); background:#fff; border:1px solid var(--line); padding:9px 12px; border-radius:8px; font-weight:800; text-decoration:none; white-space:nowrap; }}
-    .page-nav {{ position:sticky; top:0; display:flex; gap:8px; align-items:center; margin:0 0 12px; padding:10px 0; background:rgba(244,247,251,.96); box-shadow:0 8px 14px -14px rgba(16,32,51,.55); backdrop-filter:blur(8px); z-index:30; }}
+    .page-nav {{ position:sticky; top:var(--admin-impersonation-banner-height, 0px); display:flex; gap:8px; align-items:center; margin:0 0 12px; padding:10px 0; background:rgba(244,247,251,.96); box-shadow:0 8px 14px -14px rgba(16,32,51,.55); backdrop-filter:blur(8px); z-index:30; }}
     .page-tab {{ background:#fff; border-color:var(--line); color:#344054; }}
     .page-tab.active {{ background:var(--navy); color:#fff; border-color:var(--navy); }}
     .view {{ display:none; }}
