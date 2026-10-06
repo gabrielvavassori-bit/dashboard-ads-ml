@@ -2517,6 +2517,7 @@ def render_dashboard(data):
       const stored = payload.profile;
       if (!stored || typeof stored !== 'object') throw new Error('O servidor não confirmou a leitura dos dados salvos.');
       financeProfile = {{...financeProfile, ...stored, costBySku:stored.costBySku || {{}}, costByKey:stored.costByKey || {{}}, fiscalProfile:stored.fiscalProfile || {{}}, fiscalBySku:stored.fiscalBySku || {{}}}};
+      if (promotionGuideItem) renderPromotionGuide();
       financeSetStatus(successMessage, 'success');
     }}
     async function saveFinanceSku() {{
@@ -2579,6 +2580,7 @@ def render_dashboard(data):
         financeProfile = {{...financeProfile, ...stored, costBySku:stored.costBySku || {{}}, costByKey:stored.costByKey || {{}}, fiscalProfile:stored.fiscalProfile || {{}}, fiscalBySku:stored.fiscalBySku || {{}}}};
         financeLoaded = true;
         fillFinanceForm();
+        if (promotionGuideItem) renderPromotionGuide();
         financeSetStatus('Cadastro carregado.');
       }} catch (error) {{ financeSetStatus(error.message || String(error), 'error'); }}
     }}
@@ -4023,6 +4025,21 @@ def render_dashboard(data):
         weightSource:weightEstimated ? 'faixa intermediária estimada' : apiWeightSource,
         fullBonus, fixedFee, bonus, priceBand}};
     }}
+    function financeSkuKey(value) {{
+      return String(value || '').normalize('NFKC').trim().replace(/ +/g, ' ').toLocaleUpperCase('pt-BR');
+    }}
+    function promotionSkuFinance(item) {{
+      const sku = String(item?.sku || '').trim();
+      const target = financeSkuKey(sku);
+      const costMap = financeProfile.costBySku || {{}};
+      const fiscalMap = financeProfile.fiscalBySku || {{}};
+      const costKey = Object.prototype.hasOwnProperty.call(costMap, sku)
+        ? sku : Object.keys(costMap).find(key => financeSkuKey(key) === target);
+      const fiscalKey = Object.prototype.hasOwnProperty.call(fiscalMap, sku)
+        ? sku : Object.keys(fiscalMap).find(key => financeSkuKey(key) === target);
+      const cost = costKey == null ? NaN : Number(costMap[costKey]);
+      return {{sku, hasCost:Number.isFinite(cost), cost, profile:fiscalKey == null ? null : fiscalMap[fiscalKey]}};
+    }}
     function promotionFinancialResult(row, item) {{
       const quote = row.receipt_quote || {{}};
       const price = Number(quote.price);
@@ -4030,10 +4047,9 @@ def render_dashboard(data):
       const fee = Number(quote.sale_fee);
       const freight = Number(quote.shipping_cost);
       const rebate = Number(quote.rebate || 0);
-      const sku = String(item?.sku || '').trim();
-      const hasCost = sku && Object.prototype.hasOwnProperty.call(financeProfile.costBySku || {{}}, sku);
-      const cost = hasCost ? Number(financeProfile.costBySku[sku]) : NaN;
-      const profile = (financeProfile.fiscalBySku || {{}})[sku];
+      const skuFinance = promotionSkuFinance(item);
+      const cost = skuFinance.cost;
+      const profile = skuFinance.profile;
       if (!promotionQuoteMatchesPrice(row, promotionEffectivePrice(row, item)) || ![price,receipt,fee,freight,rebate,cost].every(Number.isFinite) || !profile)
         return {{available:false}};
       const legacyRegime = ['simple','presumed','real'].includes(financeProfile.taxRegime) ? financeProfile.taxRegime : null;
@@ -4117,7 +4133,6 @@ def render_dashboard(data):
       const freight = Number(quote.shipping_cost);
       const rebate = Number(quote.rebate || 0);
       if (![fee, freight, rebate].every(Number.isFinite)) return '<span class="muted">N/D</span>';
-      const percentage = (receipt / price * 100).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
       const line = (label, value) => `<div class="promotion-margin-line"><span>${{label}}</span><b>${{value}}</b></div>`;
       const result = promotionFinancialResult(row, item);
       if (result.available) {{
@@ -4128,8 +4143,14 @@ def render_dashboard(data):
         const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}${{line('Custo do produto', '−' + brl(result.cost))}}${{line('Débitos fiscais', '−' + brl(result.debits))}}${{line('Créditos fiscais aproveitados', '+' + brl(result.credits))}}${{result.difal > 0 ? line('DIFAL', '−' + brl(result.difal)) : line('DIFAL', brl(0))}}<div class="promotion-margin-total">${{line('Lucro líquido estimado', brl(result.profit))}}</div><div class="promotion-margin-note">Margem líquida estimada: ${{margin}}%. Rebate, tarifa e frete vêm da cotação da oportunidade; custo e parâmetros fiscais vêm do SKU. O Flex não compõe esta margem.</div>${{flexScenario}}`;
         return `<span class="promotion-margin-value ${{result.margin < promotionMarginTarget ? 'negative' : 'positive'}}" tabindex="0" aria-label="Margem líquida estimada ${{brl(result.profit)}}, ${{margin}} por cento" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(result.profit)}}<small>${{margin}}%</small>${{flexWarning ? `<span class="promotion-flex-warning">⚠ Flex ativo: margem ${{flexMargin}}%, abaixo da meta de ${{promotionMarginTarget.toLocaleString('pt-BR')}}%</span>` : (result.flexActive && !result.flexAvailable ? '<small>Flex ativo · cálculo pendente</small>' : '')}}</span>`;
       }}
-      const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{line('Custo do produto', 'Não informado')}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line('Saldo antes de custo e imposto', brl(receipt))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. A margem de contribuição real depende do custo e do imposto cadastrados; estes não foram assumidos como zero.</div>`;
-      return `<span class="promotion-margin-value" style="background:#eef0f3;color:#526071" tabindex="0" aria-label="MC parcial ${{brl(receipt)}}, ${{percentage}} por cento; custo e imposto não informados" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(receipt)}}<small>${{percentage}}%</small><small>Margem não apurada</small></span>`;
+      const skuFinance = promotionSkuFinance(item);
+      const balanceAfterKnownCost = skuFinance.hasCost ? receipt - skuFinance.cost : receipt;
+      const percentage = (balanceAfterKnownCost / price * 100).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}});
+      const costLine = skuFinance.hasCost ? line('Custo do produto', '−' + brl(skuFinance.cost)) : line('Custo do produto', 'Não informado');
+      const balanceLabel = skuFinance.hasCost ? 'Saldo após custo · antes de imposto' : 'Saldo antes de custo e imposto';
+      const missingLabel = skuFinance.hasCost ? 'Imposto não informado' : 'Custo e imposto não informados';
+      const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{costLine}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line(balanceLabel, brl(balanceAfterKnownCost))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. Todo valor conhecido foi aplicado; dados fiscais ausentes não foram assumidos como zero.</div>`;
+      return `<span class="promotion-margin-value" style="background:#eef0f3;color:#526071" tabindex="0" aria-label="MC parcial ${{brl(balanceAfterKnownCost)}}, ${{percentage}} por cento; ${{missingLabel.toLocaleLowerCase('pt-BR')}}" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(balanceAfterKnownCost)}}<small>${{percentage}}%</small><small>${{skuFinance.hasCost ? 'Custo aplicado · imposto pendente' : 'Margem não apurada'}}</small></span>`;
     }}
     function promotionTableRow(item, entry, allowAction, listing = null, selection = null) {{
       // Resolve history by exact MLB, never by the parent SKU/family. Ads rows
@@ -5075,6 +5096,7 @@ def render_dashboard(data):
         const code = button.dataset.promoLoad;
         promotionStateUpdate(code, {{loading:true, error:'', preview:null, result:null}});
         try {{
+          await loadFinanceProfile();
           const data = await promotionApiRequest(`/api/promotions?item_id=${{encodeURIComponent(code)}}`);
           promotionStateUpdate(code, {{loading:false, data, error:''}});
         }} catch (error) {{ promotionStateUpdate(code, {{loading:false, error:error.message}}); }}
@@ -5084,6 +5106,7 @@ def render_dashboard(data):
         const codes = [...new Set(String(button.dataset.promoScopeCodes || '').split(',').map(code => code.trim().toUpperCase()).filter(code => /^MLB\\d+$/.test(code)))];
         if (!codes.length) {{ promotionStateUpdate(key, {{loading:false, results:[], error:'Nenhum MLB individual foi encontrado neste grupo.'}}); return; }}
         promotionStateUpdate(key, {{loading:true, results:null, error:''}});
+        await loadFinanceProfile();
         const pending = [...codes];
         const results = [];
         const worker = async () => {{

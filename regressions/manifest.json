@@ -211,6 +211,22 @@
           "blocking": true
         }
       ]
+    },
+    {
+      "id": "REGRESSION-028",
+      "title": "Custo cadastrado sempre participa da leitura promocional",
+      "severity": "ALTA",
+      "components": ["seller_promotions", "promotion_margin_tooltip", "finance_profile"],
+      "domains": ["financial_reporting", "mercado_livre_promotions"],
+      "tags": ["saved_cost", "partial_tax_profile", "normalized_sku", "no_false_missing_cost", "all_accounts", "future_accounts"],
+      "invariant": "Toda cotacao promocional deve aguardar o cadastro financeiro e aplicar o custo comprovadamente salvo para o SKU, inclusive quando o perfil fiscal ainda estiver incompleto. Imposto ausente permanece nao informado e nunca vira zero. Variacoes apenas de caixa, espacos e Unicode na chave do SKU nao podem ocultar custo ou perfil fiscal.",
+      "file_globs": ["gerar_dashboard_ads_ml.py", "test_promotions_guide_lookup.py", "regressions/manifest.json"],
+      "protections": [
+        {
+          "command": ["{python}", "-m", "unittest", "-v", "test_promotions_guide_lookup.PromotionsGuideLookupTests.test_saved_cost_is_applied_even_when_tax_profile_is_pending", "test_promotions_guide_lookup.PromotionsGuideLookupTests.test_partial_margin_shows_breakdown_without_inventing_cost_or_tax"],
+          "blocking": true
+        }
+      ]
     }
   ]
 }
