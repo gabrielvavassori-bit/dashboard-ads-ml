@@ -3303,6 +3303,8 @@ class Handler(BaseHTTPRequestHandler):
                             return
                         _send_html(self, templates.render_error_page(message), 503)
                         return
+                    from gerar_dashboard_ads_ml import _compact_dashboard_transport
+                    dashboard_data = _compact_dashboard_transport(dashboard_data)
                     _attach_account_period_comparison(
                         dashboard_data, client_id, (link['advertiser_id'] or '').strip(), period
                     )

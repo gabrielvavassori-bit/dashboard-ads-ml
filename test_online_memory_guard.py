@@ -7,6 +7,23 @@ from gerar_dashboard_ads_ml import _compact_dashboard_transport, render_dashboar
 
 
 class OnlineMemoryGuardTests(unittest.TestCase):
+    def test_group_histories_are_transmitted_once_and_restore_exactly(self):
+        import copy
+        import subprocess
+        item={'code':'MLB1','sku':'A','campaignId':'7','dailySeries':[{'date':str(i),'visits':i} for i in range(90)]}
+        data={'items':[item],'skuAds':[{'children':[item]}], 'campaignAds':[{'children':[copy.deepcopy(item)]}]}
+        compact=_compact_dashboard_transport(data)
+        self.assertLess(len(json.dumps(compact)),len(json.dumps(data))*0.5)
+        self.assertIn('dailySeries',data['campaignAds'][0]['children'][0])
+        html=render_dashboard(compact)
+        restore=html.split('const allItems = ',1)[1].split('DATA.decisionItems',1)[0]
+        script='const DATA='+json.dumps(compact)+';const allItems = '+restore+';console.log(JSON.stringify(DATA.campaignAds[0].children[0].dailySeries));'
+        output=subprocess.check_output(['node','-e',script],text=True)
+        self.assertEqual(json.loads(output),item['dailySeries'])
+        different=copy.deepcopy(item); different['dailySeries'][0]['visits']=99
+        data['campaignAds'][0]['children']=[different]
+        self.assertIn('dailySeries',_compact_dashboard_transport(data)['campaignAds'][0]['children'][0])
+
     def test_transport_omits_raw_snapshot_and_derivable_item_lists(self):
         item = {
             "code": "MLB1",
