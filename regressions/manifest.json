@@ -8,20 +8,28 @@
   "severity": "ALTA",
   "components": [
     "dash_ads_snapshot_integrity",
-    "operational_cache"
+    "operational_cache",
+    "advertising_status_overlay",
+    "advertising_status_summary"
   ],
   "domains": [
     "cache_integrity"
   ],
   "tags": [
     "account_isolation",
-    "chart"
+    "chart",
+    "all_accounts",
+    "future_accounts",
+    "no_false_ended"
   ],
   "file_globs": [
     "app.py",
-    "dash_ads_snapshot_queue.py"
+    "gerar_dashboard_ads_ml.py",
+    "test_operational_availability.py",
+    "test_tacos_status_consistency.py",
+    "regressions/manifest.json"
   ],
-  "invariant": "Saude global nao certifica nem invalida uma conta. Graficos completos exigem contrato exato; leitura nao coleta nem repara. TACOS online usa faturamento sem somar atribuicao indireta, no KPI, itens, grupos e serie diaria. Status ausente nunca significa publicidade encerrada nem zero confirmado de ativas.",
+  "invariant": "Saude global nao certifica nem invalida uma conta. Graficos completos exigem contrato exato ou derivacao comprovada; leitura nao coleta nem repara. TACOS online usa faturamento sem somar atribuicao indireta, no KPI, itens, grupos e serie diaria. O cache operacional pode receber somente status nao vazio do contrato comprometido da mesma conta e periodo, associado por item e campanha unicos; valores financeiros e metadados operacionais nunca sao substituidos. Status ausente, pausado ou indefinido nunca significa publicidade encerrada nem zero confirmado de ativas. Ativas confirmadas, encerradas confirmadas e sem status confirmado permanecem contagens separadas e visiveis. A regra nao possui allowlist e vale para contas existentes e futuras.",
   "protections": [
     {
       "command": [

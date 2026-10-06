@@ -41,6 +41,33 @@ class TacosStatusConsistencyTests(unittest.TestCase):
         self.assertIn("['Publicidade encerrada confirmada', rows.filter", html)
         self.assertNotIn("rows.some(item => matchesContext(item, 'unknownAds')) ? null", html)
 
+    def test_browser_keeps_confirmed_counts_visible_with_unknown_rows(self):
+        html = render_dashboard({'items': [], 'meta': {}})
+        functions = 'function advertisingState(item)' + html.split(
+            'function advertisingState(item)', 1
+        )[1].split('function renderAlerts()', 1)[0]
+        rows = [
+            {'campaignStatus': 'Ativa'},
+            {'campaignStatus': 'Encerrada'},
+            {},
+            {'campaignStatus': 'Pausada'},
+        ]
+        script = functions + "\nconst rows = " + json.dumps(rows) + ";" + """
+const counts = {
+  active: rows.filter(item => matchesContext(item, 'active')).length,
+  ended: rows.filter(item => matchesContext(item, 'ended')).length,
+  unknown: rows.filter(item => matchesContext(item, 'unknownAds')).length,
+};
+console.log(JSON.stringify(counts));
+"""
+        result = subprocess.run(
+            ['node', '-e', script], capture_output=True, text=True, check=True
+        )
+        self.assertEqual(
+            json.loads(result.stdout),
+            {'active': 1, 'ended': 1, 'unknown': 2},
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
