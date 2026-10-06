@@ -258,12 +258,25 @@ def _inject_admin_impersonation_banner(handler, page_html: str) -> str:
     client = _html.escape(session["name"] or session["email"] or "cliente")
     email = _html.escape(session["email"] or "")
     banner = f"""
-    <div style="position:sticky;top:0;z-index:2147483647;background:#fff3cd;border-bottom:1px solid #e5bd55;color:#513c00;padding:10px 18px;display:flex;gap:14px;align-items:center;justify-content:center;font:600 14px Arial,sans-serif">
+    <div id="admin-impersonation-banner" class="admin-impersonation-banner" style="position:sticky;top:0;z-index:2147483647;background:#fff3cd;border-bottom:1px solid #e5bd55;color:#513c00;padding:10px 18px;display:flex;gap:14px;align-items:center;justify-content:center;font:600 14px Arial,sans-serif">
       <span>Acesso administrativo temporario: <strong>{client}</strong> ({email})</span>
       <form method="post" action="/admin/stop-impersonation" style="margin:0">
         <button type="submit" style="border:0;border-radius:8px;background:#10243b;color:#fff;padding:8px 12px;font-weight:700;cursor:pointer">Voltar ao painel admin</button>
       </form>
     </div>
+    <script>
+      (() => {{
+        const banner = document.getElementById('admin-impersonation-banner');
+        if (!banner) return;
+        const updateOffset = () => document.documentElement.style.setProperty(
+          '--admin-impersonation-banner-height',
+          `${{Math.ceil(banner.getBoundingClientRect().height)}}px`
+        );
+        updateOffset();
+        window.addEventListener('resize', updateOffset, {{ passive: true }});
+        if ('ResizeObserver' in window) new ResizeObserver(updateOffset).observe(banner);
+      }})();
+    </script>
     """
     lower = page_html.lower()
     body_start = lower.find("<body")
