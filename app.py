@@ -1417,7 +1417,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     if returns_available:
         notice += " Devolucoes: indicador conciliado com Metricas de negocio do Mercado Livre para esta conta e periodo."
     else:
-        notice += " Devolucoes: a leitura ainda nao foi conciliada com Metricas de negocio do Mercado Livre; os cartoes ficam como N/D."
+        notice += " Devolucoes: a leitura ainda nao foi conciliada com Metricas de negocio do Mercado Livre; os cartoes ficam ocultos."
     return {
         "kpis": {
             "clientName": client,

@@ -3105,8 +3105,10 @@ def render_dashboard(data):
           ['Visitas dos produtos', periodMetricFormat('visits', summary.visits), '', 'N/D quando o histórico do período está incompleto.'],
           ['Vendas canceladas', periodMetricFormat('cancelledOrders', summary.cancelledOrders), '', 'Fonte de cancelamentos não disponível; devoluções são separadas.']
         ] : []),
-        ['Devolucoes confirmadas', k.returnsAvailable ? `${{brl(k.returnsAmount || 0)}} · ${{pct(k.returnsRate || 0)}} da receita` : 'N/D', k.returnsAvailable && k.returnsAmount > 0 ? 'danger' : ''],
-        ['Pedidos devolvidos', k.returnsAvailable ? (k.returnsOrdersAvailable ? `${{num(k.returnsOrdersCount || 0)}} de ${{num(k.returnsOrdersTotal || 0)}} · ${{pct(k.returnsOrdersRate || 0)}}` : `${{num(k.returnsOrdersCount || 0)}} · taxa N/D`) : 'N/D', k.returnsAvailable && k.returnsOrdersCount > 0 ? 'danger' : ''],
+        ...(k.returnsAvailable ? [
+          ['Valor de vendas devolvidas', `${{brl(k.returnsAmount || 0)}} · ${{pct(k.returnsRate || 0)}} da receita`, k.returnsAmount > 0 ? 'danger' : ''],
+          ['Quantidade de vendas devolvidas', k.returnsOrdersAvailable ? `${{num(k.returnsOrdersCount || 0)}} de ${{num(k.returnsOrdersTotal || 0)}} · ${{pct(k.returnsOrdersRate || 0)}}` : `${{num(k.returnsOrdersCount || 0)}} · taxa N/D`, k.returnsOrdersCount > 0 ? 'danger' : '']
+        ] : []),
         ['Receita atribuida ADS', brl(k.adsRevenue), ''],
         ['Receita organica estimada', brl(k.organicRevenue || 0), ''],
         ['Investimento ADS', brl(k.investment), ''],
