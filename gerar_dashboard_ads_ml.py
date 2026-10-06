@@ -4877,7 +4877,11 @@ def render_dashboard(data):
       rows[index] = {{...row, target_margin:target}};
       const dataWithTarget = {{...(state.data || {{}}), promotions:rows}};
       const apiItem = state.data?.item || {{}};
-      const item = {{code, sku:apiItem.seller_sku || apiItem.sku || '', currentPrice:apiItem.price || row.original_price || 0}};
+      // Preserve the complete item returned by the promotion lookup. Rebuilding
+      // it with only code/SKU/price discarded the saved cost fields, so the
+      // row could display an MC parcial while the target-margin solver falsely
+      // reported that cost was missing.
+      const item = {{...apiItem, code, sku:apiItem.seller_sku || apiItem.sku || '', currentPrice:apiItem.price || row.original_price || 0}};
       const minimum = Number(row.min_discounted_price);
       const maximum = Number(row.max_discounted_price);
       const originalPrice = Number(row.original_price || item.currentPrice || 0);
