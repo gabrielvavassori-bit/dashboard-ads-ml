@@ -4880,14 +4880,18 @@ def render_dashboard(data):
       const item = {{code, sku:apiItem.seller_sku || apiItem.sku || '', currentPrice:apiItem.price || row.original_price || 0}};
       const minimum = Number(row.min_discounted_price);
       const maximum = Number(row.max_discounted_price);
-      let low = Number.isFinite(minimum) && minimum > 0 ? minimum : 0.01;
-      const currentPrice = Number(row.original_price || item.currentPrice || 0);
-      let high = Number.isFinite(maximum) && maximum > 0 ? maximum : currentPrice;
+      const originalPrice = Number(row.original_price || item.currentPrice || 0);
+      const effectivePrice = Number(promotionEffectivePrice(row, item));
+      // When the opportunity omits explicit limits, never probe R$ 0,01. That
+      // invalid endpoint can leave the upstream preview waiting indefinitely.
+      // Start from the already quoted price and expand only toward the target.
+      const floor = Number.isFinite(minimum) && minimum > 0 ? minimum : Math.max(0.01, originalPrice * 0.2);
+      let ceiling = Number.isFinite(maximum) && maximum > 0 ? maximum : originalPrice;
       // Mercado Livre rejects a promotional price equal to the current item
       // price. The old solver tested that invalid endpoint, received HTTP 400
       // and then erased the simulation fields during the error re-render.
-      if (Number.isFinite(currentPrice) && currentPrice > 0) high = Math.min(high, Math.floor((currentPrice - 0.01) * 100) / 100);
-      if (!(high >= low)) {{
+      if (Number.isFinite(originalPrice) && originalPrice > 0) ceiling = Math.min(ceiling, Math.floor((originalPrice - 0.01) * 100) / 100);
+      if (!(ceiling >= floor) || !(effectivePrice >= floor && effectivePrice <= ceiling)) {{
         if (feedback) {{ feedback.textContent = 'O Mercado Livre não informou uma faixa de preço válida para esta oportunidade.'; feedback.classList.add('error'); }}
         return;
       }}
@@ -4897,14 +4901,32 @@ def render_dashboard(data):
       try {{
         const evaluated = new Map();
         const evaluate = async value => {{
-          const price = Math.round(Math.max(low, Math.min(high, value)) * 100) / 100;
+          const price = Math.round(Math.max(floor, Math.min(ceiling, value)) * 100) / 100;
           const key = price.toFixed(2);
           if (!evaluated.has(key)) evaluated.set(key, await promotionPreviewAtPrice(code, row, action, price, item));
           return {{price, ...evaluated.get(key)}};
         }};
-        let lower = await evaluate(low);
-        let upper = await evaluate(high);
-        if (!lower.financial.available || !upper.financial.available) throw new Error('Custo ou cotação insuficientes para calcular o preço pela margem.');
+        const currentFinancial = promotionSimulationFinancialResult(row, item);
+        if (!currentFinancial.available) throw new Error('Custo ou cotação insuficientes para calcular o preço pela margem.');
+        const current = {{price:effectivePrice, preview:null, quotedRow:row, financial:currentFinancial}};
+        evaluated.set(effectivePrice.toFixed(2), current);
+        let lower = current;
+        let upper = current;
+        if (target < currentFinancial.margin - 0.01) {{
+          for (let attempt = 0; attempt < 6 && lower.price > floor + 0.009; attempt += 1) {{
+            upper = lower;
+            lower = await evaluate(Math.max(floor, lower.price * 0.9));
+            if (!lower.financial.available) throw new Error('O Mercado Livre não retornou cotação completa durante o cálculo da margem.');
+            if (lower.financial.margin <= target + 0.01) break;
+          }}
+        }} else if (target > currentFinancial.margin + 0.01) {{
+          for (let attempt = 0; attempt < 6 && upper.price < ceiling - 0.009; attempt += 1) {{
+            lower = upper;
+            upper = await evaluate(Math.min(ceiling, upper.price * 1.1));
+            if (!upper.financial.available) throw new Error('O Mercado Livre não retornou cotação completa durante o cálculo da margem.');
+            if (upper.financial.margin >= target - 0.01) break;
+          }}
+        }}
         if (lower.financial.margin > upper.financial.margin) throw new Error('A margem não evoluiu de forma previsível dentro da faixa permitida; ajuste o preço manualmente.');
         const minMargin = Math.min(lower.financial.margin, upper.financial.margin);
         const maxMargin = Math.max(lower.financial.margin, upper.financial.margin);
@@ -4912,7 +4934,9 @@ def render_dashboard(data):
           throw new Error(`Margem de ${{target.toLocaleString('pt-BR')}}% fora da faixa permitida. Nesta promoção, a margem calculável vai de ${{minMargin.toLocaleString('pt-BR',{{minimumFractionDigits:2,maximumFractionDigits:2}})}}% a ${{maxMargin.toLocaleString('pt-BR',{{minimumFractionDigits:2,maximumFractionDigits:2}})}}%.`);
         }}
         let best = Math.abs(lower.financial.margin - target) <= Math.abs(upper.financial.margin - target) ? lower : upper;
-        for (let attempt = 0; attempt < 8 && high - low > 0.01; attempt += 1) {{
+        let low = lower.price;
+        let high = upper.price;
+        for (let attempt = 0; attempt < 6 && high - low > 0.01; attempt += 1) {{
           const marginSpan = upper.financial.margin - lower.financial.margin;
           const interpolated = marginSpan > 0.0001
             ? lower.price + (target - lower.financial.margin) * (upper.price - lower.price) / marginSpan
