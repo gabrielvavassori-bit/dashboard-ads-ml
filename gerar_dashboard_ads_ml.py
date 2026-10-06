@@ -4943,12 +4943,24 @@ def render_dashboard(data):
         dialog?.showModal();
       }}));
       document.querySelectorAll('[data-promo-config-close]').forEach(button => button.addEventListener('click', () => {{ activePromotionConfigKey = ''; button.closest('dialog')?.close(); }}));
-      document.querySelectorAll('[data-promo-campaign-price]').forEach(input => input.addEventListener('input', () => {{
-        const timerKey = `${{input.dataset.promoItem}}:${{input.dataset.promoCampaignPrice}}`;
-        clearTimeout(promotionPriceTimers.get(timerKey));
-        promotionPriceTimers.set(timerKey, setTimeout(() => {{ promotionPriceTimers.delete(timerKey); promotionRequoteEditedPrice(input); }}, 650));
-      }}));
-      document.querySelectorAll('[data-promo-target-margin]').forEach(input => input.addEventListener('change', () => promotionRequoteTargetMargin(input)));
+      // Promotion rows are replaced whenever one of their async reads finishes.
+      // Bind the simulators once on the stable guide container so newly rendered
+      // price/margin inputs keep working without duplicate API requests.
+      const promotionGuide = document.getElementById('promotionGuideResult');
+      if (promotionGuide && promotionGuide.dataset.promoSimulationBound !== 'true') {{
+        promotionGuide.dataset.promoSimulationBound = 'true';
+        promotionGuide.addEventListener('input', event => {{
+          const input = event.target.closest?.('[data-promo-campaign-price]');
+          if (!input || !promotionGuide.contains(input)) return;
+          const timerKey = `${{input.dataset.promoItem}}:${{input.dataset.promoCampaignPrice}}`;
+          clearTimeout(promotionPriceTimers.get(timerKey));
+          promotionPriceTimers.set(timerKey, setTimeout(() => {{ promotionPriceTimers.delete(timerKey); promotionRequoteEditedPrice(input); }}, 650));
+        }});
+        promotionGuide.addEventListener('change', event => {{
+          const input = event.target.closest?.('[data-promo-target-margin]');
+          if (input && promotionGuide.contains(input)) promotionRequoteTargetMargin(input);
+        }});
+      }}
       document.querySelectorAll('[data-promo-scope-view]').forEach(button => button.addEventListener('click', () => {{
         promotionStateUpdate(button.dataset.promoScopeKey, {{view:button.dataset.promoScopeView}});
       }}));

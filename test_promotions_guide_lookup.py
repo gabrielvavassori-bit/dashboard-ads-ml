@@ -563,6 +563,17 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('partial:true', helper)
         self.assertNotIn('tax:0', helper)
 
+    def test_promotion_simulators_use_delegated_events_after_async_rerenders(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        handlers = source[source.index('    function activatePromotionPanels'):source.index('    function pricingPreviewBlock')]
+        self.assertIn("document.getElementById('promotionGuideResult')", handlers)
+        self.assertIn("promotionGuide.dataset.promoSimulationBound !== 'true'", handlers)
+        self.assertIn("promotionGuide.addEventListener('input'", handlers)
+        self.assertIn("event.target.closest?.('[data-promo-campaign-price]')", handlers)
+        self.assertIn("promotionGuide.addEventListener('change'", handlers)
+        self.assertIn("event.target.closest?.('[data-promo-target-margin]')", handlers)
+        self.assertNotIn("document.querySelectorAll('[data-promo-target-margin]').forEach", handlers)
+
     def test_price_and_margin_fields_are_identified_as_simulators(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
