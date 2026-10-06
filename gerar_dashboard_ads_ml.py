@@ -4152,6 +4152,18 @@ def render_dashboard(data):
       const tip = `${{line('Preço promocional', brl(price))}}${{line('Tarifa de venda', '−' + brl(fee))}}${{line('Frete do vendedor', '−' + brl(freight))}}${{rebate > 0 ? line('Rebate ML', '+' + brl(rebate)) : ''}}<div class="promotion-margin-missing">${{costLine}}${{line('Imposto', 'Não informado')}}</div><div class="promotion-margin-total">${{line(balanceLabel, brl(balanceAfterKnownCost))}}</div><div class="promotion-margin-note">MC parcial: ${{percentage}}% do preço promocional. Todo valor conhecido foi aplicado; dados fiscais ausentes não foram assumidos como zero.</div>`;
       return `<span class="promotion-margin-value" style="background:#eef0f3;color:#526071" tabindex="0" aria-label="MC parcial ${{brl(balanceAfterKnownCost)}}, ${{percentage}} por cento; ${{missingLabel.toLocaleLowerCase('pt-BR')}}" data-promotion-margin-tip data-metrics-tip="${{encodeURIComponent(tip)}}">${{brl(balanceAfterKnownCost)}}<small>${{percentage}}%</small><small>${{skuFinance.hasCost ? 'Custo aplicado · imposto pendente' : 'Margem não apurada'}}</small></span>`;
     }}
+    function promotionSimulationFinancialResult(row, item) {{
+      const complete = promotionFinancialResult(row, item);
+      if (complete.available) return {{...complete, partial:false}};
+      const quote = row.receipt_quote || {{}};
+      const price = Number(quote.price);
+      const receipt = Number(quote.receipt_before_cost_tax);
+      const finance = promotionSkuFinance(item);
+      if (quote.available !== true || !Number.isFinite(price) || price <= 0 || !Number.isFinite(receipt) || !finance.hasCost)
+        return {{available:false}};
+      const profit = receipt - finance.cost;
+      return {{available:true, price, receipt, cost:finance.cost, profit, margin:profit / price * 100, partial:true}};
+    }}
     function promotionTableRow(item, entry, allowAction, listing = null, selection = null) {{
       // Resolve history by exact MLB, never by the parent SKU/family. Ads rows
       // can repeat a listing; only one carries its non-duplicated sales facts.
@@ -4222,7 +4234,8 @@ def render_dashboard(data):
       const maximumPrice = Number(row.max_discounted_price);
       const priceLimits = `${{Number.isFinite(minimumPrice) && minimumPrice > 0 ? ` min="${{minimumPrice}}"` : ' min="0.01"'}}${{Number.isFinite(maximumPrice) && maximumPrice > 0 ? ` max="${{maximumPrice}}"` : ''}}`;
       const financial = promotionFinancialResult(row, item);
-      const currentMargin = financial.available && Number.isFinite(financial.margin) ? financial.margin : null;
+      const simulationFinancial = promotionSimulationFinancialResult(row, item);
+      const currentMargin = simulationFinancial.available && Number.isFinite(simulationFinancial.margin) ? simulationFinancial.margin : null;
       const storedTargetMargin = Number(row.target_margin);
       const targetMarginValue = Number.isFinite(storedTargetMargin) ? storedTargetMargin : currentMargin;
       const priceCell = editablePrice
@@ -4845,7 +4858,7 @@ def render_dashboard(data):
       const quotedRow = {{...row, preview_price:price,
         receipt_quote:preview.summary?.receipt_quote || {{available:false, reason:'O Mercado Livre não retornou a cotação deste preço.'}},
         flex_receipt_quote:preview.summary?.flex_receipt_quote || row.flex_receipt_quote}};
-      return {{preview, quotedRow, financial:promotionFinancialResult(quotedRow, item)}};
+      return {{preview, quotedRow, financial:promotionSimulationFinancialResult(quotedRow, item)}};
     }}
     async function promotionRequoteTargetMargin(input) {{
       const code = input.dataset.promoItem;
@@ -4891,7 +4904,7 @@ def render_dashboard(data):
         }};
         let lower = await evaluate(low);
         let upper = await evaluate(high);
-        if (!lower.financial.available || !upper.financial.available) throw new Error('Custo, impostos ou cotação insuficientes para calcular o preço pela margem.');
+        if (!lower.financial.available || !upper.financial.available) throw new Error('Custo ou cotação insuficientes para calcular o preço pela margem.');
         if (lower.financial.margin > upper.financial.margin) throw new Error('A margem não evoluiu de forma previsível dentro da faixa permitida; ajuste o preço manualmente.');
         const minMargin = Math.min(lower.financial.margin, upper.financial.margin);
         const maxMargin = Math.max(lower.financial.margin, upper.financial.margin);

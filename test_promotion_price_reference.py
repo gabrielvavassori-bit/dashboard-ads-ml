@@ -14,6 +14,7 @@ class PromotionPriceReferenceTests(unittest.TestCase):
         const safe=x=>String(x??''); const brl=x=>`R$ ${Number(x).toFixed(2)}`;
         const promotionMarginTarget=15;
         const promotionFinancialResult=row=>row.financial||({available:false});
+        const promotionSimulationFinancialResult=promotionFinancialResult;
         const promotionEffectivePrice=row=>Number(row.price);
         const promotionQuoteMatchesPrice=(row,p)=>Math.abs(Number(row.receipt_quote?.price)-p)<0.01;
         const promotionState=new Map(); const promotionSameOpportunity=()=>false;
