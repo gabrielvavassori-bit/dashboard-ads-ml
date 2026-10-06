@@ -521,7 +521,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
         self.assertIn('const priceCell = editablePrice', row)
         self.assertIn('data-promo-campaign-price=', row)
-        self.assertIn('Preço sugerido; edite para recalcular antes de aprovar', row)
+        self.assertIn('Preço para simular', row)
         self.assertIn('min_discounted_price', row)
         self.assertIn('max_discounted_price', row)
         self.assertIn('<td class="num">${{priceCell}}${{referenceHtml}}</td><td class="num">${{promotionReceiptCell(row)}}</td>', row)
@@ -535,7 +535,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
     def test_target_margin_requotes_price_within_marketplace_limits(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
-        self.assertIn('Margem desejada (%)', row)
+        self.assertIn('Margem para simular (%)', row)
         self.assertIn('data-promo-target-margin=', row)
         self.assertIn('min_discounted_price', row)
         self.assertIn('max_discounted_price', row)
@@ -545,7 +545,18 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('for (let attempt = 0; attempt < 8', solver)
         self.assertIn('(target - lower.financial.margin)', solver)
         self.assertIn('Margem de ${{target.toLocaleString', solver)
+        self.assertIn('target_margin:target', solver)
+        self.assertIn('currentPrice - 0.01', solver)
+        self.assertIn('Simulação não concluída:', solver)
         self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", solver)
+
+    def test_price_and_margin_fields_are_identified_as_simulators(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
+        self.assertIn('Preço para simular', row)
+        self.assertIn('Margem para simular (%)', row)
+        self.assertIn('Simulação apenas:', row)
+        self.assertIn('Nada é aplicado até abrir a revisão', row)
 
     def test_confirmed_promotion_refreshes_loaded_scope_without_page_reload(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
