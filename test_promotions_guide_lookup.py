@@ -546,6 +546,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('(target - lower.financial.margin)', solver)
         self.assertIn('Margem de ${{target.toLocaleString', solver)
         self.assertIn('target_margin:target', solver)
+        self.assertIn('const storedTargetMargin = Number(row.target_margin)', row)
+        self.assertIn('targetMarginValue.toFixed(2)', row)
         self.assertIn('currentPrice - 0.01', solver)
         self.assertIn('Simulação não concluída:', solver)
         self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", solver)
