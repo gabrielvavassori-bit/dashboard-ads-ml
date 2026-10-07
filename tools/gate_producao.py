@@ -24,6 +24,9 @@ def main():
         print(out[-2000:]); print("REPROVADO: medição do dashboard não retornou"); return 1
     res = json.loads(line[len("GATE_JSON "):])
     livre = int(disk.split()[1])
+    mem = next((l for l in out.splitlines() if l.startswith("MEM ")), "MEM").split()[1:]
+    if len(mem) == 2:
+        res["mem_peak_mb"], res["mem_limit_mb"] = int(mem[0]), int(mem[1])
     base = json.loads(BASE.read_text(encoding="utf-8")) if BASE.exists() else {}
     print(f"período {res['period']['dateFrom']}..{res['period']['dateTo']}")
     for conta, runs in res["accounts"].items():
