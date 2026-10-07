@@ -28,10 +28,25 @@ for client in sys.argv[1:]:
         # mesmos passos da rota /online (página normal, fora do demo)
         if hasattr(A, "_strip_item_daily_series"):
             A._strip_item_daily_series(data)
+        identical = None
+        import gerar_dashboard_ads_ml as G
+        if hasattr(G, "_dedupe_group_children"):
+            # Prova com dados reais: a página remontada pelo JS é idêntica à original, campo por campo.
+            import subprocess, tempfile, copy as _copy
+            original = json.loads(json.dumps(data))
+            compact = G._dedupe_group_children(_copy.deepcopy(data))
+            with tempfile.TemporaryDirectory() as d:
+                js = os.path.join(d, "x.js")
+                open(js, "w", encoding="utf-8").write(G.GROUP_CHILDREN_EXPAND_JS + "\nconst fs=require('fs');"
+                    "process.stdout.write(JSON.stringify(expandGroupChildren(JSON.parse(fs.readFileSync(0,'utf8')))));")
+                r = subprocess.run(["node", js], input=json.dumps(compact).encode("utf-8"), capture_output=True)
+            identical = r.returncode == 0 and json.loads(r.stdout.decode("utf-8")) == original
+            data = compact
         html = render_dashboard(data)
         m = data["periodComparison"].get("metrics", {})
         runs.append({"secs": round(time.time() - t, 1), "html_mb": round(len(html.encode()) / 1e6, 2),
-                     "available": sorted(k for k, v in m.items() if v.get("status") in ("available", "zero_baseline"))})
+                     "available": sorted(k for k, v in m.items() if v.get("status") in ("available", "zero_baseline")),
+                     "roundtrip_identical": identical})
         del data, html
     out["accounts"][client] = runs
 print("GATE_JSON " + json.dumps(out))
