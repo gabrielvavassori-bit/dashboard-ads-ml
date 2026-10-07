@@ -823,6 +823,106 @@ def _deduplicate_online_ads_rows(ads_rows: list) -> tuple[list, dict]:
     }
 
 
+def _daily_series_by_item(daily_sales_rows, daily_ads_rows, daily_visits_rows, daily_partial):
+    """Série diária por anúncio a partir das linhas do agente (página e detalhe sob demanda usam a mesma)."""
+    daily_by_item_date: dict[str, dict[str, dict]] = {}
+    for daily_raw in daily_sales_rows:
+        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
+        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
+        if not daily_code or not snapshot_date:
+            continue
+        daily_by_item_date.setdefault(daily_code, {})[snapshot_date] = {
+            "date": snapshot_date,
+            "salesPresent": True,
+            "adsPresent": False,
+            "orders": _number(daily_raw.get("orders_count")),
+            "units": _number(daily_raw.get("units_total")),
+            "revenue": _number(daily_raw.get("revenue_total")),
+            "lastSaleDate": str(daily_raw.get("last_sale_date") or "").strip(),
+            "lastSalePrice": _number(daily_raw.get("last_price")),
+            "adsRevenue": 0.0,
+            "adsDirectRevenue": 0.0,
+            "adsIndirectRevenue": 0.0,
+            "investment": 0.0,
+            "impressions": 0.0,
+            "clicks": 0.0,
+            "adsUnits": 0.0,
+            "visits": 0.0,
+        }
+    for daily_raw in daily_ads_rows:
+        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
+        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
+        if not daily_code or not snapshot_date:
+            continue
+        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
+            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
+            "lastSaleDate": "", "lastSalePrice": 0.0,
+        })
+        daily.update({
+            "adsPresent": True,
+            "adsRevenue": _number(daily_raw.get("total_amount")),
+            "adsDirectRevenue": _number(daily_raw.get("direct_amount")),
+            "adsIndirectRevenue": _number(daily_raw.get("indirect_amount")),
+            "investment": _number(daily_raw.get("cost")),
+            "impressions": _number(daily_raw.get("prints")),
+            "clicks": _number(daily_raw.get("clicks")),
+            "adsUnits": _number(daily_raw.get("units_quantity")),
+        })
+    for daily_raw in daily_visits_rows:
+        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
+        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
+        if not daily_code or not snapshot_date:
+            continue
+        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
+            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
+            "lastSaleDate": "", "lastSalePrice": 0.0,
+        })
+        daily["visits"] = _number(daily_raw.get("visits_total"))
+    daily_series_by_item: dict[str, list[dict]] = {}
+    for daily_code, daily_by_date in daily_by_item_date.items():
+        daily_series = []
+        for daily in daily_by_date.values():
+            daily["partial"] = daily_partial
+            daily.setdefault("salesPresent", False)
+            # Attribution is not additional turnover. Use the same base as the KPI.
+            daily["tacosBaseRevenue"] = _number(daily.get("revenue"))
+            daily_series.append(daily)
+        daily_series_by_item[daily_code] = sorted(daily_series, key=lambda row: row["date"])
+    return daily_by_item_date, daily_series_by_item
+
+
+_ITEM_DAILY_MAX_CODES = 50
+
+
+def _strip_item_daily_series(data: dict) -> None:
+    """Página normal: histórico diário por anúncio sai do HTML e é buscado ao abrir o detalhe.
+
+    Lonas (06/10/2026): 14 MB dos 37 MB da página eram ``items[].dailySeries`` que só o
+    detalhe de um anúncio usa. Gráfico da conta e comparações já foram calculados antes.
+    """
+    def strip(node):
+        if isinstance(node, dict):
+            node.pop("dailySeries", None)
+            node.pop("dailySeriesItemIndex", None)
+            for child in node.get("children") or []:
+                strip(child)
+    for item in data.get("items") or []:
+        strip(item)
+    data.setdefault("meta", {})["itemDailyOnDemand"] = True
+
+
+def _item_daily_payload(client: str, codes: list[str], date_from: str, date_to: str, partial: bool) -> dict:
+    ids = ",".join(codes)
+    sales, _sc, sales_err = _sales_intelligence_fetch_daily_sales(client, date_from, date_to, ids)
+    ads, _ac, ads_err = _sales_intelligence_fetch_daily_ads(client, date_from, date_to, ids)
+    visits, _vc, _visits_err = _sales_intelligence_fetch_daily_visits(client, date_from, date_to, ids)
+    if sales_err or ads_err:
+        # Nunca devolve série financeira incompleta como se fosse zero: o detalhe mostra indisponível.
+        return {"ok": False, "error": sales_err or ads_err}
+    _by_date, series = _daily_series_by_item(sales, ads, visits, partial)
+    return {"ok": True, "series": {code: series.get(code, []) for code in codes}}
+
+
 def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from: str = "", date_to: str = "", requested_period: dict | None = None) -> tuple[dict | None, str]:
     """Converte apenas o cache autenticado do agente em dados para o Dash ADS."""
     requested_at = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -939,69 +1039,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             f"Dados financeiros não foram exibidos. {'; '.join(daily_coverage_issues)}. "
             "Estado da reparação: blocked."
         )
-    daily_by_item_date: dict[str, dict[str, dict]] = {}
-    for daily_raw in daily_sales_rows:
-        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
-        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
-        if not daily_code or not snapshot_date:
-            continue
-        daily_by_item_date.setdefault(daily_code, {})[snapshot_date] = {
-            "date": snapshot_date,
-            "salesPresent": True,
-            "adsPresent": False,
-            "orders": _number(daily_raw.get("orders_count")),
-            "units": _number(daily_raw.get("units_total")),
-            "revenue": _number(daily_raw.get("revenue_total")),
-            "lastSaleDate": str(daily_raw.get("last_sale_date") or "").strip(),
-            "lastSalePrice": _number(daily_raw.get("last_price")),
-            "adsRevenue": 0.0,
-            "adsDirectRevenue": 0.0,
-            "adsIndirectRevenue": 0.0,
-            "investment": 0.0,
-            "impressions": 0.0,
-            "clicks": 0.0,
-            "adsUnits": 0.0,
-            "visits": 0.0,
-        }
-    for daily_raw in daily_ads_rows:
-        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
-        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
-        if not daily_code or not snapshot_date:
-            continue
-        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
-            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
-            "lastSaleDate": "", "lastSalePrice": 0.0,
-        })
-        daily.update({
-            "adsPresent": True,
-            "adsRevenue": _number(daily_raw.get("total_amount")),
-            "adsDirectRevenue": _number(daily_raw.get("direct_amount")),
-            "adsIndirectRevenue": _number(daily_raw.get("indirect_amount")),
-            "investment": _number(daily_raw.get("cost")),
-            "impressions": _number(daily_raw.get("prints")),
-            "clicks": _number(daily_raw.get("clicks")),
-            "adsUnits": _number(daily_raw.get("units_quantity")),
-        })
-    for daily_raw in daily_visits_rows:
-        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
-        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
-        if not daily_code or not snapshot_date:
-            continue
-        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
-            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
-            "lastSaleDate": "", "lastSalePrice": 0.0,
-        })
-        daily["visits"] = _number(daily_raw.get("visits_total"))
-    daily_series_by_item: dict[str, list[dict]] = {}
-    for daily_code, daily_by_date in daily_by_item_date.items():
-        daily_series = []
-        for daily in daily_by_date.values():
-            daily["partial"] = daily_partial
-            daily.setdefault("salesPresent", False)
-            # Attribution is not additional turnover. Use the same base as the KPI.
-            daily["tacosBaseRevenue"] = _number(daily.get("revenue"))
-            daily_series.append(daily)
-        daily_series_by_item[daily_code] = sorted(daily_series, key=lambda row: row["date"])
+    daily_by_item_date, daily_series_by_item = _daily_series_by_item(
+        daily_sales_rows, daily_ads_rows, daily_visits_rows, daily_partial
+    )
     account_daily_by_date: dict[str, dict] = {}
     for daily_by_date in daily_by_item_date.values():
         for daily in daily_by_date.values():
@@ -2355,13 +2395,14 @@ def _sales_intelligence_fetch_orders(client: str, item_ids: list[str], date_from
     return collected, errors
 
 
-def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: str) -> tuple[list[dict], dict, str]:
+def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: str, item_ids: str = "") -> tuple[list[dict], dict, str]:
     payload = _fetch_dash_ads_json(
         "/internal/dash-ads/sales-daily",
         {
             "client": client,
             "date_from": date_from,
             "date_to": date_to,
+            "item_ids": item_ids,
         },
     )
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
@@ -2372,7 +2413,7 @@ def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: 
     return [], coverage_days, source_error or "snapshots_diarios_indisponiveis"
 
 
-def _sales_intelligence_fetch_daily_visits(client: str, date_from: str, date_to: str) -> tuple[list[dict], dict, str]:
+def _sales_intelligence_fetch_daily_visits(client: str, date_from: str, date_to: str, item_ids: str = "") -> tuple[list[dict], dict, str]:
     """Lê somente visitas diárias já persistidas pelo agente.
 
     Não aciona OAuth, coleta nem repara o cache durante a consulta do beta.
@@ -2385,6 +2426,7 @@ def _sales_intelligence_fetch_daily_visits(client: str, date_from: str, date_to:
             "client": client,
             "date_from": date_from,
             "date_to": date_to,
+            "item_ids": item_ids,
         },
     )
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
@@ -2496,13 +2538,14 @@ def _daily_financial_coverage_issue(
     return ""
 
 
-def _sales_intelligence_fetch_daily_ads(client: str, date_from: str, date_to: str) -> tuple[list[dict], dict, str]:
+def _sales_intelligence_fetch_daily_ads(client: str, date_from: str, date_to: str, item_ids: str = "") -> tuple[list[dict], dict, str]:
     payload = _fetch_dash_ads_json(
         "/internal/dash-ads/ads-daily",
         {
             "client": client,
             "date_from": date_from,
             "date_to": date_to,
+            "item_ids": item_ids,
         },
     )
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
@@ -3275,6 +3318,34 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/inteligencia/order-financials":
                 self._get_intelligence_order_financials()
                 return
+            if path == "/online/item-daily":
+                demo_link, _demo_cookie = _current_demo_account(self)
+                if demo_link is not None:
+                    _send_json(self, {"ok": False, "error": "indisponivel_no_demo"}, 404)
+                    return
+                user, token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "nao_autenticado"}, 401)
+                    return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "error": "nao_autorizado"}, 403)
+                    return
+                link, _links, _selected = _current_ml_account(user, token)
+                client_id = ((link["client_id"] or "") if link else "").strip()
+                qs = parse_qs(url.query or "")
+                codes = sorted({_normalize_mlb_code(c) for c in (qs.get("codes", [""])[0] or "").split(",") if _normalize_mlb_code(c)})
+                date_from = (qs.get("date_from", [""])[0] or "").strip()
+                date_to = (qs.get("date_to", [""])[0] or "").strip()
+                try:
+                    valid_period = date.fromisoformat(date_from) <= date.fromisoformat(date_to)
+                except ValueError:
+                    valid_period = False
+                if not client_id or not codes or len(codes) > _ITEM_DAILY_MAX_CODES or not valid_period:
+                    _send_json(self, {"ok": False, "error": "parametros_invalidos"}, 400)
+                    return
+                partial = (qs.get("partial", ["1"])[0] or "1") != "0"
+                _send_json(self, _item_daily_payload(client_id, codes, date_from, date_to, partial))
+                return
             if path == "/online":
                 demo_link, demo_cookie_present = _current_demo_account(self)
                 is_demo = demo_link is not None
@@ -3370,6 +3441,8 @@ class Handler(BaseHTTPRequestHandler):
                     _attach_account_period_comparison(
                         dashboard_data, client_id, (link['advertiser_id'] or '').strip(), period
                     )
+                    if not is_demo:
+                        _strip_item_daily_series(dashboard_data)
                     if is_demo:
                         try:
                             dashboard_data = anonymize_dashboard_data(dashboard_data)

@@ -3697,7 +3697,42 @@ def render_dashboard(data):
       root.dataset.campaignBudget = '';
       activateDailyCharts();
     }}
+    function itemDailyLeaves(item) {{
+      const leaves = [];
+      (function visit(source) {{
+        if (source.children && source.children.length) source.children.forEach(visit);
+        else leaves.push(source);
+      }})(item);
+      return leaves;
+    }}
+    function itemDailyPending(item) {{
+      return Boolean(DATA.meta?.itemDailyOnDemand) && itemDailyLeaves(item).some(leaf => leaf.dailySeries === undefined);
+    }}
+    function loadItemDaily(item) {{
+      // Histórico diário por anúncio vem do servidor ao abrir o detalhe (não fica embutido na página).
+      const leaves = itemDailyLeaves(item).filter(leaf => leaf.dailySeries === undefined && leaf.code);
+      if (!leaves.length || item._dailyLoading) return Promise.resolve();
+      item._dailyLoading = true;
+      const period = DATA.meta?.onlineMode?.onlinePeriod || DATA.meta?.period || {{}};
+      const partial = (DATA.accountDailySeries || []).some(row => row.partial !== false) ? '1' : '0';
+      const codes = [...new Set(leaves.map(leaf => String(leaf.code)))].slice(0, 50);
+      const query = new URLSearchParams({{codes:codes.join(','), date_from:String(period.dateFrom || period.date_from || ''), date_to:String(period.dateTo || period.date_to || ''), partial}});
+      return fetch(`/online/item-daily?${{query}}`, {{credentials:'same-origin', headers:{{Accept:'application/json'}}}})
+        .then(response => response.ok ? response.json() : {{ok:false}})
+        .catch(() => ({{ok:false}}))
+        .then(payload => {{
+          item._dailyLoading = false;
+          if (!payload || payload.ok !== true) {{ item._dailyFailed = true; return; }}
+          leaves.forEach(leaf => {{ leaf.dailySeries = payload.series?.[String(leaf.code)] || []; }});
+        }});
+    }}
     function dailyChartBlock(item) {{
+      if (itemDailyPending(item)) {{
+        const message = item._dailyFailed
+          ? 'A serie diaria deste anuncio nao pode ser carregada agora. Nenhum zero foi inventado.'
+          : 'Carregando a serie diaria deste anuncio...';
+        return `<div class="detail-block detail-block-wide" data-item-daily-pending><h3>Vendas diarias do periodo</h3><div class="muted">${{message}}</div></div>`;
+      }}
       const rows = dailySeriesFor(item);
       if (!rows.length) return `<div class="detail-block detail-block-wide"><h3>Vendas diarias do periodo</h3><div class="muted">A serie diaria ainda nao foi entregue pelo snapshot desta conta. Nenhum zero foi inventado.</div></div>`;
       const key = detailKey(item);
@@ -5372,6 +5407,10 @@ def render_dashboard(data):
       document.getElementById('detailModalTabs').innerHTML = tabs.map(([key, label]) => `<button type="button" data-detail-tab="${{key}}" class="${{activeDetailTab === key ? 'active' : ''}}">${{label}}</button>`).join('');
       const modalBody = document.getElementById('detailModalBody');
       modalBody.innerHTML = `<div class="detail-grid">${{detailModalContent(item)}}</div>`;
+      if (itemDailyPending(item) && !item._dailyFailed && !item._dailyLoading) {{
+        const requestedKey = activeDetailKey;
+        loadItemDaily(item).then(() => {{ if (activeDetailKey === requestedKey) renderDetailModal(); }});
+      }}
       modalBody.scrollTop = 0;
       modalBody.scrollLeft = 0;
       modal.classList.add('open');

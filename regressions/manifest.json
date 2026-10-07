@@ -345,6 +345,43 @@
       "blocking": true
     }
   ]
+},
+{
+  "id": "REGRESSION-035",
+  "title": "Historico diario por anuncio embutido na pagina (tamanho cresce com o catalogo)",
+  "severity": "ALTA",
+  "components": [
+    "online_dashboard",
+    "item_detail",
+    "item_daily_route"
+  ],
+  "domains": [
+    "dash_ads_financial",
+    "performance"
+  ],
+  "tags": [
+    "all_accounts",
+    "large_catalog",
+    "no_false_zero"
+  ],
+  "invariant": "Na pagina normal items[].dailySeries (e de filhos) nao e embutido; meta.itemDailyOnDemand=true; o detalhe busca /online/item-daily (ate 50 codigos, conta da sessao, nunca no demo) com o mesmo construtor da pagina; falha de leitura financeira vira indisponivel, nunca zero. Grafico da conta e comparacoes sao calculados antes da retirada.",
+  "file_globs": [
+    "app.py",
+    "gerar_dashboard_ads_ml.py",
+    "test_item_daily_on_demand.py"
+  ],
+  "protections": [
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "-v",
+        "test_item_daily_on_demand"
+      ],
+      "blocking": true
+    }
+  ]
 }
 ]
 }
