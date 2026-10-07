@@ -33,11 +33,13 @@ def main():
         r = runs[-1]
         if "error" in r:
             falhas.append(f"{conta}: página não montou ({r['error']})"); continue
-        print(f"{conta}: 1ª {runs[0].get('secs')} s, 2ª {r['secs']} s, HTML {r['html_mb']} MB, comparações {len(r['available'])}")
+        print(f"{conta}: 1ª {runs[0].get('secs')} s, 2ª {r['secs']} s, HTML {r['html_mb']} MB, comparações {len(r['available'])}, remontagem idêntica: {r.get('roundtrip_identical')}")
         if r["secs"] > LIMITES["pagina_segundos"]:
             falhas.append(f"{conta}: página {r['secs']} s > {LIMITES['pagina_segundos']} s")
         if r["html_mb"] > LIMITES["html_mb"]:
             falhas.append(f"{conta}: HTML {r['html_mb']} MB > {LIMITES['html_mb']} MB")
+        if r.get("roundtrip_identical") is False:
+            falhas.append(f"{conta}: página remontada no navegador difere da original")
         perdidas = sorted(set(base.get(conta, {}).get("available", [])) - set(r["available"]))
         if perdidas:
             falhas.append(f"{conta}: comparações que viraram N/D: {', '.join(perdidas)}")

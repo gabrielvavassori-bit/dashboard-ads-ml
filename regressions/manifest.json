@@ -382,6 +382,46 @@
       "blocking": true
     }
   ]
+},
+{
+  "id": "REGRESSION-037",
+  "title": "Agrupamentos SKU/Campanha: copias duplicadas e serie diaria vazia apos retirada sob demanda",
+  "severity": "ALTA",
+  "components": [
+    "online_dashboard",
+    "sku_ads",
+    "campaign_ads",
+    "item_detail"
+  ],
+  "domains": [
+    "dash_ads_financial",
+    "performance"
+  ],
+  "tags": [
+    "all_accounts",
+    "large_catalog",
+    "no_false_zero",
+    "page_equality"
+  ],
+  "invariant": "Filhos de skuAds/campaignAds sao transmitidos como referencia ao anuncio da tabela + campos diferentes e a pagina remontada pelo JS da propria pagina e identica ao original campo por campo (prova no Node em teste e no gate de producao com dados reais). A retirada do historico diario cobre tambem os filhos dos agrupamentos; o detalhe busca todos os codigos em partes de 50 e nunca exibe soma parcial.",
+  "file_globs": [
+    "app.py",
+    "gerar_dashboard_ads_ml.py",
+    "tools/gate_payload.py",
+    "test_group_children_dedupe.py"
+  ],
+  "protections": [
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "-v",
+        "test_group_children_dedupe"
+      ],
+      "blocking": true
+    }
+  ]
 }
 ]
 }

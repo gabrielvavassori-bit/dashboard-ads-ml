@@ -908,6 +908,11 @@ def _strip_item_daily_series(data: dict) -> None:
                 strip(child)
     for item in data.get("items") or []:
         strip(item)
+    # Filhos dos agrupamentos SKU/Campanha também (falha da REGRESSION-035 original:
+    # o detalhe nessas visões mostrava série vazia em vez de carregar).
+    for key in ("skuAds", "campaignAds"):
+        for group in data.get(key) or []:
+            strip(group)
     data.setdefault("meta", {})["itemDailyOnDemand"] = True
 
 
@@ -3443,6 +3448,8 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     if not is_demo:
                         _strip_item_daily_series(dashboard_data)
+                        from gerar_dashboard_ads_ml import _dedupe_group_children
+                        dashboard_data = _dedupe_group_children(dashboard_data)
                     if is_demo:
                         try:
                             dashboard_data = anonymize_dashboard_data(dashboard_data)

@@ -1408,6 +1408,74 @@ def anonymize_dashboard_data(data):
     return demo
 
 
+GROUP_CHILDREN_EXPAND_JS = """
+function expandGroupChildren(data) {
+  // Filhos de SKU/Campanha chegam como referência ao anúncio da tabela + campos diferentes.
+  const items = Array.isArray(data.items) ? data.items : [];
+  for (const key of ['skuAds', 'campaignAds']) {
+    for (const group of (Array.isArray(data[key]) ? data[key] : [])) {
+      if (!group || !Array.isArray(group.children)) continue;
+      group.children = group.children.map(child => {
+        if (!child || !Array.isArray(child.$base)) return child;
+        const [i, j] = child.$base;
+        const source = j === undefined ? items[i] : (items[i] && Array.isArray(items[i].children) ? items[i].children[j] : undefined);
+        if (!source) throw new Error('referencia de anuncio invalida em ' + key);
+        const rebuilt = JSON.parse(JSON.stringify(source));
+        Object.assign(rebuilt, child.$set || {});
+        for (const name of (child.$del || [])) delete rebuilt[name];
+        return rebuilt;
+      });
+    }
+  }
+  return data;
+}
+"""
+
+
+def _dedupe_group_children(data: dict) -> dict:
+    """Filhos de skuAds/campaignAds viram {$base, $set, $del} apontando para o anúncio da tabela.
+
+    Lonas (07/10/2026): os 2.050 filhos de cada agrupamento eram cópias dos anúncios da
+    tabela (~14 MB) com poucos campos diferentes (campanha, orçamento, alertas).
+    ``expandGroupChildren`` (mesmo arquivo) remonta cada filho idêntico no navegador.
+    """
+    items = data.get("items") if isinstance(data.get("items"), list) else []
+    paths = {}
+    for i, item in enumerate(items):
+        if isinstance(item, dict) and item.get("code"):
+            paths.setdefault(item["code"], (i,))
+        for j, child in enumerate((item or {}).get("children") or []):
+            if isinstance(child, dict) and child.get("code"):
+                paths.setdefault(child["code"], (i, j))
+    out = dict(data)
+    for key in ("skuAds", "campaignAds"):
+        if not isinstance(data.get(key), list):
+            continue
+        groups = []
+        for group in data[key]:
+            if not isinstance(group, dict) or not isinstance(group.get("children"), list):
+                groups.append(group)
+                continue
+            children = []
+            for child in group["children"]:
+                path = paths.get(child.get("code")) if isinstance(child, dict) else None
+                if path is None:
+                    children.append(child)
+                    continue
+                base = items[path[0]] if len(path) == 1 else items[path[0]]["children"][path[1]]
+                encoded = {"$base": list(path)}
+                changed = {k: v for k, v in child.items() if k not in base or base[k] != v}
+                removed = [k for k in base if k not in child]
+                if changed:
+                    encoded["$set"] = changed
+                if removed:
+                    encoded["$del"] = removed
+                children.append(encoded)
+            groups.append({**group, "children": children})
+        out[key] = groups
+    return out
+
+
 def _compact_dashboard_transport(data):
     """Remove copias derivaveis antes de embutir o dashboard no HTML.
 
@@ -2271,6 +2339,8 @@ def render_dashboard(data):
   </a>
   <script>
     const DATA = {payload};
+    {GROUP_CHILDREN_EXPAND_JS}
+    expandGroupChildren(DATA);
     const PROMOTION_BULK_ENABLED = DATA.promotionApi?.bulkEnabled === true;
     const allItems = Array.isArray(DATA.items) ? DATA.items : [];
     for (const groups of [DATA.skuAds, DATA.campaignAds]) {{
@@ -3715,15 +3785,20 @@ def render_dashboard(data):
       item._dailyLoading = true;
       const period = DATA.meta?.onlineMode?.onlinePeriod || DATA.meta?.period || {{}};
       const partial = (DATA.accountDailySeries || []).some(row => row.partial !== false) ? '1' : '0';
-      const codes = [...new Set(leaves.map(leaf => String(leaf.code)))].slice(0, 50);
-      const query = new URLSearchParams({{codes:codes.join(','), date_from:String(period.dateFrom || period.date_from || ''), date_to:String(period.dateTo || period.date_to || ''), partial}});
-      return fetch(`/online/item-daily?${{query}}`, {{credentials:'same-origin', headers:{{Accept:'application/json'}}}})
-        .then(response => response.ok ? response.json() : {{ok:false}})
-        .catch(() => ({{ok:false}}))
-        .then(payload => {{
+      const codes = [...new Set(leaves.map(leaf => String(leaf.code)))];
+      const chunks = [];
+      for (let start = 0; start < codes.length; start += 50) chunks.push(codes.slice(start, start + 50));
+      // Todos os pedaços ou nenhum: soma parcial de um grupo grande nunca é exibida.
+      return Promise.all(chunks.map(chunk => {{
+        const query = new URLSearchParams({{codes:chunk.join(','), date_from:String(period.dateFrom || period.date_from || ''), date_to:String(period.dateTo || period.date_to || ''), partial}});
+        return fetch(`/online/item-daily?${{query}}`, {{credentials:'same-origin', headers:{{Accept:'application/json'}}}})
+          .then(response => response.ok ? response.json() : {{ok:false}})
+          .catch(() => ({{ok:false}}));
+      }})).then(payloads => {{
           item._dailyLoading = false;
-          if (!payload || payload.ok !== true) {{ item._dailyFailed = true; return; }}
-          leaves.forEach(leaf => {{ leaf.dailySeries = payload.series?.[String(leaf.code)] || []; }});
+          if (payloads.some(payload => !payload || payload.ok !== true)) {{ item._dailyFailed = true; return; }}
+          const series = Object.assign({{}}, ...payloads.map(payload => payload.series || {{}}));
+          leaves.forEach(leaf => {{ leaf.dailySeries = series[String(leaf.code)] || []; }});
         }});
     }}
     function dailyChartBlock(item) {{
