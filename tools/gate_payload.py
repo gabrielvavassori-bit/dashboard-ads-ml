@@ -25,6 +25,9 @@ for client in sys.argv[1:]:
             continue
         data = _compact_dashboard_transport(data)
         A._attach_account_period_comparison(data, client, "", period)
+        # mesmos passos da rota /online (página normal, fora do demo)
+        if hasattr(A, "_strip_item_daily_series"):
+            A._strip_item_daily_series(data)
         html = render_dashboard(data)
         m = data["periodComparison"].get("metrics", {})
         runs.append({"secs": round(time.time() - t, 1), "html_mb": round(len(html.encode()) / 1e6, 2),
