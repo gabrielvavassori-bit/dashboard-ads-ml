@@ -1,6 +1,8 @@
-"""Roda DENTRO do serviço do dashboard (somente leitura). Mede a página real de cada conta."""
-import json, os, sys, time, resource
-sys.path.insert(0, "/opt/render/project/src"); os.chdir("/opt/render/project/src")
+"""Roda NESTE computador com o código do dashboard, lendo o agente de produção por túnel SSH.
+
+Nunca rodar dentro do serviço do dashboard: em 06/10/2026 isso estourou a memória (512 MB) e derrubou a produção."""
+import json, os, sys, time
+sys.path.insert(0, os.getcwd())
 import app as A
 from gerar_dashboard_ads_ml import _compact_dashboard_transport, render_dashboard
 from datetime import date, timedelta
@@ -29,10 +31,4 @@ for client in sys.argv[1:]:
                      "available": sorted(k for k, v in m.items() if v.get("status") in ("available", "zero_baseline"))})
         del data, html
     out["accounts"][client] = runs
-out["rss_peak_mb"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024
-try:
-    out["mem_limit_mb"] = int(open("/sys/fs/cgroup/memory.max").read()) // 1048576
-    out["mem_peak_mb"] = int(open("/sys/fs/cgroup/memory.peak").read()) // 1048576
-except Exception:
-    pass
 print("GATE_JSON " + json.dumps(out))
