@@ -40,6 +40,7 @@ Variaveis de ambiente:
 """
 import html as _html
 import calendar
+import copy
 import gzip
 import hashlib
 import hmac
@@ -1484,6 +1485,46 @@ def _attach_official_account_metrics(data, client, start, end):
     data['accountDailySeries']=[series[d] for d in sorted(series)]
 
 
+_PREVIOUS_PERIOD_CACHE: dict = {}
+_PREVIOUS_PERIOD_CACHE_TTL_SECONDS = 1800
+_PREVIOUS_PERIOD_CACHE_MAX = 64
+
+
+def _previous_period_compact(client, advertiser_id, selected):
+    """Resumo do período anterior para a comparação, sem segurar a página inteira.
+
+    Montar o dashboard completo do período anterior a cada acesso dobrava tempo e
+    memória da página (Passo a Passo, 06/10/2026: 15–37 s, pico 485/512 MB) e a
+    conexão caía antes da entrega. Só os campos lidos por ``summary`` e pela
+    verificação de cobertura são mantidos; o cache expira em 30 min.
+    """
+    import time as _time
+    key = (client, advertiser_id or "", selected['dateFrom'], selected['dateTo'])
+    hit = _PREVIOUS_PERIOD_CACHE.get(key)
+    if hit and hit[0] > _time.time():
+        return copy.deepcopy(hit[1])
+    previous, _error = _build_online_dashboard_data(
+        client, advertiser_id, selected['dateFrom'], selected['dateTo']
+    )
+    if not previous:
+        return previous
+    compact = {
+        'meta': {'period': (previous.get('meta') or {}).get('period')},
+        'kpis': previous.get('kpis') or {},
+        'items': [{'orders': x.get('orders', 0),
+                   'visitsCoverageComplete': x.get('visitsCoverageComplete')}
+                  for x in previous.get('items') or []],
+        'accountDailySeries': [{'date': r.get('date'), 'partial': r.get('partial', True),
+                                'visits': r.get('visits', 0)}
+                               for r in previous.get('accountDailySeries') or []],
+    }
+    del previous
+    if len(_PREVIOUS_PERIOD_CACHE) >= _PREVIOUS_PERIOD_CACHE_MAX:
+        _PREVIOUS_PERIOD_CACHE.pop(next(iter(_PREVIOUS_PERIOD_CACHE)))
+    _PREVIOUS_PERIOD_CACHE[key] = (_time.time() + _PREVIOUS_PERIOD_CACHE_TTL_SECONDS, compact)
+    return copy.deepcopy(compact)
+
+
 def _attach_account_period_comparison(data, client, advertiser_id, period):
     from period_comparison import summary, compare
     current_period = data.get('meta', {}).get('period', {})
@@ -1497,9 +1538,7 @@ def _attach_account_period_comparison(data, client, advertiser_id, period):
     current_financial_verified = bool(data.get('accountDailySeries')) and not any(
         row.get('partial', True) for row in data['accountDailySeries'])
     if current_financial_verified:
-        previous, error = _build_online_dashboard_data(
-            client, advertiser_id, selected['dateFrom'], selected['dateTo']
-        )
+        previous = _previous_period_compact(client, advertiser_id, selected)
     else:
         # Financial comparison cannot be certified from a partial current
         # window. Do not allocate a second full product/history dashboard just
