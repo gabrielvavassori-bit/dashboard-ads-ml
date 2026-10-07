@@ -310,6 +310,41 @@
       "blocking": true
     }
   ]
+},
+{
+  "id": "REGRESSION-033",
+  "title": "Comparacao montava e segurava a pagina inteira do periodo anterior a cada acesso",
+  "severity": "ALTA",
+  "components": [
+    "account_period_comparison",
+    "online_dashboard"
+  ],
+  "domains": [
+    "dash_ads_financial",
+    "performance"
+  ],
+  "tags": [
+    "all_accounts",
+    "exact_period"
+  ],
+  "invariant": "O periodo anterior da comparacao e mantido apenas como resumo compacto (meta.period, kpis, orders/visitsCoverageComplete por item, partial/visits por dia), por conta+anunciante+janela exata, por no maximo 30 min; falha nunca e guardada; summary do compacto e identico ao da pagina completa.",
+  "file_globs": [
+    "app.py",
+    "period_comparison.py",
+    "test_previous_period_compact.py"
+  ],
+  "protections": [
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "-v",
+        "test_previous_period_compact"
+      ],
+      "blocking": true
+    }
+  ]
 }
 ]
 }
