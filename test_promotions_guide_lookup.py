@@ -32,6 +32,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionSameOpportunity = () => true;
         const promotionPreviewHtml = () => '';
         const promotionState = new Map();
+        const promotionDateDrafts = new Map();
         const brl = value => `R$ ${value}`;
         const promotionEffectivePrice = (row, item={}) => Number(row.price || row.suggested_discounted_price || item.suggestedTestPrice || 0);
         const promotionQuoteMatchesPrice = (row, price) => row.receipt_quote?.available !== true || Math.abs(Number(row.receipt_quote.price) - price) <= 0.01;
@@ -145,6 +146,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const promotionReceiptCell = () => 'R$ 57.54';
         const promotionEffectivePrice = (row, item={}) => Number(row.price || row.suggested_discounted_price || item.suggestedTestPrice || 0);
         const promotionQuoteMatchesPrice = (row, price) => row.receipt_quote?.available !== true || Math.abs(Number(row.receipt_quote.price) - price) <= 0.01;
+        const promotionDateDrafts = new Map();
         """
         row = {'name': '10.10', 'original_price': 124.9, 'price': 74.9,
                'receipt_quote': {'available': True, 'price': 74.9, 'sale_fee': 8.61,
@@ -644,11 +646,22 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('data-promo-operation="create"', row)
         self.assertIn('data-promo-row-start', row)
         self.assertIn('data-promo-row-finish', row)
+        self.assertIn('promotionDateDrafts.get', row)
+        self.assertIn('data-promo-index=', row)
+        self.assertIn('Não altera as datas de campanhas do Mercado Livre.', row)
         self.assertIn("const editablePrice = canCreate || ((canJoin || canUpdate) && row.action_mode !== 'join_fixed_offer');", row)
         self.assertIn("if (action === 'create' || (action !== 'remove' && row.action_mode !== 'join_fixed_offer')) body.deal_price = editedPrice;", handler)
         self.assertIn("if (action === 'create')", handler)
         self.assertIn("promotionApiRequest('/api/promotions/preview'", handler)
         self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", handler)
+
+    def test_promotion_dates_survive_price_requote_and_actions_fit_table_column(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        self.assertIn('const promotionDateDrafts = new Map();', source)
+        self.assertIn("promotionDateDrafts.set(key,", source)
+        self.assertIn('min-width:1500px; table-layout:fixed', source)
+        self.assertIn('.promotion-table th:nth-child(10) {{ width:15%; }}', source)
+        self.assertIn('.promotion-inline-actions input[type="date"] {{ display:block; width:100%; min-width:0; box-sizing:border-box; }}', source)
 
     def test_direct_mlb_preview_is_local_modal_and_not_appended_below_the_page(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')

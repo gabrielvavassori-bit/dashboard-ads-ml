@@ -17,7 +17,7 @@ class PromotionPriceReferenceTests(unittest.TestCase):
         const promotionSimulationFinancialResult=promotionFinancialResult;
         const promotionEffectivePrice=row=>Number(row.price);
         const promotionQuoteMatchesPrice=(row,p)=>Math.abs(Number(row.receipt_quote?.price)-p)<0.01;
-        const promotionState=new Map(); const promotionSameOpportunity=()=>false;
+        const promotionState=new Map(); const promotionDateDrafts=new Map(); const promotionSameOpportunity=()=>false;
         const promotionDiscountAllocation=()=>({});
         const promotionDisplayName=row=>row.name||'Oferta'; const promotionPeriod=()=>'';
         const promotionStatusClass=()=>''; const promotionStatusLabel=()=>'';
