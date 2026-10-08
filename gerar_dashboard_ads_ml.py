@@ -1922,7 +1922,10 @@ def render_dashboard(data):
     .promotion-listing-identity .product-thumbnail {{ flex:0 0 42px; width:42px; height:42px; }}
     .promotion-listing-name, .promotion-listing-sku {{ font-weight:800; color:var(--ink) !important; white-space:normal; }}
     .promotion-listing-campaign {{ margin-top:5px !important; padding-top:5px; border-top:1px dashed #d0d5dd; font-weight:700; color:#475467 !important; }}
-    .promotion-inline-actions {{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }}
+    .promotion-inline-actions {{ display:flex; flex-direction:column; align-items:stretch; gap:6px; min-width:0; }}
+    .promotion-inline-actions label {{ display:flex; flex-direction:column; gap:3px; min-width:0; font-size:10px; font-weight:700; }}
+    .promotion-inline-actions input[type="date"] {{ display:block; width:100%; min-width:0; box-sizing:border-box; }}
+    .promotion-inline-actions > button {{ width:100%; white-space:normal; overflow-wrap:normal; }}
     .promotion-action-status {{ display:block; flex-basis:100%; font-size:11px; line-height:1.3; color:#475467; }}
     .promotion-action-error {{ color:#b42318; font-weight:700; }}
     .promotion-action-success {{ color:#027a48; font-weight:700; }}
@@ -1950,15 +1953,16 @@ def render_dashboard(data):
     .promotion-config-footer .secondary-action {{ background:#fff; color:#b42318; border:1px solid #fda29b; }}
     @media(max-width:600px) {{ .promotion-config-metrics {{ grid-template-columns:1fr; }} .promotion-config-editor {{ align-items:flex-start; flex-direction:column; }} }}
     .promotion-table-wrap {{ margin-top:10px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#fff; }}
-    .promotion-table {{ width:100%; min-width:1180px; table-layout:fixed; border-collapse:collapse; font-size:12px; }}
+    .promotion-table {{ width:100%; min-width:1500px; table-layout:fixed; border-collapse:collapse; font-size:12px; }}
     .promotion-table th {{ padding:9px 8px; background:#f8fafc; color:#667085; font-size:10px; letter-spacing:.03em; text-align:left; text-transform:uppercase; white-space:normal; }}
-    .promotion-table th:nth-child(1) {{ width:25%; }}
-    .promotion-table th:nth-child(2), .promotion-table th:nth-child(3) {{ width:6%; }}
+    .promotion-table th:nth-child(1) {{ width:23%; }}
+    .promotion-table th:nth-child(2), .promotion-table th:nth-child(3) {{ width:5%; }}
     .promotion-table th:nth-child(4), .promotion-table th:nth-child(9) {{ width:5%; }}
     .promotion-table th:nth-child(5), .promotion-table th:nth-child(10) {{ width:8%; }}
-    .promotion-table th:nth-child(6) {{ width:15%; }}
-    .promotion-table th:nth-child(7) {{ width:13%; }}
-    .promotion-table th:nth-child(8) {{ width:9%; }}
+    .promotion-table th:nth-child(6) {{ width:14%; }}
+    .promotion-table th:nth-child(7) {{ width:12%; }}
+    .promotion-table th:nth-child(8) {{ width:8%; }}
+    .promotion-table th:nth-child(10) {{ width:15%; }}
     .promotion-table td {{ padding:9px 8px; border-top:1px solid #eaecf0; vertical-align:top; }}
     .promotion-table tr.promotion-best-discount {{ background:#f0fdf4; }}
     .promotion-table tr.promotion-best-subsidy {{ box-shadow:inset 3px 0 0 #12b76a; }}
@@ -2400,6 +2404,7 @@ def render_dashboard(data):
     const dailyChartMetric = new Map();
     const promotionState = new Map();
     const promotionPriceTimers = new Map();
+    const promotionDateDrafts = new Map();
     let promotionGuideItem = null;
     let promotionMarginTarget = 15;
     let promotionCampaignCatalog = {{loading:false, loaded:false, campaigns:[], error:''}};
@@ -4362,8 +4367,9 @@ def render_dashboard(data):
           : (directState.result ? '<span class="promotion-action-status promotion-action-success">Ação confirmada. Lista atualizada.</span>' : ''));
       const directReview = listing ? `${{promotionPreviewHtml(item, directState)}}${{directState.error ? `<div class="promotion-error">${{safe(directState.error)}}</div>` : ''}}${{directState.result ? '<div class="promotion-success">Operação confirmada em uma nova consulta ao Mercado Livre.</div>' : ''}}` : '';
       const dialogPrimaryAction = directState.preview ? '' : primaryAction;
+      const dateDraft = promotionDateDrafts.get(`${{item.code}}:${{index}}`) || {{}};
       const action = listing && canCreate
-        ? `<div class="promotion-inline-actions"><label>Início<input type="date" value="${{promotionDate(0)}}" data-promo-row-start></label><label>Fim<input type="date" value="${{promotionDate(13)}}" data-promo-row-finish></label><button type="button" data-promo-direct="${{index}}" data-promo-operation="create" data-promo-item="${{safe(item.code)}}"${{directState.loading ? ' disabled' : ''}}>Criar desconto</button>${{directReview}}</div>`
+        ? `<div class="promotion-inline-actions"><small>Período do novo desconto (até 14 dias). Não altera as datas de campanhas do Mercado Livre.</small><label>Início<input type="date" value="${{safe(dateDraft.start || promotionDate(0))}}" data-promo-row-start data-promo-item="${{safe(item.code)}}" data-promo-index="${{index}}"></label><label>Fim<input type="date" value="${{safe(dateDraft.finish || promotionDate(13))}}" data-promo-row-finish data-promo-item="${{safe(item.code)}}" data-promo-index="${{index}}"></label><button type="button" data-promo-direct="${{index}}" data-promo-operation="create" data-promo-item="${{safe(item.code)}}"${{directState.loading ? ' disabled' : ''}}>Criar desconto</button>${{directReview}}</div>`
         : listing && (canJoin || canUpdate || canRemove)
         ? `<div class="promotion-inline-actions">${{directAction}}<button type="button" class="promotion-settings-button" data-promo-config-open aria-label="Configurar promoção de ${{safe(item.code)}}" title="Configurar promoção">⚙</button>${{directFeedback}}<dialog class="promotion-config-dialog" data-promo-dialog-key="${{safe(item.code)}}:${{index}}" aria-label="Configurar promoção de ${{safe(item.code)}}"><div class="promotion-config-head"><h3>${{directState.preview ? 'Revise e confirme a promoção' : canUpdate ? 'Alterar promoção' : canJoin ? 'Participar da promoção' : 'Sair da promoção'}}</h3><button type="button" class="promotion-config-close" data-promo-config-close aria-label="Fechar">×</button></div><div class="promotion-config-body"><div class="promotion-config-product">${{productImage({{thumbnailUrl:listing.thumbnailUrl,title:listing.title}})}}<div><b>${{safe(listing.title)}}</b><span>${{safe(listing.code)}}${{listing.sku ? ` · SKU ${{safe(listing.sku)}}` : ''}}</span></div></div><div class="promotion-config-campaign">${{safe(promotionDisplayName(row))}} · ${{safe(promotionPeriod(row))}}</div><div class="promotion-config-metrics"><div><span>Preço original</span><b>${{original > 0 ? brl(original) : '—'}}</b></div><div><span>Preço promocional sugerido</span><b>${{price > 0 ? brl(price) : '—'}}</b></div><div><span>Subsídio Mercado Livre</span><b>${{allocation.meli == null ? 'N/D' : `${{allocation.meli.toLocaleString('pt-BR',{{maximumFractionDigits:2}})}}%${{allocation.meliDerived ? ' (calculado)' : ''}}`}}</b></div></div><div class="promotion-config-editor">${{primaryAction && row.action_mode !== 'join_fixed_offer' ? `<label>Preço promocional<input type="number" min="0.01" step="0.01" value="${{price || ''}}" data-promo-campaign-price="${{index}}"></label>` : `<div class="promotion-config-note">${{primaryAction ? 'Preço definido pela campanha.' : 'A saída não altera o preço nesta prévia.'}}</div>`}}<div class="promotion-config-receipt"><span>Você recebe (estim.)</span><b>${{receipt}}</b><span>${{quote.available === true ? 'Antes de custo e imposto' : safe(quote.reason || 'Tarifa ou frete não informado pelo Mercado Livre.')}}</span></div></div><div class="promotion-config-note">${{safe(promotionLimits(row))}}. A confirmação abaixo é a única etapa que aplica esta ação no Mercado Livre.</div>${{directReview}}</div><div class="promotion-config-footer"><button type="button" data-promo-config-close>${{directState.preview ? 'Rejeitar e fechar' : 'Fechar'}}</button>${{directState.preview ? '' : leaveAction}}${{dialogPrimaryAction}}</div></dialog></div>`
         : actionControls;
@@ -5136,6 +5142,12 @@ def render_dashboard(data):
           promotionPriceTimers.set(timerKey, setTimeout(() => {{ promotionPriceTimers.delete(timerKey); promotionRequoteEditedPrice(input); }}, 650));
         }});
         promotionGuide.addEventListener('change', event => {{
+          const dateInput = event.target.closest?.('[data-promo-row-start], [data-promo-row-finish]');
+          if (dateInput && promotionGuide.contains(dateInput)) {{
+            const key = `${{dateInput.dataset.promoItem}}:${{dateInput.dataset.promoIndex}}`;
+            const draft = promotionDateDrafts.get(key) || {{}};
+            promotionDateDrafts.set(key, {{...draft, [dateInput.hasAttribute('data-promo-row-start') ? 'start' : 'finish']:dateInput.value}});
+          }}
           const input = event.target.closest?.('[data-promo-target-margin]');
           if (input && promotionGuide.contains(input)) promotionRequoteTargetMargin(input);
         }});
