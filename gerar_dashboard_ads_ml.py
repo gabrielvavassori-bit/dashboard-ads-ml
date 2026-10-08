@@ -4377,7 +4377,7 @@ def render_dashboard(data):
       const bulkEnabled = typeof PROMOTION_BULK_ENABLED !== 'undefined' && PROMOTION_BULK_ENABLED;
       const selectionControl = bulkEnabled && selection ? `<input class="promotion-bulk-select" type="checkbox" data-promo-bulk-select="${{safe(selection.key)}}" data-promo-scope-key="${{safe(selection.scopeKey)}}"${{selection.checked ? ' checked' : ''}} aria-label="Selecionar ${{safe(item.code)}} para prévia coletiva">` : '';
       const identity = listing ? `<div class="promotion-listing-select">${{selectionControl}}<div class="promotion-listing-identity">${{productImage({{thumbnailUrl:listing.thumbnailUrl, title:listing.title}})}}<div><b>${{safe(listing.code)}}</b><small class="promotion-listing-name">${{safe(listing.title)}}</small>${{listing.sku ? `<small class="promotion-listing-sku">SKU ${{safe(listing.sku)}}</small>` : ''}}${{listing.mlbu ? `<small>MLBU ${{safe(listing.mlbu)}}</small>` : ''}}<small class="promotion-listing-campaign">${{safe(promotionDisplayName(row))}}</small><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span></div></div></div>` : `<b>${{safe(promotionDisplayName(row))}}</b><small>${{safe(promotionPeriod(row))}}</small><span class="promotion-status ${{promotionStatusClass(row)}}">${{safe(promotionStatusLabel(row))}}</span>`;
-      const editablePrice = (canJoin || canUpdate || canCreate) && row.action_mode !== 'join_fixed_offer';
+      const editablePrice = canCreate || ((canJoin || canUpdate) && row.action_mode !== 'join_fixed_offer');
       const minimumPrice = Number(row.min_discounted_price);
       const maximumPrice = Number(row.max_discounted_price);
       const priceLimits = `${{Number.isFinite(minimumPrice) && minimumPrice > 0 ? ` min="${{minimumPrice}}"` : ' min="0.01"'}}${{Number.isFinite(maximumPrice) && maximumPrice > 0 ? ` max="${{maximumPrice}}"` : ''}}`;
@@ -5352,7 +5352,7 @@ def render_dashboard(data):
         const rowRoot = button.closest('tr');
         const editedPrice = Number(rowRoot?.querySelector(`[data-promo-campaign-price="${{index}}"]`)?.value || promotionEffectivePrice(row));
         const body = {{item_id:code, action, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id}};
-        if (action !== 'remove' && row.action_mode !== 'join_fixed_offer') body.deal_price = editedPrice;
+        if (action === 'create' || (action !== 'remove' && row.action_mode !== 'join_fixed_offer')) body.deal_price = editedPrice;
         if (action === 'create') {{
           body.start_date = rowRoot?.querySelector('[data-promo-row-start]')?.value;
           body.finish_date = rowRoot?.querySelector('[data-promo-row-finish]')?.value;
