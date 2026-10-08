@@ -3879,6 +3879,10 @@ def render_dashboard(data):
       value.setUTCDate(value.getUTCDate() + offsetDays);
       return value.toISOString().slice(0, 10);
     }}
+    function promotionDraftPeriod(code, index) {{
+      const draft = promotionDateDrafts.get(`${{code}}:${{index}}`) || {{}};
+      return {{start_date:draft.start || promotionDate(0), finish_date:draft.finish || promotionDate(13)}};
+    }}
     function promotionMoney(value) {{
       const number = Number(value || 0);
       return number > 0 ? brl(number) : 'Nao informado';
@@ -4988,6 +4992,7 @@ def render_dashboard(data):
         receipt_quote:{{available:false, reason:'Atualizando tarifa, frete e recebimento para o preço informado...'}}}};
       const data = {{...(state.data || {{}}), promotions:rows}};
       const body = {{item_id:code, action, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id, deal_price:price}};
+      if (action === 'create') Object.assign(body, promotionDraftPeriod(code, index));
       promotionStateUpdate(code, {{loading:true, data, error:'', preview:null, result:null}});
       try {{
         const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
@@ -5006,8 +5011,9 @@ def render_dashboard(data):
         promotionStateUpdate(code, {{loading:false, data:{{...(latest.data || {{}}), promotions:updatedRows}}, preview:null, error:error.message}});
       }}
     }}
-    async function promotionPreviewAtPrice(code, row, action, price, item) {{
+    async function promotionPreviewAtPrice(code, row, action, price, item, index) {{
       const body = {{item_id:code, action, promotion_type:row.promotion_type, promotion_id:row.promotion_id, offer_id:row.offer_id, deal_price:price}};
+      if (action === 'create') Object.assign(body, promotionDraftPeriod(code, index));
       const preview = await promotionApiRequest('/api/promotions/preview', 'POST', body);
       const quotedRow = {{...row, preview_price:price,
         receipt_quote:preview.summary?.receipt_quote || {{available:false, reason:'O Mercado Livre não retornou a cotação deste preço.'}},
@@ -5064,7 +5070,7 @@ def render_dashboard(data):
         const evaluate = async value => {{
           const price = Math.round(Math.max(floor, Math.min(ceiling, value)) * 100) / 100;
           const key = price.toFixed(2);
-          if (!evaluated.has(key)) evaluated.set(key, await promotionPreviewAtPrice(code, row, action, price, item));
+          if (!evaluated.has(key)) evaluated.set(key, await promotionPreviewAtPrice(code, row, action, price, item, index));
           return {{price, ...evaluated.get(key)}};
         }};
         const currentFinancial = promotionSimulationFinancialResult(row, item);

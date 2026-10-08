@@ -659,6 +659,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         self.assertIn('const promotionDateDrafts = new Map();', source)
         self.assertIn("promotionDateDrafts.set(key,", source)
+        self.assertIn("if (action === 'create') Object.assign(body, promotionDraftPeriod(code, index));", source)
+        self.assertIn('promotionPreviewAtPrice(code, row, action, price, item, index)', source)
         self.assertIn('min-width:1500px; table-layout:fixed', source)
         self.assertIn('.promotion-table th:nth-child(10) {{ width:15%; }}', source)
         self.assertIn('.promotion-inline-actions input[type="date"] {{ display:block; width:100%; min-width:0; box-sizing:border-box; }}', source)
