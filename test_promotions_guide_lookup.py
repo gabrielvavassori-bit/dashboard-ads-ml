@@ -634,7 +634,19 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn("Alterando...", row)
         self.assertIn('rowRoot?.querySelector(`[data-promo-campaign-price=', handler)
         self.assertIn('body.deal_price = editedPrice;', handler)
-        self.assertIn('activePromotionConfigKey = `${{code}}:${{index}}`;', handler)
+        self.assertIn("activePromotionConfigKey = action === 'create' ? '' : `${{code}}:${{index}}`;", handler)
+
+    def test_candidate_individual_discount_creates_preview_from_its_own_row(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
+        handler = source[source.index("document.querySelectorAll('[data-promo-direct]')"):source.index("document.querySelectorAll('[data-promo-campaign]')")]
+        self.assertIn("row.can_create === true", row)
+        self.assertIn('data-promo-operation="create"', row)
+        self.assertIn('data-promo-row-start', row)
+        self.assertIn('data-promo-row-finish', row)
+        self.assertIn("if (action === 'create')", handler)
+        self.assertIn("promotionApiRequest('/api/promotions/preview'", handler)
+        self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", handler)
 
     def test_direct_mlb_preview_is_local_modal_and_not_appended_below_the_page(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
