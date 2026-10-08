@@ -644,6 +644,8 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         self.assertIn('data-promo-operation="create"', row)
         self.assertIn('data-promo-row-start', row)
         self.assertIn('data-promo-row-finish', row)
+        self.assertIn("const editablePrice = canCreate || ((canJoin || canUpdate) && row.action_mode !== 'join_fixed_offer');", row)
+        self.assertIn("if (action === 'create' || (action !== 'remove' && row.action_mode !== 'join_fixed_offer')) body.deal_price = editedPrice;", handler)
         self.assertIn("if (action === 'create')", handler)
         self.assertIn("promotionApiRequest('/api/promotions/preview'", handler)
         self.assertNotIn("promotionApiRequest('/api/promotions/confirm'", handler)
