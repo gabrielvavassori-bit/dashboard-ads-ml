@@ -6,6 +6,45 @@ from gerar_dashboard_ads_ml import render_dashboard
 
 
 class OperationalAvailabilityTests(unittest.TestCase):
+    def test_exact_committed_financial_rows_upgrade_operational_period(self):
+        from test_online_periods import complete_integrity_contract, active_snapshot_completeness_rule
+        payload = self.payload()
+        committed = copy.deepcopy(payload)
+        committed.pop("operational_partial")
+        committed.update(complete_integrity_contract("demo", "7", "2026-09-01", "2026-09-02"))
+        committed["latest"]["sales"]["complete"] = True
+        committed["ads"]["items"][0]["status"] = "active"
+        payload["committed_period"] = committed
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload), patch.object(
+            app, "_load_snapshot_completeness_governance_rule",
+            return_value=active_snapshot_completeness_rule(),
+        ):
+            result, error = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
+            self.assertEqual(error, "")
+            self.assertFalse(result["operational_partial"])
+            self.assertTrue(result["latest"]["sales"]["complete"])
+            self.assertEqual(result["ads"]["items"][0]["status"], "active")
+            payload["sales"]["items"]["MLB999"] = {
+                "orders_count": 0, "units_total": 0, "revenue_total": 0,
+            }
+            result, _ = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
+            self.assertFalse(result["operational_partial"])
+            payload["sales"]["items"]["MLB999"]["revenue_total"] = 0.01
+            result, _ = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
+            self.assertTrue(result["operational_partial"])
+            del payload["sales"]["items"]["MLB999"]
+            committed["ads"]["items"][0]["cost"] = 11
+            result, _ = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
+            self.assertTrue(result["operational_partial"])
+            committed["ads"]["items"][0]["cost"] = 10
+            committed["sales"]["items"]["MLB123"]["revenue_total"] = 21
+            result, _ = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
+            self.assertTrue(result["operational_partial"])
+            committed["sales"]["items"]["MLB123"]["revenue_total"] = 20
+            committed["ads"]["items"][0] = None
+            result, _ = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
+            self.assertTrue(result["operational_partial"])
+
     def test_status_overlay_is_generic_for_existing_and_future_accounts(self):
         from test_online_periods import complete_integrity_contract, active_snapshot_completeness_rule
         for client_id in ("conta-existente-generica", "conta-futura-generica"):
