@@ -2132,6 +2132,61 @@ def _online_cache_integrity_state(
     return {"ready": True, "pending": False, "terminal": False, "message": ""}
 
 
+def _dash_ads_operational_matches_committed(payload: dict, committed: dict) -> bool:
+    """Certify operational values only when every financial row matches the commit."""
+    if not all(isinstance(source.get(section), dict)
+               for source in (payload, committed) for section in ("sales", "ads")):
+        return False
+    operational_sales = payload["sales"].get("items")
+    committed_sales = committed["sales"].get("items")
+    operational_ads = payload["ads"].get("items")
+    committed_ads = committed["ads"].get("items")
+    if not all((isinstance(operational_sales, dict), isinstance(committed_sales, dict),
+                isinstance(operational_ads, list), isinstance(committed_ads, list))):
+        return False
+
+    def sales_signature(rows):
+        signature = {}
+        for code, row in rows.items():
+            item_id = _normalize_mlb_code(code)
+            if not item_id or not isinstance(row, dict) or item_id in signature:
+                return None
+            values = tuple(round(_number(row.get(field)), 4) for field in
+                ("orders_count", "units_total", "revenue_total"))
+            if values != (0, 0, 0):
+                signature[item_id] = values
+        return signature
+
+    operational_sales_signature = sales_signature(operational_sales)
+    committed_sales_signature = sales_signature(committed_sales)
+    if (operational_sales_signature is None or committed_sales_signature is None
+            or operational_sales_signature != committed_sales_signature):
+        return False
+
+    fields = ("prints", "clicks", "cost", "total_amount", "direct_amount",
+              "indirect_amount", "units_quantity")
+
+    def ads_signature(rows):
+        grouped = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                return None
+            code = _normalize_mlb_code(row.get("item_id") or row.get("id"))
+            if not code:
+                return None
+            key = (code, str(row.get("campaign_id") or "").strip())
+            totals = grouped.setdefault(key, [0.0] * len(fields))
+            for index, field in enumerate(fields):
+                totals[index] += _number(row.get(field))
+        return {key: tuple(round(value, 4) for value in totals)
+                for key, totals in grouped.items()}
+
+    operational_ads_signature = ads_signature(operational_ads)
+    committed_ads_signature = ads_signature(committed_ads)
+    return (operational_ads_signature is not None and committed_ads_signature is not None
+            and operational_ads_signature == committed_ads_signature)
+
+
 def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_from: str, date_to: str) -> tuple[dict | None, str]:
     """Main Ads may display explicitly partial data, never another account/window."""
     payload = _fetch_dash_ads_json("/internal/dash-ads/operational-cache", {
@@ -2196,6 +2251,14 @@ def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_fro
                 payload = {
                     **payload,
                     "ads": {**operational_ads, "items": merged_rows},
+                }
+            if _dash_ads_operational_matches_committed(payload, committed):
+                latest = payload.get("latest") if isinstance(payload.get("latest"), dict) else {}
+                sales_state = latest.get("sales") if isinstance(latest.get("sales"), dict) else {}
+                payload = {
+                    **payload,
+                    "operational_partial": False,
+                    "latest": {**latest, "sales": {**sales_state, "complete": True}},
                 }
             return {**payload, "chart_period_verified": True}, ""
     return payload, ""
