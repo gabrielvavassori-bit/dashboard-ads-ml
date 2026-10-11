@@ -1541,7 +1541,9 @@ def _previous_period_compact(client, advertiser_id, selected):
     Montar o dashboard completo do período anterior a cada acesso dobrava tempo e
     memória da página (Passo a Passo, 06/10/2026: 15–37 s, pico 485/512 MB) e a
     conexão caía antes da entrega. Só os campos lidos por ``summary`` e pela
-    verificação de cobertura são mantidos; o cache expira em 30 min.
+    verificação de cobertura são mantidos; resumos completos expiram em 30 min.
+    Resumos parciais são retornados sem cache para permitir a recuperação na
+    próxima consulta, depois que a fonte publicar a cobertura que faltava.
     """
     import time as _time
     key = (client, advertiser_id or "", selected['dateFrom'], selected['dateTo'])
@@ -1564,9 +1566,11 @@ def _previous_period_compact(client, advertiser_id, selected):
                                for r in previous.get('accountDailySeries') or []],
     }
     del previous
-    if len(_PREVIOUS_PERIOD_CACHE) >= _PREVIOUS_PERIOD_CACHE_MAX:
-        _PREVIOUS_PERIOD_CACHE.pop(next(iter(_PREVIOUS_PERIOD_CACHE)))
-    _PREVIOUS_PERIOD_CACHE[key] = (_time.time() + _PREVIOUS_PERIOD_CACHE_TTL_SECONDS, compact)
+    series = compact['accountDailySeries']
+    if series and not any(row['partial'] for row in series):
+        if len(_PREVIOUS_PERIOD_CACHE) >= _PREVIOUS_PERIOD_CACHE_MAX:
+            _PREVIOUS_PERIOD_CACHE.pop(next(iter(_PREVIOUS_PERIOD_CACHE)))
+        _PREVIOUS_PERIOD_CACHE[key] = (_time.time() + _PREVIOUS_PERIOD_CACHE_TTL_SECONDS, compact)
     return copy.deepcopy(compact)
 
 
