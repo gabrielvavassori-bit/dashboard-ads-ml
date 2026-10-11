@@ -46,6 +46,26 @@ class PreviousPeriodCompactTest(unittest.TestCase):
             self.assertIsNone(app._previous_period_compact('c', '', self.sel))
         self.assertEqual(build.call_count, 2)
 
+    def test_partial_then_recovered_is_rebuilt_before_ttl(self):
+        partial = _full(dict(self.sel))
+        partial['accountDailySeries'][0]['partial'] = True
+        with patch.object(app, '_build_online_dashboard_data', side_effect=[
+            (partial, ''), (_full(dict(self.sel)), '')
+        ]) as build:
+            first = app._previous_period_compact('c', '', self.sel)
+            second = app._previous_period_compact('c', '', self.sel)
+        self.assertTrue(first['accountDailySeries'][0]['partial'])
+        self.assertFalse(second['accountDailySeries'][0]['partial'])
+        self.assertEqual(build.call_count, 2)
+
+    def test_empty_series_is_not_cached(self):
+        value = _full(dict(self.sel))
+        value['accountDailySeries'] = []
+        with patch.object(app, '_build_online_dashboard_data', return_value=(value, '')) as build:
+            app._previous_period_compact('c', '', self.sel)
+            app._previous_period_compact('c', '', self.sel)
+        self.assertEqual(build.call_count, 2)
+
     def test_other_account_or_window_never_shares_entry(self):
         with patch.object(app, '_build_online_dashboard_data', side_effect=lambda c, a, f, t: (_full({'dateFrom': f, 'dateTo': t}), '')) as build:
             app._previous_period_compact('c1', '', self.sel)

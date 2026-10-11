@@ -422,6 +422,39 @@
       "blocking": true
     }
   ]
+},
+{
+  "id": "REGRESSION-052",
+  "title": "Comparativo parcial permanece N/D apos recuperacao da fonte",
+  "severity": "ALTA",
+  "components": [
+    "previous_period_cache"
+  ],
+  "domains": [
+    "dash_ads_financial"
+  ],
+  "tags": [
+    "all_accounts",
+    "future_accounts",
+    "no_false_zero"
+  ],
+  "invariant": "Resumo anterior parcial ou sem serie diaria nao e persistido no cache de 30 minutos; a consulta seguinte reavalia a fonte. Resumo completo continua limitado e isolado por conta e periodo.",
+  "file_globs": [
+    "app.py",
+    "test_previous_period_compact.py"
+  ],
+  "protections": [
+    {
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "-v",
+        "test_previous_period_compact"
+      ],
+      "blocking": true
+    }
+  ]
 }
 ]
 }
