@@ -1,4 +1,5 @@
 import copy
+import subprocess
 import unittest
 from unittest.mock import patch
 import app
@@ -145,6 +146,10 @@ class OperationalAvailabilityTests(unittest.TestCase):
         self.assertEqual(fetch.call_args_list[0].args[0], "/internal/dash-ads/operational-cache")
         self.assertEqual(fetch.call_args_list[1].args[0], "/internal/dash-ads/visits-daily")
         self.assertEqual(fetch.call_args_list[2].args[0], "/internal/dash-ads/returns-summary")
+        html = render_dashboard(data)
+        self.assertFalse(data["kpis"]["returnsAvailable"])
+        self.assertIn("...(k.returnsAvailable ? [", html)
+        self.assertIn("Receita total", html)
 
     def test_partial_cache_still_reads_independent_returns(self):
         returns = {
@@ -176,7 +181,31 @@ class OperationalAvailabilityTests(unittest.TestCase):
         self.assertFalse(data["kpis"]["returnsOrdersAvailable"])
         self.assertEqual(data["kpis"]["returnsOrdersCount"], 2)
         html = render_dashboard(data)
-        self.assertIn("taxa N/D", html)
+        self.assertIn("pedidos confirmados", html)
+        self.assertNotIn("taxa N/D", html)
+
+    def test_kpi_cards_only_render_returns_with_complete_source(self):
+        html = render_dashboard({"items": [], "meta": {}})
+        render_kpis = "function renderKpis()" + html.split("function renderKpis()", 1)[1].split("function renderAlerts()", 1)[0]
+        for available in (False, True):
+            with self.subTest(available=available):
+                script = (
+                    "const target={innerHTML:''};"
+                    "const document={getElementById:()=>target};"
+                    "const num=String,brl=String,pct=String,periodComparisonInline=()=>'';"
+                    "const DATA={periodSummary:null,kpis:{products:1,revenue:100,roas:1,"
+                    f"returnsAvailable:{str(available).lower()},returnsAmount:12,returnsRate:0.12,"
+                    "returnsOrdersAvailable:false,returnsOrdersCount:2}};"
+                    + render_kpis + "renderKpis();console.log(target.innerHTML);"
+                )
+                result = subprocess.run(
+                    ["node", "-e", script], check=True, text=True,
+                    encoding="utf-8", capture_output=True,
+                )
+                self.assertIn("Receita total", result.stdout)
+                self.assertEqual("Devolucoes confirmadas" in result.stdout, available)
+                self.assertEqual("Pedidos devolvidos" in result.stdout, available)
+                self.assertNotIn("taxa N/D", result.stdout)
 
     def test_rejects_other_account_period_and_advertiser(self):
         for field, value in (("client_id", "other"), ("date_from", "2026-08-01"), ("advertiser_id", "8")):
