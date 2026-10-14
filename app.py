@@ -1207,6 +1207,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             fast_shipping = shipping.get("is_fast")
         item = {
             "sku": str(raw.get("sku") or "").strip() or sale_sku,
+            # Vendas são agregadas por MLB. Um SKU vindo apenas da última
+            # venda é referência, não prova de atribuição das unidades a ele.
+            "skuIsReference": not bool(str(raw.get("sku") or "").strip()) and bool(sale_sku),
             "code": code,
             "title": str(raw.get("title") or "").strip() or sale_title,
             "lastSaleDate": sale_last_date,
@@ -1257,6 +1260,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "adsIndirectRevenue": ads_indirect_revenue,
             "organicRevenue": organic_revenue,
             "tacosBaseRevenue": tacos_base,
+            "tacosDefined": tacos_base > 0,
             "revenueOutsideAds": organic_revenue,
             "adsDependencyRatio": (ads_direct_revenue / total_revenue) if total_revenue else 0.0,
             "outsideAdsRatio": (organic_revenue / total_revenue) if total_revenue else 0.0,
@@ -1321,9 +1325,13 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     apply_abc(items, "totalRevenue", "abcCode")
     apply_abc(sku_ads, "totalRevenue", "abcSku")
     apply_abc(campaign_ads, "totalRevenue", "abcCampaign")
-    sku_abc = {item["sku"]: item["abcSku"] for item in sku_ads}
+    sku_abc = {
+        ("mlb", item["code"]) if item.get("skuIsReference") else ("sku", item["sku"]): item["abcSku"]
+        for item in sku_ads
+    }
     for item in items:
-        item["abcSku"] = sku_abc.get(item.get("sku") or "(sem SKU)", "C")
+        key = ("mlb", item["code"]) if item.get("skuIsReference") else ("sku", item.get("sku") or "(sem SKU)")
+        item["abcSku"] = sku_abc.get(key, "C")
 
     total_revenue = sum(item["totalRevenue"] for item in items)
     total_investment = sum(item["investment"] for item in items)
