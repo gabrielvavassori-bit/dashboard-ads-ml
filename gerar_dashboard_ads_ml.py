@@ -817,8 +817,12 @@ def aggregate_by_sku(items):
     grouped = {}
     for item in items:
         sku = item.get("sku") or "(sem SKU)"
-        target = grouped.setdefault(sku, {
+        # Um SKU vindo do resumo de vendas por MLB pode ser só a última
+        # variação vendida. Não misture outros MLBs nesse suposto SKU.
+        group_key = ("mlb", item.get("code")) if item.get("skuIsReference") and item.get("code") else ("sku", sku)
+        target = grouped.setdefault(group_key, {
             "sku": sku,
+            "skuIsReference": bool(item.get("skuIsReference")),
             "code": "",
             "codes": set(),
             "title": "",
@@ -875,6 +879,7 @@ def aggregate_by_sku(items):
         if item.get("code"):
             target["codes"].add(item["code"])
         target["children"].append(item)
+        target["skuIsReference"] = target["skuIsReference"] or bool(item.get("skuIsReference"))
         if item.get("campaign") and item["campaign"] != "Inativo":
             target["campaigns"].add(item["campaign"])
         if item.get("adsCampaigns") and item["adsCampaigns"] != item.get("campaign"):
@@ -1237,9 +1242,13 @@ def build_data(sales_file=SALES_FILE, ads_file=ADS_FILE):
     apply_abc(all_decision_items, "totalRevenue", "abcCode")
     apply_abc(sku_ads, "totalRevenue", "abcSku")
     apply_abc(campaign_ads, "totalRevenue", "abcCampaign")
-    sku_abc = {item["sku"]: item["abcSku"] for item in sku_ads}
+    sku_abc = {
+        ("mlb", item["code"]) if item.get("skuIsReference") else ("sku", item["sku"]): item["abcSku"]
+        for item in sku_ads
+    }
     for item in all_decision_items:
-        item["abcSku"] = sku_abc.get(item.get("sku") or "(sem SKU)", "C")
+        key = ("mlb", item["code"]) if item.get("skuIsReference") else ("sku", item.get("sku") or "(sem SKU)")
+        item["abcSku"] = sku_abc.get(key, "C")
     finalizados_sem_sku = [item for item in all_decision_items if not item.get("sku")]
     decision_items = [item for item in all_decision_items if item.get("sku")]
     total_revenue = sum(item["totalRevenue"] for item in items)
@@ -2363,6 +2372,8 @@ def render_dashboard(data):
     DATA.finishedNoSku ??= allItems.filter(item => !item?.sku);
     const brl = value => value.toLocaleString('pt-BR', {{ style:'currency', currency:'BRL' }});
     const pct = value => (value * 100).toLocaleString('pt-BR', {{ minimumFractionDigits:2, maximumFractionDigits:2 }}) + '%';
+    const tacosText = item => Number(item?.tacosBaseRevenue || 0) > 0 ? pct(Number(item?.tacos || 0)) : 'N/D';
+    const skuScopeNote = item => item?.skuIsReference ? 'SKU de referência; vendas e unidades do MLB inteiro' : '';
     const num = value => value.toLocaleString('pt-BR', {{ maximumFractionDigits:0 }});
     const safe = value => String(value || '').replace(/[&<>"]/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[ch]));
     function saoPauloDateParts(value) {{
@@ -3229,7 +3240,7 @@ def render_dashboard(data):
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td>
         <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{item.ctrClass || ''}}</div></td>
         <td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{item.cvrClass || ''}}</div></td>
-        <td class="num">${{pct(item.tacos || 0)}}</td>
+        <td class="num">${{tacosText(item)}}</td>
         <td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>
       <tr class="decision-row">
@@ -3369,7 +3380,7 @@ def render_dashboard(data):
       const countText = children.length === sourceChildren.length ? `${{num(children.length)}} item(ns)` : `${{num(children.length)}} de ${{num(sourceChildren.length)}} item(ns)`;
       return `<div class="detail-block campaign-child-block" style="grid-column:1/-1"><h3>${{safe(title)}}</h3><div class="campaign-child-tools"><input type="search" data-campaign-child-search value="${{safe(campaignChildQuery)}}" placeholder="Pesquisar SKU, anúncio, título, condição ou alerta"><span class="campaign-child-count">${{countText}}</span></div><div class="campaign-child-scroll" tabindex="0" aria-label="Tabela de itens da campanha; role horizontal e verticalmente"><table class="child-table">
         <thead><tr><th>${{campaignChildSortable('SKU', 'sku')}}</th><th>${{campaignChildSortable('Anúncio', 'code')}}</th><th>${{campaignChildSortable('Condição/opção', 'condition')}}</th><th>${{campaignChildSortable('Título', 'title')}}</th><th class="num">${{campaignChildSortable('Pedidos', 'orders')}}</th><th class="num">${{campaignChildSortable('Unidades', 'units')}}</th><th class="num">${{campaignChildSortable('Receita', 'revenue')}}</th><th class="num">${{campaignChildSortable('Receita ADS', 'adsRevenue')}}</th><th class="num">${{campaignChildSortable('Invest.', 'investment')}}</th><th class="num">${{campaignChildSortable('CTR', 'ctr')}}</th><th class="num">${{campaignChildSortable('CVR', 'cvr')}}</th><th class="num">${{campaignChildSortable('TACOS', 'tacos')}}</th><th>${{campaignChildSortable('Alerta', 'alert')}}</th></tr></thead>
-        <tbody>${{children.map(child => `<tr><td data-label="SKU">${{safe(child.sku || '(sem SKU)')}}</td><td data-label="Anúncio">${{safe(child.code || '')}}</td><td data-label="Condição/opção">${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td data-label="Título">${{safe(child.title || '')}}</td><td class="num" data-label="Pedidos">${{num(child.orders || 0)}}</td><td class="num" data-label="Unidades">${{num(child.units || 0)}}</td><td class="num" data-label="Receita">${{brl(child.totalRevenue || 0)}}</td><td class="num" data-label="Receita ADS">${{brl(child.adsRevenue || 0)}}</td><td class="num" data-label="Invest.">${{brl(child.investment || 0)}}</td><td class="num" data-label="CTR">${{pct(child.ctr || 0)}}</td><td class="num" data-label="CVR">${{pct(child.cvr || 0)}}</td><td class="num" data-label="TACOS">${{pct(child.tacos || 0)}}</td><td data-label="Alerta">${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
+        <tbody>${{children.map(child => `<tr><td data-label="SKU">${{safe(child.sku || '(sem SKU)')}}<div class="muted">${{safe(skuScopeNote(child))}}</div></td><td data-label="Anúncio">${{safe(child.code || '')}}</td><td data-label="Condição/opção">${{safe(child.conditionLabel || 'Sem vinculo MLBU')}}<div class="muted">${{safe(child.catalogLabel || '')}}</div></td><td data-label="Título">${{safe(child.title || '')}}</td><td class="num" data-label="Pedidos">${{num(child.orders || 0)}}</td><td class="num" data-label="Unidades">${{num(child.units || 0)}}</td><td class="num" data-label="Receita">${{brl(child.totalRevenue || 0)}}</td><td class="num" data-label="Receita ADS">${{brl(child.adsRevenue || 0)}}</td><td class="num" data-label="Invest.">${{brl(child.investment || 0)}}</td><td class="num" data-label="CTR">${{pct(child.ctr || 0)}}</td><td class="num" data-label="CVR">${{pct(child.cvr || 0)}}</td><td class="num" data-label="TACOS">${{tacosText(child)}}</td><td data-label="Alerta">${{safe(child.alertText || 'Sem alerta')}}</td></tr>`).join('')}}</tbody>
       </table></div></div>`;
     }}
     const campaignChildSortKeys = {{
@@ -3873,7 +3884,7 @@ def render_dashboard(data):
         <div class="listing-fact"><span class="muted">Receita total</span><b>${{brl(item.totalRevenue || 0)}}</b></div>
         <div class="listing-fact"><span class="muted">Receita atribuída Ads</span><b>${{brl(item.adsRevenue || 0)}}</b></div>
         <div class="listing-fact"><span class="muted">Investimento Ads</span><b>${{brl(item.investment || 0)}}</b></div>
-        <div class="listing-fact"><span class="muted">TACOS consolidado</span><b>${{pct(item.tacos || 0)}}</b></div>
+        <div class="listing-fact"><span class="muted">TACOS consolidado</span><b>${{tacosText(item)}}</b></div>
         <div class="listing-fact"><span class="muted">ROAS consolidado</span><b>${{Number(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}x</b></div>
         <div class="listing-fact"><span class="muted">Última venda do conjunto</span><b>${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : 'Não informada'}}</b></div>
       </div></div>`;
@@ -5635,7 +5646,7 @@ def render_dashboard(data):
         <td class="text-cell">${{safe(item.parentId)}} · ${{num(item.optionCount)}} opcao(oes)<div class="muted">${{safe(item.catalogLabel)}}</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
         <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(item.children || [item])}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
-        <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
+        <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{tacosText(item)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
     function familyParentRow(group, item, key, expanded) {{
@@ -5650,7 +5661,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(variationCount)}} MLBU(s)<div class="muted">${{num(group.children.length)}} MLB(s)</div></td>
         <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
         <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(group.children)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
-        <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
+        <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{tacosText(item)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
     function skuParentRow(sku, key, expanded) {{
@@ -5669,7 +5680,7 @@ def render_dashboard(data):
         <td class="text-cell">${{num(familyCount)}} família(s) · ${{num(variationCount)}} MLBU(s)<div class="muted">${{num(mlbCount)}} MLB(s)</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item,'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
         <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(children)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
-        <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{pct(item.tacos || 0)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
+        <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td><td class="num">${{pct(item.ctr || 0)}}</td><td class="num">${{pct(item.cvr || 0)}}</td><td class="num">${{tacosText(item)}}</td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>`;
     }}
     function productGroupNote(optionCount) {{
@@ -5812,16 +5823,35 @@ def render_dashboard(data):
       return sortedGroups(splitHybrid(rows)).map(hybridGroupBody).join('');
     }}
     function groupedMlbBodies(rows) {{
-      return rows.map(item => `<tbody>${{row(item)}}</tbody>`).join('');
+      const groups = new Map();
+      rows.forEach((item, index) => {{
+        const key = item.code || `sem-mlb-${{index}}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(item);
+      }});
+      return [...groups].map(([code, children]) => {{
+        if (children.length === 1) return `<tbody>${{row(children[0])}}</tbody>`;
+        const item = aggregateDetailItem(children, {{scope:'mlb', id:code, title:`Anúncio ${{code}}`}});
+        item.campaignRevenueAmbiguous = true;
+        item.campaign = `${{num(children.length)}} linhas Ads · atribuição por campanha N/D`;
+        item.campaignId = '';
+        item.campaignName = '';
+        item.campaignBudget = null;
+        item.campaignTargetRoas = null;
+        item.diagnosticSummary = `Consolidado do MLB ${{code}}: ${{num(children.length)}} linhas de Ads preservadas; vendas e unidades do MLB contadas uma vez. Atribuição por campanha não comprovada.`;
+        return `<tbody class="product-group mlb-group">${{row(item)}}${{aggregateDetailRows(item, 'MLB')}}<tr class="product-group-note"><td colspan="18">Linhas de Ads preservadas no detalhe. TACOS e unidades calculados sobre o MLB inteiro; não há atribuição comprovada por SKU ou campanha.</td></tr></tbody>`;
+      }}).join('');
     }}
     function groupedSkuBodies(rows) {{
       return rows.map(sku => {{
         const children = sku.children || [];
         if (!children.length) return `<tbody>${{row(sku)}}</tbody>`;
-        const key = hierarchyKey('sku', sku.sku || 'sem-sku');
+        const key = hierarchyKey('sku', sku.skuIsReference ? `mlb:${{sku.code}}` : sku.sku || 'sem-sku');
         const expanded = skuExpanded.has(key);
-        const item = aggregateDetailItem(children, {{scope:'sku', id:sku.sku, title:`SKU ${{sku.sku}}`, sku:sku.sku}});
-        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku, key, expanded)}}${{aggregateDetailRows(item, 'SKU')}}<tr class="product-group-note"><td colspan="18"><b>SKU pai:</b> valores absolutos consolidados e taxas recalculadas; use + para abrir o detalhamento estrutural.</td></tr></tbody>`;
+        const detailId = sku.skuIsReference ? `mlb:${{sku.code}}` : sku.sku;
+        const item = aggregateDetailItem(children, {{scope:'sku', id:detailId, title:sku.skuIsReference ? `MLB ${{sku.code}} · SKU de referência ${{sku.sku}}` : `SKU ${{sku.sku}}`, sku:sku.sku}});
+        const scopeNote = sku.skuIsReference ? 'SKU apenas de referência: vendas e unidades pertencem ao MLB inteiro, não à variação exibida.' : 'SKU pai: valores absolutos consolidados e taxas recalculadas.';
+        const summary = `<tbody class="product-group sku-group">${{skuParentRow(sku, key, expanded)}}${{aggregateDetailRows(item, 'SKU')}}<tr class="product-group-note"><td colspan="18">${{safe(scopeNote)}} Use + para abrir o detalhamento estrutural.</td></tr></tbody>`;
         const details = expanded ? sortedGroups(splitByFamily(children)).map(familyGroupBody).join('') : '';
         return summary + details;
       }}).join('');
@@ -5835,7 +5865,7 @@ def render_dashboard(data):
       const tacosNote = item.salesCoverageComplete === false ? 'vendas parciais' : item.campaignRevenueAmbiguous ? 'atribuicao ambigua' : '';
       return `<tr class="main-row ${{extraClass}}">
         <td>${{productImage(item)}}</td>
-        <td><div class="copyline"><span class="code">${{safe(item.sku || '(sem SKU)')}}</span>${{copyButton(item.sku, 'SKU')}}</div><div class="muted">${{item.adCount ? item.adCount + ' anuncios' : ''}}</div>${{campaignMode ? '' : listingBadges(item)}}</td>
+        <td><div class="copyline"><span class="code">${{safe(item.sku || '(sem SKU)')}}</span>${{copyButton(item.sku, 'SKU')}}</div><div class="muted">${{safe(skuScopeNote(item))}}</div><div class="muted">${{item.adCount ? item.adCount + ' anuncios' : ''}}</div>${{campaignMode ? '' : listingBadges(item)}}</td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.allCodes || item.code || '')}}</span>${{copyButton(item.allCodes || item.code, 'MLB')}}</div><div class="title">${{safe(campaignMode ? (item.topInvestmentLabel || item.title || '') : (item.title || ''))}}</div></td>
         <td><span class="${{abcClass(abcValue)}}">${{abcPrefix}} ${{abcValue || 'C'}}</span></td>
         <td class="text-cell">${{safe(item.campaign || item.adsCampaigns || 'Sem campanha')}}<div class="muted">${{safe(item.campaignStatus || '')}}</div>${{campaignMode ? '' : campaignConfigInline(item)}}</td>
@@ -5844,7 +5874,7 @@ def render_dashboard(data):
         <td class="num">${{num(item.orders || 0)}}</td><td class="num">${{num(item.units || 0)}}</td><td class="num">${{brl(item.totalRevenue || 0)}}</td><td class="metrics-7d-cell">${{performance7dInline(item)}}</td><td class="num">${{brl(item.adsRevenue || 0)}}</td><td class="num">${{brl(item.investment || 0)}}</td>
         <td class="num">${{brl(item.cpc || 0)}}<div class="muted">max ${{brl(item.maxCpc || 0)}}</div></td>
         <td class="num">${{pct(item.ctr || 0)}}<div class="muted">${{safe(item.ctrClass || '')}}</div></td><td class="num">${{pct(item.cvr || 0)}}<div class="muted">${{safe(item.cvrClass || '')}}</div></td>
-        <td class="num">${{pct(item.tacos || 0)}}<div class="muted">${{safe(tacosNote)}}</div></td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
+        <td class="num">${{tacosText(item)}}<div class="muted">${{safe(tacosNote)}}</div></td><td class="num">${{(item.roas || 0).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}</td>
       </tr>
       <tr class="decision-row"><td colspan="18"><div class="decision-wrap">
         <div class="decision-summary-main"><span class="pill ${{actionClass(item.action)}}">${{safe(item.action)}}</span><div class="decision-teaser"><b>Diagnostico:</b> ${{safe(item.diagnosticSummary || item.recommendation || item.reason || 'Sem leitura adicional.')}}</div></div>
@@ -5966,13 +5996,13 @@ def render_dashboard(data):
       }} else if (currentViewMode === 'hybrid') {{
         helpText.textContent = 'A visão Híbrida usa a melhor estrutura disponível sem ocultar anúncios: Família; sem família, Variação/MLBU; sem ambos, MLB; e SKU apenas como último recurso. A ordenação usa o total consolidado de cada bloco.';
       }} else if (currentViewMode === 'sku') {{
-        helpText.textContent = 'A aba SKU mostra primeiro o SKU pai consolidado. Abaixo, detalha Família, Variação/MLBU e respectivos MLBs sem misturar campanhas na busca.';
+        helpText.textContent = 'A aba SKU mostra primeiro o SKU pai consolidado. Quando o SKU é só referência da última venda, o bloco fica isolado por MLB; vendas e unidades não são atribuídas à variação sem prova.';
       }} else if (currentViewMode === 'family') {{
         helpText.textContent = 'A visão Família mostra a família acima e seus MLBUs recolhidos. Use + / − para abrir ou recolher Família e MLBU; cada nível tem sua própria leitura consolidada.';
       }} else if (currentViewMode === 'variation') {{
         helpText.textContent = 'Cada Variação/MLBU aparece recolhida com seu resumo consolidado. Use + para ver os MLBs/condições e Ver leitura para avaliar o conjunto inteiro.';
       }} else {{
-        helpText.textContent = 'A visão MLB mantém cada anúncio/condição de venda em uma linha independente, sem consolidá-lo como Variação/MLBU.';
+        helpText.textContent = 'A visão MLB consolida linhas do mesmo anúncio sem duplicar vendas. Cada linha original permanece no detalhe; a atribuição por campanha ou SKU só aparece quando comprovada.';
       }}
       helpMeta.textContent = `${{num(rows.length)}} registro(s) no filtro atual`;
       applyTableZoom();
