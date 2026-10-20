@@ -2772,22 +2772,25 @@ def render_dashboard(data):
             costs.some(entry => Math.abs(entry.cost - costs[0].cost) > 0.005))
           return '<div class="muted">Margem por variação: N/D · vendas consolidadas no MLB e custos distintos ou incompletos.</div>';
         if (item.salesCoverageComplete === false) return '<div class="muted">Margem: N/D · vendas do período incompletas.</div>';
+        const current = currentOfferPrice(item);
         const avg = Number(item.avgSalePrice || 0);
         const last = Number(item.lastSalePrice || 0);
         const grossLine = (label, price) => price > 0
           ? `<div class="muted">${{label}}: ${{brl(price - costs[0].cost)}} · ${{((price - costs[0].cost) / price * 100).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}%</div>`
           : `<div class="muted">${{label}}: N/D</div>`;
-        return grossLine('Lucro/margem bruta média do MLB', avg) + grossLine('Lucro/margem bruta na última venda', last)
+        return grossLine('Lucro/margem bruta no preço atual do MLB', current)
+          + grossLine('Lucro/margem bruta média do MLB', avg) + grossLine('Lucro/margem bruta na última venda', last)
           + '<div class="muted">Todos os SKUs têm o mesmo custo cadastrado; antes de tarifa, frete, tributos e Ads.</div>';
       }}
       if (!finance.hasCost) return '<div class="muted">Margem bruta: N/D · custo deste SKU não cadastrado.</div>';
       if (item.salesCoverageComplete === false) return '<div class="muted">Lucro por SKU: N/D · vendas do período incompletas.</div>';
+      const current = currentOfferPrice(item);
       const average = Number(item.avgSalePrice || 0);
       const last = Number(item.lastSalePrice || 0);
       const gross = price => Number.isFinite(price) && price > 0
         ? `${{brl(price - finance.cost)}} · ${{((price - finance.cost) / price * 100).toLocaleString('pt-BR', {{minimumFractionDigits:2, maximumFractionDigits:2}})}}%`
         : 'N/D';
-      return `<div class="muted">Lucro/margem bruta média/un.: ${{gross(average)}}</div><div class="muted">Lucro/margem bruta na última venda: ${{gross(last)}}</div><div class="muted">Preço − custo cadastrado; antes de tarifa, frete, tributos e Ads.</div>`;
+      return `<div class="muted">Lucro/margem bruta no preço atual: ${{gross(current)}}</div><div class="muted">Lucro/margem bruta média/un.: ${{gross(average)}}</div><div class="muted">Lucro/margem bruta na última venda: ${{gross(last)}}</div><div class="muted">Preço − custo cadastrado; antes de tarifa, frete, tributos e Ads.</div>`;
     }}
     function itemSearchText(item, viewMode = null) {{
       const includeCampaign = viewMode === null || viewMode === 'campaign';

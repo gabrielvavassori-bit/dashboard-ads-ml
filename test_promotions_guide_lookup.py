@@ -14,23 +14,28 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         const financeProfile = {costBySku:{'4092 PRETO-42':100,'PRETO-41':100,'PRETO-42':100},fiscalBySku:{}};
         const financeLoaded = true;
         const brl = value => `R$ ${value.toFixed(2)}`;
+        const currentOfferPrice = item => item.priceStatus === 'pending_legacy_quote' ? 0 : Number(item.currentPrice || 0);
         ''' + finance.replace('{{', '{').replace('}}', '}') + gross.replace('{{', '{').replace('}}', '}') + '''
-        const exact = historicalGrossProfitHtml({sku:'4092 PRETO-42',avgSalePrice:200,lastSalePrice:230});
+        const exact = historicalGrossProfitHtml({sku:'4092 PRETO-42',currentPrice:233.12,avgSalePrice:200,lastSalePrice:230});
         const reference = historicalGrossProfitHtml({sku:'4092 PRETO-42',skuIsReference:true,avgSalePrice:200,lastSalePrice:230});
-        const uniform = historicalGrossProfitHtml({sku:'4092 PRETO-42',skuIsReference:true,variationSkus:['PRETO-41','PRETO-42'],avgSalePrice:200,lastSalePrice:230});
+        const uniform = historicalGrossProfitHtml({sku:'4092 PRETO-42',skuIsReference:true,variationSkus:['PRETO-41','PRETO-42'],currentPrice:233.12,avgSalePrice:200,lastSalePrice:230});
+        const pending = historicalGrossProfitHtml({sku:'4092 PRETO-42',skuIsReference:true,variationSkus:['PRETO-41','PRETO-42'],priceStatus:'pending_legacy_quote',currentPrice:183,avgSalePrice:200,lastSalePrice:230});
         financeProfile.costBySku['PRETO-42'] = 110;
         const mixed = historicalGrossProfitHtml({sku:'4092 PRETO-42',skuIsReference:true,variationSkus:['PRETO-41','PRETO-42'],avgSalePrice:200,lastSalePrice:230});
-        console.log(JSON.stringify({exact,reference,uniform,mixed}));
+        console.log(JSON.stringify({exact,reference,uniform,pending,mixed}));
         '''
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stderr)
         values = json.loads(result.stdout)
         self.assertIn('Lucro/margem bruta média/un.: R$ 100.00 · 50,00%', values['exact'])
+        self.assertIn('Lucro/margem bruta no preço atual: R$ 133.12', values['exact'])
         self.assertIn('Lucro/margem bruta na última venda: R$ 130.00', values['exact'])
         self.assertIn('antes de tarifa, frete, tributos e Ads', values['exact'])
         self.assertIn('N/D', values['reference'])
         self.assertNotIn('R$ 100.00', values['reference'])
         self.assertIn('Lucro/margem bruta média do MLB: R$ 100.00 · 50,00%', values['uniform'])
+        self.assertIn('Lucro/margem bruta no preço atual do MLB: R$ 133.12', values['uniform'])
+        self.assertIn('Lucro/margem bruta no preço atual do MLB: N/D', values['pending'])
         self.assertIn('N/D', values['mixed'])
 
     def test_campaign_row_shows_product_identity_and_keeps_actions_in_settings(self):
