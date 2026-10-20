@@ -6,6 +6,33 @@ from urllib.parse import unquote
 
 
 class PromotionsGuideLookupTests(unittest.TestCase):
+    def test_historical_gross_profit_uses_saved_sku_cost_without_attributing_mlb_sales_to_variation(self):
+        source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
+        finance = source[source.index('    function financeSkuKey'):source.index('    function promotionFinancialResult')]
+        gross = source[source.index('    function historicalGrossProfitHtml'):source.index('    function itemSearchText')]
+        script = '''
+        const financeProfile = {costBySku:{'4092 PRETO-42':100,'PRETO-41':100,'PRETO-42':100},fiscalBySku:{}};
+        const financeLoaded = true;
+        const brl = value => `R$ ${value.toFixed(2)}`;
+        ''' + finance.replace('{{', '{').replace('}}', '}') + gross.replace('{{', '{').replace('}}', '}') + '''
+        const exact = historicalGrossProfitHtml({sku:'4092 PRETO-42',avgSalePrice:200,lastSalePrice:230});
+        const reference = historicalGrossProfitHtml({sku:'4092 PRETO-42',skuIsReference:true,avgSalePrice:200,lastSalePrice:230});
+        const uniform = historicalGrossProfitHtml({sku:'4092 PRETO-42',skuIsReference:true,variationSkus:['PRETO-41','PRETO-42'],avgSalePrice:200,lastSalePrice:230});
+        financeProfile.costBySku['PRETO-42'] = 110;
+        const mixed = historicalGrossProfitHtml({sku:'4092 PRETO-42',skuIsReference:true,variationSkus:['PRETO-41','PRETO-42'],avgSalePrice:200,lastSalePrice:230});
+        console.log(JSON.stringify({exact,reference,uniform,mixed}));
+        '''
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads(result.stdout)
+        self.assertIn('Lucro/margem bruta média/un.: R$ 100.00 · 50,00%', values['exact'])
+        self.assertIn('Lucro/margem bruta na última venda: R$ 130.00', values['exact'])
+        self.assertIn('antes de tarifa, frete, tributos e Ads', values['exact'])
+        self.assertIn('N/D', values['reference'])
+        self.assertNotIn('R$ 100.00', values['reference'])
+        self.assertIn('Lucro/margem bruta média do MLB: R$ 100.00 · 50,00%', values['uniform'])
+        self.assertIn('N/D', values['mixed'])
+
     def test_campaign_row_shows_product_identity_and_keeps_actions_in_settings(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         function = source[
@@ -524,7 +551,7 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
         self.assertIn('const priceCell = editablePrice', row)
         self.assertIn('data-promo-campaign-price=', row)
-        self.assertIn('Preço para simular', row)
+        self.assertIn('Preço desta promoção para simular', row)
         self.assertIn('min_discounted_price', row)
         self.assertIn('max_discounted_price', row)
         self.assertIn('<td class="num">${{priceCell}}${{referenceHtml}}</td><td class="num">${{promotionReceiptCell(row)}}</td>', row)
@@ -582,7 +609,11 @@ class PromotionsGuideLookupTests(unittest.TestCase):
         handlers = source[source.index('    function activatePromotionPanels'):source.index('    function pricingPreviewBlock')]
         self.assertIn("document.getElementById('promotionGuideResult')", handlers)
         self.assertIn("promotionGuide.dataset.promoSimulationBound !== 'true'", handlers)
-        self.assertIn("promotionGuide.addEventListener('input'", handlers)
+        self.assertIn("promotionGuide.addEventListener('focusout'", handlers)
+        self.assertNotIn("promotionGuide.addEventListener('input'", handlers)
+        self.assertNotIn('promotionPriceTimers', handlers)
+        self.assertIn("promotionGuide.addEventListener('click'", handlers)
+        self.assertIn('promotionRequoteEditedPrice(input)', handlers)
         self.assertIn("event.target.closest?.('[data-promo-campaign-price]')", handlers)
         self.assertIn("promotionGuide.addEventListener('change'", handlers)
         self.assertIn("event.target.closest?.('[data-promo-target-margin]')", handlers)
@@ -591,7 +622,9 @@ class PromotionsGuideLookupTests(unittest.TestCase):
     def test_price_and_margin_fields_are_identified_as_simulators(self):
         source = Path('gerar_dashboard_ads_ml.py').read_text(encoding='utf-8')
         row = source[source.index('    function promotionTableRow'):source.index('    function promotionTableHtml')]
-        self.assertIn('Preço para simular', row)
+        self.assertIn('Preço desta promoção para simular', row)
+        self.assertIn('Outra promoção ativa:', row)
+        self.assertIn('data-promo-use-active-price', row)
         self.assertIn('Margem para simular (%)', row)
         self.assertIn('Simulação apenas:', row)
         self.assertIn('Nada é aplicado até abrir a revisão', row)

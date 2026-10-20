@@ -1,12 +1,41 @@
 import copy
 import subprocess
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 import app
 from gerar_dashboard_ads_ml import render_dashboard
 
 
 class OperationalAvailabilityTests(unittest.TestCase):
+    def test_legacy_multi_sku_price_requires_fresh_quote_and_family_is_unchanged(self):
+        payload = self.payload()
+        row = payload["ads"]["items"][0]
+        row["price"] = 183
+        payload["sales"]["items"]["MLB123"].update(sku="PRETO-42", last_price=233.12)
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertEqual(error, "")
+        self.assertEqual(data["items"][0]["priceStatus"], "pending_legacy_quote")
+        self.assertEqual(data["items"][0]["currentPrice"], 0)
+        self.assertTrue(data["items"][0]["skuIsReference"])
+
+        row.update(price=233.12, price_effective=233.12, legacy_multi_sku=True,
+                   variation_skus=["PRETO-41", "PRETO-42"],
+                   price_updated_at=datetime.now(app.ONLINE_TZ).isoformat())
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertEqual(error, "")
+        self.assertEqual(data["items"][0]["priceStatus"], "verified_legacy_multisku")
+        self.assertEqual(data["items"][0]["currentPrice"], 233.12)
+
+        row.update(price=299, price_effective=299, family_id="FAMILY-1", user_product_id="UP-1")
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertEqual(error, "")
+        self.assertEqual(data["items"][0]["priceStatus"], "ordinary_snapshot")
+        self.assertEqual(data["items"][0]["currentPrice"], 299)
+
     def test_exact_committed_financial_rows_upgrade_operational_period(self):
         from test_online_periods import complete_integrity_contract, active_snapshot_completeness_rule
         payload = self.payload()
