@@ -1182,6 +1182,29 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             or raw.get("price")
             or raw.get("current_price")
         )
+        # Legacy listings can have several seller SKUs under one MLB. Their
+        # root metadata is refreshed independently of immutable daily facts;
+        # never present an old parent-level quote as a current SKU price.
+        possible_legacy_multisku = bool(
+            not str(raw.get("sku") or "").strip()
+            and not str(raw.get("family_id") or "").strip()
+            and not str(raw.get("user_product_id") or "").strip()
+            and raw.get("legacy_multi_sku") is not False
+        )
+        quote_at = str(raw.get("price_updated_at") or "").strip()
+        quote_fresh = False
+        if possible_legacy_multisku and raw.get("legacy_multi_sku") is True and quote_at:
+            try:
+                quote_dt = datetime.fromisoformat(quote_at.replace("Z", "+00:00"))
+                quote_fresh = bool(quote_dt.tzinfo and 0 <=
+                                   (datetime.now(ONLINE_TZ) - quote_dt).total_seconds() <= 7200)
+            except ValueError:
+                pass
+        price_status = "verified_legacy_multisku" if quote_fresh else (
+            "pending_legacy_quote" if possible_legacy_multisku else "ordinary_snapshot"
+        )
+        if possible_legacy_multisku and not quote_fresh:
+            current_price = 0.0
         last_sale_price = _number(sale.get("last_price") or sale.get("lastPrice"))
         last_price = last_sale_price or current_price
         avg_sale_price = (total_revenue / units) if units else last_sale_price
@@ -1210,6 +1233,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             # Vendas são agregadas por MLB. Um SKU vindo apenas da última
             # venda é referência, não prova de atribuição das unidades a ele.
             "skuIsReference": not bool(str(raw.get("sku") or "").strip()) and bool(sale_sku),
+            "legacyMultiSku": bool(raw.get("legacy_multi_sku")),
+            "variationSkus": raw.get("variation_skus") if isinstance(raw.get("variation_skus"), list) else [],
+            "priceStatus": price_status,
+            "priceUpdatedAt": quote_at if quote_fresh else "",
             "code": code,
             "title": str(raw.get("title") or "").strip() or sale_title,
             "lastSaleDate": sale_last_date,

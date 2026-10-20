@@ -455,6 +455,17 @@
       "blocking": true
     }
   ]
+},
+{
+  "id": "REGRESSION-055",
+  "title": "Preco operacional de MLB legado multivariacao e margem preservam fonte e escopo",
+  "severity": "ALTA",
+  "components": ["dash_ads_operational", "legacy_listing_price", "gross_margin"],
+  "domains": ["mercado_livre_items", "operational_metrics"],
+  "tags": ["all_accounts", "future_accounts", "legacy_multisku", "family_isolation", "no_invented_margin"],
+  "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "test_operational_availability.py", "test_promotions_guide_lookup.py"],
+  "invariant": "Preco de MLB legado multivariacao exige cotacao efetiva recente; sem ela, N/D. Familia/UPID preserva leitura propria. Margem bruta usa custo conhecido e atribuicao comprovada; quando vendas sao apenas do MLB, so usa media se todos os SKUs da variacao possuem o mesmo custo, nunca atribui vendas arbitrariamente ao SKU de referencia.",
+  "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_operational_availability.OperationalAvailabilityTests.test_legacy_multi_sku_price_requires_fresh_quote_and_family_is_unchanged", "test_promotions_guide_lookup.PromotionsGuideLookupTests.test_historical_gross_profit_uses_saved_sku_cost_without_attributing_mlb_sales_to_variation"], "blocking": true}]
 }
 ]
 }
