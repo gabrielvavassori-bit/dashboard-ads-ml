@@ -5921,7 +5921,7 @@ def render_dashboard(data):
       const campaignMode = currentViewMode === 'campaign';
       const abcValue = campaignMode ? item.abcCampaign : currentViewMode === 'sku' ? item.abcSku : item.abcCode;
       const abcPrefix = campaignMode ? 'CAMP' : currentViewMode === 'sku' ? 'SKU' : 'MLB';
-      const tacosNote = item.salesCoverageComplete === false ? 'vendas parciais' : item.campaignRevenueAmbiguous ? 'atribuicao ambigua' : '';
+      const tacosNote = item.salesCoverageComplete === false ? 'vendas parciais' : campaignMode && item.campaignRevenueAmbiguous ? 'atribuicao por campanha N/D' : '';
       return `<tr class="main-row ${{extraClass}}">
         <td>${{productImage(item)}}</td>
         <td><div class="copyline"><span class="code">${{safe(item.sku || '(sem SKU)')}}</span>${{copyButton(item.sku, 'SKU')}}</div><div class="muted">${{safe(skuScopeNote(item))}}</div><div class="muted">${{item.adCount ? item.adCount + ' anuncios' : ''}}</div>${{campaignMode ? '' : listingBadges(item)}}</td>

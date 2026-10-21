@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -52,6 +53,21 @@ class TacosStatusConsistencyTests(unittest.TestCase):
         self.assertIn("const tacosText = item => Number(item?.tacosBaseRevenue || 0) > 0", html)
         self.assertIn("'N/D'", html)
         self.assertIn('Linhas de Ads preservadas no detalhe.', html)
+
+    def test_mlb_tacos_does_not_claim_campaign_allocation_is_ambiguous(self):
+        html = render_dashboard({'items': [], 'meta': {}})
+        match = re.search(r"const tacosNote = ([^;]+);", html)
+        self.assertIsNotNone(match)
+        script = f"""
+const note = (item, campaignMode) => {match.group(1)};
+console.log(JSON.stringify([
+  note({{campaignRevenueAmbiguous:true}}, false),
+  note({{campaignRevenueAmbiguous:true}}, true),
+  note({{salesCoverageComplete:false, campaignRevenueAmbiguous:true}}, false)
+]));
+"""
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout), ['', 'atribuicao por campanha N/D', 'vendas parciais'])
 
     def test_mlb_view_consolidates_duplicate_ads_rows_without_losing_children(self):
         html = render_dashboard({'items': [], 'meta': {}})
