@@ -1193,14 +1193,16 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         )
         quote_at = str(raw.get("price_updated_at") or "").strip()
         quote_fresh = False
-        if possible_legacy_multisku and raw.get("legacy_multi_sku") is True and quote_at:
+        if possible_legacy_multisku and (raw.get("legacy_multi_sku") is True
+                                         or raw.get("price_source") == "sale_price") and quote_at:
             try:
                 quote_dt = datetime.fromisoformat(quote_at.replace("Z", "+00:00"))
                 quote_fresh = bool(quote_dt.tzinfo and 0 <=
                                    (datetime.now(ONLINE_TZ) - quote_dt).total_seconds() <= 7200)
             except ValueError:
                 pass
-        price_status = "verified_legacy_multisku" if quote_fresh else (
+        price_status = ("verified_legacy_multisku" if raw.get("legacy_multi_sku") is True
+                        else "verified_official_quote") if quote_fresh else (
             "pending_legacy_quote" if possible_legacy_multisku else "ordinary_snapshot"
         )
         if possible_legacy_multisku and not quote_fresh:

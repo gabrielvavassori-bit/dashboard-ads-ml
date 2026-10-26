@@ -1,7 +1,7 @@
 import copy
 import subprocess
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 import app
 from gerar_dashboard_ads_ml import render_dashboard
@@ -19,6 +19,20 @@ class OperationalAvailabilityTests(unittest.TestCase):
         self.assertEqual(data["items"][0]["priceStatus"], "pending_legacy_quote")
         self.assertEqual(data["items"][0]["currentPrice"], 0)
         self.assertTrue(data["items"][0]["skuIsReference"])
+
+        row.update(price=78.90, price_effective=78.90, price_source="sale_price",
+                   price_updated_at=datetime.now(app.ONLINE_TZ).isoformat())
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertEqual(error, "")
+        self.assertEqual(data["items"][0]["priceStatus"], "verified_official_quote")
+        self.assertEqual(data["items"][0]["currentPrice"], 78.90)
+
+        row["price_updated_at"] = (datetime.now(app.ONLINE_TZ) - timedelta(hours=3)).isoformat()
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertEqual(error, "")
+        self.assertEqual(data["items"][0]["currentPrice"], 0)
 
         row.update(price=233.12, price_effective=233.12, legacy_multi_sku=True,
                    variation_skus=["PRETO-41", "PRETO-42"],
