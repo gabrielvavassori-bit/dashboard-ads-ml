@@ -4270,6 +4270,16 @@ class Handler(BaseHTTPRequestHandler):
         if not links:
             _send_html(self, templates.render_error_page("Este cliente ainda nao possui conta Mercado Livre vinculada."), 400)
             return
+        requested_account = None
+        raw_account_id = (form.get("account_id", "") or "").strip()
+        if raw_account_id:
+            try:
+                requested_account = db.get_ml_account_for_user(user_id, int(raw_account_id))
+            except ValueError:
+                requested_account = None
+            if not requested_account or requested_account["status"] != "active":
+                _send_html(self, templates.render_error_page("Esta conta Mercado Livre nao pertence ao cliente selecionado."), 403)
+                return
         session_token = auth.new_session_token()
         db.create_session(
             user_id,
@@ -4279,7 +4289,9 @@ class Handler(BaseHTTPRequestHandler):
             replace_existing=False,
             impersonated_by_admin=admin["email"],
         )
-        if len(links) == 1:
+        if requested_account:
+            db.set_session_selected_ml_account(session_token, user_id, requested_account["id"])
+        elif len(links) == 1:
             db.set_session_selected_ml_account(session_token, user_id, links[0]["id"])
         else:
             destination = "/contas?" + urlencode({"return_to": destination})
