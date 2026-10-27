@@ -473,6 +473,7 @@ def render_admin_users(users, query: str = "", info: str = "", recovery_view: di
             sales_button = "Liberar vendas"
             sales_class = ""
         ml_link_html = ""
+        ml_account_actions = []
         if u.get("ml_link_label"):
             ml_link_html = (
                 f'<div style="font-size:12px;color:#1e3a8a;margin-top:4px">'
@@ -490,6 +491,23 @@ def render_admin_users(users, query: str = "", info: str = "", recovery_view: di
                 f'{int(u.get("ml_link_count") or 1)} conta(s) vinculada(s) de '
                 f'{int(u.get("ml_slot_limit") or 1)} slot(s) liberado(s)</div>'
             )
+            for account in u.get("ml_links") or []:
+                account_label = account.get("official_store") or account.get("nickname") or account.get("client_id") or "Conta ML"
+                account_detail = account.get("client_id") or ""
+                ml_account_actions.append(f'''
+                <div style="border:1px solid #d9e1ec;border-radius:8px;padding:6px 8px">
+                  <div style="font-size:11px;color:#475467"><b>{_html.escape(str(account_label))}</b>{' · ' + _html.escape(str(account_detail)) if account_detail and account_detail != account_label else ''}</div>
+                  <form method="post" action="/admin/users/{u['id']}/impersonate">
+                    <input type="hidden" name="account_id" value="{int(account['id'])}">
+                    <input type="hidden" name="return_to" value="/online?confirmed=1">
+                    <button type="submit">Acessar Dash Ads</button>
+                  </form>
+                  <form method="post" action="/admin/users/{u['id']}/impersonate">
+                    <input type="hidden" name="account_id" value="{int(account['id'])}">
+                    <input type="hidden" name="return_to" value="/inteligencia-vendas">
+                    <button type="submit">Acessar Inteligencia</button>
+                  </form>
+                </div>''')
         rows.append(f"""
         <tr>
           <td>{_html.escape(u['email'] or '')}<div style="font-size:12px;color:#667085">{_html.escape(u['name'] or '')}</div>{ml_link_html}</td>
@@ -527,14 +545,7 @@ def render_admin_users(users, query: str = "", info: str = "", recovery_view: di
               <input type="number" name="slot_limit" value="{int(u.get('ml_slot_limit') or 1)}" min="1" max="5" style="width:58px;padding:6px 8px;border:1px solid #cfd6e4;border-radius:8px">
               <button type="submit">Slots ML</button>
             </form>
-            {f'''<form method="post" action="/admin/users/{u['id']}/impersonate">
-              <input type="hidden" name="return_to" value="/online?confirmed=1">
-              <button type="submit">Acessar Dash Ads</button>
-            </form>
-            <form method="post" action="/admin/users/{u['id']}/impersonate">
-              <input type="hidden" name="return_to" value="/inteligencia-vendas">
-              <button type="submit">Acessar Inteligencia</button>
-            </form>''' if u.get("ml_link_label") else ''}
+            {''.join(ml_account_actions)}
           </td>
         </tr>""")
 

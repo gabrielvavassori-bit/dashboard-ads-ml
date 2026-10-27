@@ -1670,6 +1670,31 @@ class HTTPRouteTests(unittest.TestCase):
         )
         raised.exception.close()
 
+    def test_admin_impersonation_selects_requested_account_directly(self):
+        user_id, _ = self._login_cookie("impersonated-exact@example.com")
+        db.set_user_ml_slot_limit(user_id, 2)
+        first_id = db.upsert_user_ml_link(user_id, client_id="charme", nickname="Charme", slot_number=1)
+        lima_id = db.upsert_user_ml_link(user_id, client_id="lima-shop-premium-0884", nickname="Lima Shop", slot_number=2)
+        request = Request(
+            f"{self.base_url}/admin/users/{user_id}/impersonate",
+            data=urlencode({"account_id": str(lima_id), "return_to": "/online?confirmed=1"}).encode("utf-8"),
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cookie": self._admin_cookie(),
+            },
+            method="POST",
+        )
+        opener = self._no_redirect_opener()
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        self.assertEqual(raised.exception.headers.get("Location"), "/online?confirmed=1")
+        set_cookie = raised.exception.headers.get("Set-Cookie", "")
+        raised.exception.close()
+        token = set_cookie.split(";", 1)[0].split("=", 1)[1]
+        self.assertNotEqual(first_id, lima_id)
+        self.assertEqual(db.get_session(token)["selected_ml_account_id"], lima_id)
+
     def test_admin_can_allow_and_block_beta_without_changing_real_access(self):
         user_id = db.upsert_manual_user(
             email="beta-toggle@example.com",
