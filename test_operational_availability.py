@@ -2,12 +2,50 @@ import copy
 import subprocess
 import unittest
 from datetime import datetime, timedelta
+from urllib.error import URLError
 from unittest.mock import patch
 import app
 from gerar_dashboard_ads_ml import render_dashboard
 
 
 class OperationalAvailabilityTests(unittest.TestCase):
+    def test_transport_timeout_keeps_explicit_cause(self):
+        with patch.dict(app.os.environ, {"DASH_ADS_INTERNAL_SECRET": "test-secret"}), patch.object(
+            app, "urlopen", side_effect=URLError(TimeoutError("timed out"))
+        ):
+            result = app._fetch_dash_ads_json("/internal/dash-ads/operational-cache")
+        self.assertEqual(result["error"], "agent_timeout")
+        self.assertEqual(result["http_status"], 504)
+
+    def test_timeout_is_reported_not_disguised_as_missing_cache(self):
+        with patch.object(app, "_fetch_dash_ads_json", return_value={
+            "ok": False, "http_status": 504, "error": "agent_timeout",
+        }):
+            result, error = app._dash_ads_fetch_operational_latest(
+                "demo", "7", "2026-09-01", "2026-09-02"
+            )
+        self.assertIsNone(result)
+        self.assertIn("tempo limite", error)
+        self.assertNotIn("não há dados", error)
+
+    def test_direct_committed_snapshot_requires_exact_integrity(self):
+        from test_online_periods import complete_integrity_contract, active_snapshot_completeness_rule
+        committed = self.payload()
+        committed.pop("operational_partial")
+        committed.update(complete_integrity_contract("demo", "7", "2026-09-01", "2026-09-02"))
+        committed["latest"]["sales"]["complete"] = True
+        with patch.object(app, "_fetch_dash_ads_json", return_value=committed), patch.object(
+            app, "_load_snapshot_completeness_governance_rule",
+            return_value=active_snapshot_completeness_rule(),
+        ):
+            result, error = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
+            self.assertIs(result, committed)
+            self.assertEqual(error, "")
+            committed["integrity_contract"]["requested_period"]["date_to"] = "2026-09-03"
+            result, error = app._dash_ads_fetch_operational_latest("demo", "7", "2026-09-01", "2026-09-02")
+            self.assertIsNone(result)
+            self.assertTrue(error.startswith(app.ONLINE_CACHE_INTEGRITY_PREFIX))
+
     def test_legacy_multi_sku_price_requires_fresh_quote_and_family_is_unchanged(self):
         payload = self.payload()
         row = payload["ads"]["items"][0]

@@ -324,11 +324,12 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
         raw = exc.read(max_response_bytes + 1)
         status = exc.code
     except (URLError, TimeoutError) as exc:
+        timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError) or "timed out" in str(exc).lower()
         return {
             "ok": False,
-            "http_status": 502,
-            "message": "Falha ao consultar agente-ml.",
-            "error": exc.__class__.__name__,
+            "http_status": 504 if timed_out else 502,
+            "message": "Tempo limite da consulta ao agente-ml excedido." if timed_out else "Falha ao consultar agente-ml.",
+            "error": "agent_timeout" if timed_out else exc.__class__.__name__,
         }
     if len(raw) > max_response_bytes:
         # Nunca interpretar uma resposta cortada: vira erro explícito (N/D), não "formato inválido".
@@ -2234,11 +2235,19 @@ def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_fro
         "client": client, "advertiser_id": advertiser_id, "date_from": date_from, "date_to": date_to,
     })
     if not payload.get("ok"):
+        error = str(payload.get("error") or "").lower()
+        if error in ("agent_timeout", "timeouterror", "timeout", "readtimeout") or "timed out" in str(payload.get("message") or "").lower():
+            return None, "A consulta ao cache operacional do agente excedeu o tempo limite. A integridade desta janela não foi confirmada; tente novamente."
+        if error == "urlerror" and "timed out" in str(payload.get("reason") or "").lower():
+            return None, "A consulta ao cache operacional do agente excedeu o tempo limite. A integridade desta janela não foi confirmada; tente novamente."
+        if error == "agent_response_too_large":
+            return None, "A resposta do cache operacional excedeu o limite de leitura. A integridade desta janela não foi confirmada."
+        if payload.get("http_status") in (502, 503, 504):
+            return None, "O agente não respondeu à consulta do cache operacional. A integridade desta janela não foi confirmada; tente novamente."
         return None, "Ainda não há dados operacionais disponíveis no cache desta conta e período."
-    # Compatibilidade transitória com agentes que ainda retornam o recibo
-    # financeiro completo na rota operacional. Nunca aceita esse formato se a
-    # prova de conta, período e cobertura não for exatamente a solicitada.
-    if payload.get("client_id") is None and payload.get("operational_partial") is None:
+    # O agente entrega diretamente o snapshot certificado quando a janela exata
+    # já está pronta. Nunca aceita esse formato sem a prova de integridade.
+    if payload.get("operational_partial") is None:
         integrity = _online_cache_integrity_state(payload, client, advertiser_id, date_from, date_to)
         if integrity["ready"]:
             return payload, ""
