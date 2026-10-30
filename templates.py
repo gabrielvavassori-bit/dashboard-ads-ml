@@ -571,11 +571,15 @@ def render_admin_users(users, query: str = "", info: str = "", recovery_view: di
             <div style="font-weight:800;font-size:16px">Recuperacao de integridade por conta</div>
             <div style="font-size:12px;color:#667085">Somente leitura: nao inicia coleta e nao exibe valores financeiros.</div>
           </div>
-          <div style="font-size:13px;color:#667085;margin:8px 0 14px">{int(recovery_view.get('artifact_pending') or 0)} recorte(s) aguardando certificacao, {int(recovery_view.get('source_pending') or 0)} outra(s) pendencia(s), {int(recovery_view.get('stalled') or 0)} estagnada(s). Ultima medicao registrada nas tentativas: {int(recovery_view.get('coverage_missing_item_days') or 0)} dias-item; nao representa cobertura atual comprovada.</div>
-          <div style="overflow-x:auto"><table style="min-width:940px;margin:0">
+          <div style="font-size:13px;color:#667085;margin:8px 0">{int(recovery_view.get('artifact_pending') or 0)} recorte(s) aguardando certificacao, {int(recovery_view.get('source_pending') or 0)} outra(s) pendencia(s), {int(recovery_view.get('stalled') or 0)} estagnada(s).</div>
+          <details>
+            <summary style="cursor:pointer;font-size:13px;color:#344054">Ver detalhes de {len(recovery_rows)} janela(s) e ultima medicao registrada</summary>
+            <div style="font-size:12px;color:#667085;margin:8px 0">Ultima medicao registrada nas tentativas: {int(recovery_view.get('coverage_missing_item_days') or 0)} dias-item; nao representa cobertura atual comprovada.</div>
+            <div style="max-height:320px;overflow:auto"><table style="min-width:940px;margin:0">
             <thead><tr><th>Conta / cliente</th><th>Janela</th><th>Estado</th><th>Tentativas</th><th>Ultima medicao de lacuna</th><th>Motivo seguro</th><th>Proxima tentativa</th></tr></thead>
             <tbody>{''.join(recovery_rows) if recovery_rows else '<tr><td colspan="7" style="text-align:center;color:#1b5e20;padding:18px">Nenhuma janela pendente registrada.</td></tr>'}</tbody>
-          </table></div>
+            </table></div>
+          </details>
         </div>"""
     else:
         recovery_html = f"""
