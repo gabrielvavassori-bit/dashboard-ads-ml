@@ -596,8 +596,8 @@ class AdminRecoveryObservabilityTests(unittest.TestCase):
             "ml_link_detail": "conta-um",
             "ml_link_count": 2,
             "ml_links": [
-                {"client_id": "conta-um", "nickname": "Conta Um"},
-                {"client_id": "conta-dois", "official_store": "Conta Dois"},
+                {"id": 1, "client_id": "conta-um", "nickname": "Conta Um"},
+                {"id": 2, "client_id": "conta-dois", "official_store": "Conta Dois"},
             ],
         }]
         payload = {
@@ -627,12 +627,30 @@ class AdminRecoveryObservabilityTests(unittest.TestCase):
         self.assertTrue(view["available"])
         self.assertEqual(view["rows"][0]["account"], "Conta Dois")
         self.assertEqual(view["rows"][0]["coverage_missing_item_days"], 42)
+        self.assertEqual(view["artifact_pending"], 0)
+        self.assertEqual(view["source_pending"], 1)
         rendered = templates.render_admin_users(users, recovery_view=view)
         self.assertIn("Recuperacao de integridade por conta", rendered)
         self.assertIn("Conta Dois", rendered)
+        self.assertIn("Ultima medicao registrada nas tentativas: 42 dias-item", rendered)
+        self.assertNotIn("42 dias-item de cobertura pendente", rendered)
         self.assertNotIn("999999", rendered)
         self.assertNotIn("must-not-render", rendered)
         self.assertNotIn("access_token", rendered)
+
+    def test_admin_artifact_pending_is_not_reported_as_current_coverage_gap(self):
+        payload = {"ok": True, "clients": [{"client_id": "cliente", "records": [{
+            "date_from": "2026-09-30", "date_to": "2026-10-29",
+            "coverage_missing_item_days": 5078,
+            "reason": "integrity_repair_period_artifacts_unready",
+        }]}]}
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            view = app._admin_integrity_recovery_view([])
+        self.assertEqual(view["artifact_pending"], 1)
+        self.assertEqual(view["source_pending"], 0)
+        rendered = templates.render_admin_users([], recovery_view=view)
+        self.assertIn("1 recorte(s) aguardando certificacao", rendered)
+        self.assertIn("nao representa cobertura atual comprovada", rendered)
 
     def test_admin_recovery_view_fails_closed_when_agent_is_unavailable(self):
         with patch.object(app, "_fetch_dash_ads_json", return_value={"ok": False}):

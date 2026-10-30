@@ -400,6 +400,8 @@ def _admin_integrity_recovery_view(users: list[dict]) -> dict:
         "available": True,
         "rows": rows,
         "stalled": sum(1 for row in rows if row["stalled"]),
+        "artifact_pending": sum(1 for row in rows if row["reason"] == "integrity_repair_period_artifacts_unready"),
+        "source_pending": sum(1 for row in rows if row["reason"] != "integrity_repair_period_artifacts_unready"),
         "coverage_missing_item_days": sum(row["coverage_missing_item_days"] for row in rows),
     }
 
