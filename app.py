@@ -897,6 +897,43 @@ def _daily_series_by_item(daily_sales_rows, daily_ads_rows, daily_visits_rows, d
 _ITEM_DAILY_MAX_CODES = 50
 
 
+def _trace_item_daily_response(client: str, codes: list[str], date_from: str, date_to: str,
+                               partial: bool, sources: dict, response: dict) -> None:
+    """Correlaciona a resposta do detalhe com as fontes, sem registrar valores financeiros."""
+    def source_summary(rows):
+        raw_codes = sorted({str(row.get("item_id") or row.get("id") or "").strip()[:64]
+                            for row in rows if isinstance(row, dict)})
+        raw_codes = [code for code in raw_codes if code]
+        normalized = sorted({_normalize_mlb_code(code) for code in raw_codes} - {""})
+        return {"rows": len(rows), "raw_codes": raw_codes[:50],
+                "normalized_codes": normalized[:50], "codes_truncated": len(raw_codes) > 50}
+
+    def safe_error(error):
+        code = str(error or "")
+        return code if re.fullmatch(r"[a-z][a-z0-9_]{0,79}", code) else ("unclassified" if code else "")
+
+    series = response.get("series") or {}
+    row_counts = {code: len(series.get(code) or []) for code in codes}
+    source_codes = set()
+    for rows, _error in sources.values():
+        source_codes.update(_normalize_mlb_code(row.get("item_id") or row.get("id"))
+                            for row in rows if isinstance(row, dict))
+    event = {
+        "event": "item_daily_response", "trace_id": response["trace_id"],
+        "at": datetime.now(ZoneInfo("UTC")).isoformat(timespec="seconds"),
+        "client_id": client, "date_from": date_from, "date_to": date_to,
+        "requested_codes": codes, "partial": partial,
+        "sources": {name: {**source_summary(rows), "error": safe_error(error)}
+                    for name, (rows, error) in sources.items()},
+        "response": {"ok": response.get("ok") is True,
+                     "error": safe_error(response.get("error")),
+                     "series_rows_by_code": row_counts,
+                     "codes_without_series": [code for code, count in row_counts.items() if not count],
+                     "codes_absent_from_sources": [code for code in codes if code not in source_codes]},
+    }
+    print("[item-daily-trace] " + json.dumps(event, ensure_ascii=False, separators=(",", ":")), flush=True)
+
+
 def _strip_item_daily_series(data: dict) -> None:
     """Página normal: histórico diário por anúncio sai do HTML e é buscado ao abrir o detalhe.
 
@@ -923,12 +960,18 @@ def _item_daily_payload(client: str, codes: list[str], date_from: str, date_to: 
     ids = ",".join(codes)
     sales, _sc, sales_err = _sales_intelligence_fetch_daily_sales(client, date_from, date_to, ids)
     ads, _ac, ads_err = _sales_intelligence_fetch_daily_ads(client, date_from, date_to, ids)
-    visits, _vc, _visits_err = _sales_intelligence_fetch_daily_visits(client, date_from, date_to, ids)
+    visits, _vc, visits_err = _sales_intelligence_fetch_daily_visits(client, date_from, date_to, ids)
+    sources = {"sales": (sales, sales_err), "ads": (ads, ads_err), "visits": (visits, visits_err)}
+    trace_id = secrets.token_hex(6)
     if sales_err or ads_err:
         # Nunca devolve série financeira incompleta como se fosse zero: o detalhe mostra indisponível.
-        return {"ok": False, "error": sales_err or ads_err}
+        response = {"ok": False, "error": sales_err or ads_err, "trace_id": trace_id}
+        _trace_item_daily_response(client, codes, date_from, date_to, partial, sources, response)
+        return response
     _by_date, series = _daily_series_by_item(sales, ads, visits, partial)
-    return {"ok": True, "series": {code: series.get(code, []) for code in codes}}
+    response = {"ok": True, "series": {code: series.get(code, []) for code in codes}, "trace_id": trace_id}
+    _trace_item_daily_response(client, codes, date_from, date_to, partial, sources, response)
+    return response
 
 
 def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from: str = "", date_to: str = "", requested_period: dict | None = None) -> tuple[dict | None, str]:
