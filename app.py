@@ -3512,6 +3512,45 @@ class Handler(BaseHTTPRequestHandler):
                 partial = (qs.get("partial", ["1"])[0] or "1") != "0"
                 _send_json(self, _item_daily_payload(client_id, codes, date_from, date_to, partial))
                 return
+            if path == "/online/consolidado/comparison":
+                user, _token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "error": "forbidden"}, 403)
+                    return
+                qs = parse_qs(url.query or "")
+                try:
+                    account_id = int(qs.get("account_id", [""])[0])
+                except ValueError:
+                    _send_json(self, {"ok": False, "error": "invalid_account"}, 400)
+                    return
+                links = {int(link["id"]): link for link in db.list_active_ml_links_for_user(user["id"])}
+                if account_id not in links:
+                    _send_json(self, {"ok": False, "error": "forbidden"}, 403)
+                    return
+                period = _resolve_online_period(mode="30d", compare="previous")
+                if (qs.get("date_from", [""])[0], qs.get("date_to", [""])[0]) != (period["dateFrom"], period["dateTo"]):
+                    _send_json(self, {"ok": False, "error": "period_changed"}, 409)
+                    return
+                previous_period = period["comparePeriod"]
+                link = links[account_id]
+                with _online_dashboard_semaphore:
+                    previous = _previous_period_compact(
+                        (link["client_id"] or "").strip(), (link["advertiser_id"] or "").strip(), previous_period)
+                rows = (previous or {}).get("accountDailySeries") or []
+                days = (date.fromisoformat(previous_period["dateTo"]) - date.fromisoformat(previous_period["dateFrom"])).days + 1
+                complete = bool(previous and (previous.get("meta") or {}).get("period") == {
+                    "dateFrom": previous_period["dateFrom"], "dateTo": previous_period["dateTo"]}
+                    and len(rows) == days and {row.get("date") for row in rows} == {
+                        (date.fromisoformat(previous_period["dateFrom"]) + timedelta(days=offset)).isoformat()
+                        for offset in range(days)}
+                    and all(not row.get("partial", True) for row in rows))
+                from period_comparison import summary as _period_summary
+                _send_json(self, {"ok": complete, "period": previous_period,
+                                  "summary": _period_summary(previous) if complete else {}})
+                return
             if path == "/online/consolidado":
                 user, token = _current_user(self)
                 if not user:
