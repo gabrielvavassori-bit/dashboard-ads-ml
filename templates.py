@@ -147,6 +147,7 @@ def render_ml_account_selector(user_name: str, accounts, selected_account_id=Non
     <p>Vincule e escolha a conta que sera usada pelo Dashboard Ads e pela Inteligencia de Vendas.</p>
     <div class="hint">Cada slot pode ser substituido uma vez a cada 30 dias. A trava comeca somente depois que o novo OAuth for concluido com sucesso.</div>
     <div class="hint">Usuario: {_html.escape(user_name)}</div>
+    {'<p><a href="/online/consolidado" style="display:inline-block;padding:11px 14px;border-radius:10px;background:#102033;color:#fff;font-weight:800">Abrir visão consolidada</a></p>' if active_count > 1 else ''}
     {''.join(cards)}
     <p style="margin-top:18px"><a href="/">Voltar ao painel</a></p>
     """
@@ -216,6 +217,7 @@ def render_app_shell(user_name: str, version: str, error: str = "", linked_clien
         <h3>Modo online beta</h3>
         <p>Abre o painel online usando a conta Mercado Livre vinculada. Se ainda nao existir vinculo, a ativacao com OAuth comeca automaticamente. Antes de seguir, o sistema exibe um alerta de beta e de possivel divergencia.</p>
         <a class="primary" href="/online">Abrir online beta</a>
+        {'<div style="margin-top:12px"><a class="secondary" href="/online/consolidado">Abrir visão consolidada das contas</a></div>' if account_count > 1 else ''}
       </div>
       <div class="mode-card">
         <h3>Modo offline</h3>
@@ -508,6 +510,12 @@ def render_admin_users(users, query: str = "", info: str = "", recovery_view: di
                     <button type="submit">Acessar Inteligencia</button>
                   </form>
                 </div>''')
+            if len(u.get("ml_links") or []) > 1:
+                ml_account_actions.insert(0, f'''
+                <form method="post" action="/admin/users/{u['id']}/impersonate">
+                  <input type="hidden" name="return_to" value="/online/consolidado">
+                  <button type="submit">Acessar visão consolidada</button>
+                </form>''')
         rows.append(f"""
         <tr>
           <td>{_html.escape(u['email'] or '')}<div style="font-size:12px;color:#667085">{_html.escape(u['name'] or '')}</div>{ml_link_html}</td>
