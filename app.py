@@ -316,7 +316,10 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
     )
     try:
         max_response_bytes = _dash_ads_max_response_bytes(path)
-        with urlopen(req, timeout=18) as response:
+        # A leitura operacional certifica o período antes de responder; contas
+        # grandes podem levar mais de 18 s mesmo com cache íntegro.
+        timeout = 45 if path == "/internal/dash-ads/operational-cache" else 18
+        with urlopen(req, timeout=timeout) as response:
             # +1 byte: distingue resposta que coube exatamente de resposta cortada.
             raw = response.read(max_response_bytes + 1)
             status = response.status
