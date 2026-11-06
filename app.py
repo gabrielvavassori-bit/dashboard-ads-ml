@@ -316,7 +316,10 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
     )
     try:
         max_response_bytes = _dash_ads_max_response_bytes(path)
-        with urlopen(req, timeout=18) as response:
+        # A leitura operacional certifica o período antes de responder; contas
+        # grandes podem levar mais de 18 s mesmo com cache íntegro.
+        timeout = 45 if path == "/internal/dash-ads/operational-cache" else 18
+        with urlopen(req, timeout=timeout) as response:
             # +1 byte: distingue resposta que coube exatamente de resposta cortada.
             raw = response.read(max_response_bytes + 1)
             status = response.status
@@ -3594,6 +3597,101 @@ class Handler(BaseHTTPRequestHandler):
                 partial = (qs.get("partial", ["1"])[0] or "1") != "0"
                 _send_json(self, _item_daily_payload(client_id, codes, date_from, date_to, partial))
                 return
+            if path == "/online/consolidado/comparison":
+                user, _token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "error": "forbidden"}, 403)
+                    return
+                qs = parse_qs(url.query or "")
+                try:
+                    account_id = int(qs.get("account_id", [""])[0])
+                except ValueError:
+                    _send_json(self, {"ok": False, "error": "invalid_account"}, 400)
+                    return
+                links = {int(link["id"]): link for link in db.list_active_ml_links_for_user(user["id"])}
+                if account_id not in links:
+                    _send_json(self, {"ok": False, "error": "forbidden"}, 403)
+                    return
+                period = _resolve_online_period(mode="30d", compare="previous")
+                if (qs.get("date_from", [""])[0], qs.get("date_to", [""])[0]) != (period["dateFrom"], period["dateTo"]):
+                    _send_json(self, {"ok": False, "error": "period_changed"}, 409)
+                    return
+                previous_period = period["comparePeriod"]
+                link = links[account_id]
+                with _online_dashboard_semaphore:
+                    previous = _previous_period_compact(
+                        (link["client_id"] or "").strip(), (link["advertiser_id"] or "").strip(), previous_period)
+                if previous:
+                    _attach_official_account_metrics(previous, (link["client_id"] or "").strip(),
+                                                     previous_period["dateFrom"], previous_period["dateTo"])
+                rows = (previous or {}).get("accountDailySeries") or []
+                days = (date.fromisoformat(previous_period["dateTo"]) - date.fromisoformat(previous_period["dateFrom"])).days + 1
+                complete = bool(previous and (previous.get("meta") or {}).get("period") == {
+                    "dateFrom": previous_period["dateFrom"], "dateTo": previous_period["dateTo"]}
+                    and len(rows) == days and {row.get("date") for row in rows} == {
+                        (date.fromisoformat(previous_period["dateFrom"]) + timedelta(days=offset)).isoformat()
+                        for offset in range(days)}
+                    and all(not row.get("partial", True) for row in rows))
+                from period_comparison import summary as _period_summary
+                _send_json(self, {"ok": complete, "period": previous_period,
+                                  "summary": _period_summary(previous) if complete else {}})
+                return
+            if path == "/online/consolidado":
+                user, token = _current_user(self)
+                if not user:
+                    _redirect(self, "/login?return_to=/online/consolidado")
+                    return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
+                    return
+                links = db.list_active_ml_links_for_user(user["id"])
+                if len(links) < 2:
+                    _send_html(self, templates.render_error_page("A visao consolidada exige ao menos duas contas vinculadas ao mesmo cliente."), 400)
+                    return
+                qs = parse_qs(url.query or "")
+                permitted = {int(link["id"]): link for link in links}
+                requested = qs.get("account_id", [])
+                try:
+                    selected_ids = {int(value) for value in requested} if requested else (set() if "selection" in qs else set(permitted))
+                except ValueError:
+                    _send_html(self, templates.render_error_page("Selecao de contas invalida."), 400)
+                    return
+                if not selected_ids or not selected_ids.issubset(permitted):
+                    _send_html(self, templates.render_error_page("Uma das contas selecionadas nao pertence a este cliente."), 403)
+                    return
+                try:
+                    page = max(1, int(qs.get("page", ["1"])[0]))
+                except ValueError:
+                    page = 1
+                period = _resolve_online_period(mode="30d", compare="none")
+                import consolidated_dashboard
+                import gc
+                projections, failures = [], []
+                for account_id in sorted(selected_ids):
+                    link = permitted[account_id]
+                    with _online_dashboard_semaphore:
+                        dashboard_data, message = _build_online_dashboard_data(
+                            (link["client_id"] or "").strip(),
+                            advertiser_id=(link["advertiser_id"] or "").strip(),
+                            date_from=period["dateFrom"], date_to=period["dateTo"],
+                            requested_period=period,
+                        )
+                    if dashboard_data:
+                        _attach_official_account_metrics(dashboard_data, (link["client_id"] or "").strip(),
+                                                         period["dateFrom"], period["dateTo"])
+                        projections.append(consolidated_dashboard.project_account(link, dashboard_data))
+                        del dashboard_data
+                        gc.collect()
+                    else:
+                        failures.append(link["official_store"] or link["nickname"] or link["client_id"])
+                _send_html(self, consolidated_dashboard.render(
+                    links, selected_ids, period, projections, failures,
+                    view=qs.get("view", ["hibrida"])[0], page=page,
+                ))
+                return
             if path == "/online":
                 demo_link, demo_cookie_present = _current_demo_account(self)
                 is_demo = demo_link is not None
@@ -4441,7 +4539,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         form = _parse_form(self)
         destination = _safe_return_to(form.get("return_to", "/online?confirmed=1"), "/online?confirmed=1")
-        if urlparse(destination).path not in ("/online", "/inteligencia-vendas", "/"):
+        if urlparse(destination).path not in ("/online", "/online/consolidado", "/inteligencia-vendas", "/"):
             destination = "/online?confirmed=1"
         links = db.list_active_ml_links_for_user(user_id)
         if not links:
@@ -4470,7 +4568,7 @@ class Handler(BaseHTTPRequestHandler):
             db.set_session_selected_ml_account(session_token, user_id, requested_account["id"])
         elif len(links) == 1:
             db.set_session_selected_ml_account(session_token, user_id, links[0]["id"])
-        else:
+        elif destination != "/online/consolidado":
             destination = "/contas?" + urlencode({"return_to": destination})
         db.log_audit(
             user_id,

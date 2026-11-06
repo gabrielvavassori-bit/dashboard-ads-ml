@@ -9,6 +9,27 @@ from gerar_dashboard_ads_ml import render_dashboard
 
 
 class OperationalAvailabilityTests(unittest.TestCase):
+    def test_operational_cache_has_only_route_specific_timeout(self):
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _size):
+                return b'{"ok":true}'
+
+        with patch.dict(app.os.environ, {"DASH_ADS_INTERNAL_SECRET": "test-secret"}), patch.object(
+            app, "urlopen", return_value=Response()
+        ) as fetch:
+            self.assertTrue(app._fetch_dash_ads_json("/internal/dash-ads/operational-cache")["ok"])
+            self.assertEqual(fetch.call_args.kwargs["timeout"], 45)
+            self.assertTrue(app._fetch_dash_ads_json("/internal/dash-ads/account-metrics")["ok"])
+            self.assertEqual(fetch.call_args.kwargs["timeout"], 18)
+
     def test_transport_timeout_keeps_explicit_cause(self):
         with patch.dict(app.os.environ, {"DASH_ADS_INTERNAL_SECRET": "test-secret"}), patch.object(
             app, "urlopen", side_effect=URLError(TimeoutError("timed out"))

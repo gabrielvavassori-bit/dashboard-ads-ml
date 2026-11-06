@@ -1691,6 +1691,132 @@ class HTTPRouteTests(unittest.TestCase):
         )
         raised.exception.close()
 
+    def test_consolidated_route_is_account_scoped_and_admin_can_open_it(self):
+        user_id, cookie = self._login_cookie("consolidated-owner@example.com")
+        db.set_user_ml_slot_limit(user_id, 2)
+        first_id = db.upsert_user_ml_link(user_id, client_id="owner-a", nickname="Conta A", slot_number=1)
+        second_id = db.upsert_user_ml_link(user_id, client_id="owner-b", nickname="Conta B", slot_number=2)
+        other_id, _ = self._login_cookie("consolidated-other@example.com")
+        foreign_id = db.upsert_user_ml_link(other_id, client_id="foreign", nickname="Alheia", slot_number=1)
+        mock_data = {
+            "meta": {"period": {}, "onlineMode": {"complete": True, "periodMatch": True}},
+            "kpis": {"revenue": 100, "investment": 10, "adsRevenue": 20, "units": 1,
+                     "tacosBaseRevenue": 100},
+            "accountDailySeries": [], "items": [],
+        }
+        with patch.object(app, "_build_online_dashboard_data", return_value=(mock_data, "")) as build:
+            request = Request(f"{self.base_url}/online/consolidado?account_id={first_id}&account_id={second_id}",
+                              headers={"Cookie": cookie})
+            with urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8")
+            self.assertEqual(response.status, 200)
+            self.assertIn("Conta A", body)
+            self.assertIn("Conta B", body)
+            self.assertIn("Visão incompleta", body)
+            self.assertEqual(build.call_count, 2)
+            self.assertEqual({call.args[0] for call in build.call_args_list}, {"owner-a", "owner-b"})
+            forbidden = Request(f"{self.base_url}/online/consolidado?account_id={foreign_id}",
+                                headers={"Cookie": cookie})
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(forbidden, timeout=5)
+            self.assertEqual(raised.exception.code, 403)
+            raised.exception.close()
+            self.assertEqual(build.call_count, 2)
+        request = Request(
+            f"{self.base_url}/admin/users/{user_id}/impersonate",
+            data=urlencode({"return_to": "/online/consolidado"}).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded", "Cookie": self._admin_cookie()},
+            method="POST",
+        )
+        with self.assertRaises(HTTPError) as raised:
+            self._no_redirect_opener().open(request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        self.assertEqual(raised.exception.headers.get("Location"), "/online/consolidado")
+        raised.exception.close()
+
+    def test_consolidated_route_renders_totals_chart_and_account_identity(self):
+        user_id, cookie = self._login_cookie("consolidated-chart@example.com")
+        db.set_user_ml_slot_limit(user_id, 2)
+        first_id = db.upsert_user_ml_link(user_id, client_id="chart-a", nickname="Loja A", slot_number=1)
+        second_id = db.upsert_user_ml_link(user_id, client_id="chart-b", nickname="Loja B", slot_number=2)
+
+        def complete_dashboard(client, **kwargs):
+            start, end = kwargs["date_from"], kwargs["date_to"]
+            cursor = date.fromisoformat(start)
+            last = date.fromisoformat(end)
+            multiplier = 1 if client == "chart-a" else 3
+            days = (last - cursor).days + 1
+            daily = []
+            while cursor <= last:
+                daily.append({"date": cursor.isoformat(), "revenue": 100 * multiplier / days,
+                              "investment": 10 * multiplier / days,
+                              "adsRevenue": 20 * multiplier / days, "units": 1 / days,
+                              "partial": False})
+                cursor += timedelta(days=1)
+            return ({
+                "meta": {"period": {"dateFrom": start, "dateTo": end},
+                         "onlineMode": {"complete": True, "periodMatch": True}},
+                "kpis": {"revenue": 100 * multiplier, "investment": 10 * multiplier,
+                         "adsRevenue": 20 * multiplier, "units": 1,
+                         "tacosBaseRevenue": 100 * multiplier},
+                "accountDailySeries": daily,
+                "items": [{"code": f"MLB{multiplier}", "sku": "SKU-IGUAL", "title": "Produto",
+                           "totalRevenue": 100 * multiplier, "investment": 10 * multiplier,
+                           "units": 1, "orders": 1}],
+            }, "")
+
+        with patch.object(app, "_build_online_dashboard_data", side_effect=complete_dashboard) as build:
+            request = Request(f"{self.base_url}/online/consolidado?account_id={first_id}&account_id={second_id}&view=sku",
+                              headers={"Cookie": cookie})
+            with urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8")
+            self.assertEqual(response.status, 200)
+            self.assertEqual(build.call_count, 2)
+            self.assertIn("R$ 400,00", body)
+            self.assertIn("10,00%", body)
+            self.assertIn("Desempenho diário das contas", body)
+            self.assertIn("Loja A", body)
+            self.assertIn("Loja B", body)
+            self.assertNotIn("Gráfico N/D", body)
+
+    def test_consolidated_comparison_is_scoped_and_requires_exact_complete_period(self):
+        user_id, cookie = self._login_cookie("consolidated-comparison@example.com")
+        own_id = db.upsert_user_ml_link(user_id, client_id="compare-owned", nickname="Própria", slot_number=1)
+        other_id, _ = self._login_cookie("consolidated-comparison-other@example.com")
+        foreign_id = db.upsert_user_ml_link(other_id, client_id="compare-foreign", nickname="Alheia", slot_number=1)
+        period = app._resolve_online_period(mode="30d", compare="previous")
+        previous_period = period["comparePeriod"]
+        start = date.fromisoformat(previous_period["dateFrom"])
+        end = date.fromisoformat(previous_period["dateTo"])
+        rows = []
+        while start <= end:
+            rows.append({"date": start.isoformat(), "partial": False, "visits": 10})
+            start += timedelta(days=1)
+        complete = {"meta": {"period": {"dateFrom": previous_period["dateFrom"],
+                                        "dateTo": previous_period["dateTo"]}},
+                    "kpis": {"revenue": 300, "investment": 30, "adsRevenue": 60, "units": 3},
+                    "accountDailySeries": rows, "items": [{"orders": 2, "visitsCoverageComplete": True}]}
+        query = urlencode({"account_id": own_id, "date_from": period["dateFrom"], "date_to": period["dateTo"]})
+        with patch.object(app, "_previous_period_compact", return_value=complete) as build:
+            request = Request(f"{self.base_url}/online/consolidado/comparison?{query}", headers={"Cookie": cookie})
+            with urlopen(request, timeout=5) as response:
+                payload = json.load(response)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["summary"]["revenue"], 300)
+            self.assertEqual(build.call_count, 1)
+            forbidden = Request(f"{self.base_url}/online/consolidado/comparison?" +
+                                urlencode({"account_id": foreign_id, "date_from": period["dateFrom"],
+                                           "date_to": period["dateTo"]}), headers={"Cookie": cookie})
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(forbidden, timeout=5)
+            self.assertEqual(raised.exception.code, 403)
+            raised.exception.close()
+            self.assertEqual(build.call_count, 1)
+            incomplete = dict(complete, accountDailySeries=rows[:-1])
+            build.return_value = incomplete
+            with urlopen(request, timeout=5) as response:
+                self.assertFalse(json.load(response)["ok"])
+
     def test_admin_impersonation_selects_requested_account_directly(self):
         user_id, _ = self._login_cookie("impersonated-exact@example.com")
         db.set_user_ml_slot_limit(user_id, 2)
