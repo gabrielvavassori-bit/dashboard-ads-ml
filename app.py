@@ -3539,6 +3539,9 @@ class Handler(BaseHTTPRequestHandler):
                 with _online_dashboard_semaphore:
                     previous = _previous_period_compact(
                         (link["client_id"] or "").strip(), (link["advertiser_id"] or "").strip(), previous_period)
+                if previous:
+                    _attach_official_account_metrics(previous, (link["client_id"] or "").strip(),
+                                                     previous_period["dateFrom"], previous_period["dateTo"])
                 rows = (previous or {}).get("accountDailySeries") or []
                 days = (date.fromisoformat(previous_period["dateTo"]) - date.fromisoformat(previous_period["dateFrom"])).days + 1
                 complete = bool(previous and (previous.get("meta") or {}).get("period") == {
@@ -3592,6 +3595,8 @@ class Handler(BaseHTTPRequestHandler):
                             requested_period=period,
                         )
                     if dashboard_data:
+                        _attach_official_account_metrics(dashboard_data, (link["client_id"] or "").strip(),
+                                                         period["dateFrom"], period["dateTo"])
                         projections.append(consolidated_dashboard.project_account(link, dashboard_data))
                         del dashboard_data
                         gc.collect()

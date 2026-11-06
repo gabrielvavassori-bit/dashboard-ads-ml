@@ -21,8 +21,10 @@ def project_account(account, dashboard):
     online = meta.get("onlineMode") or {}
     period = meta.get("period") or {}
     label = account["official_store"] or account["nickname"] or account["client_id"]
-    visits_complete = bool(dashboard.get("items")) and all(
+    official = dashboard.get("accountMetrics") or {}
+    visits_complete = (official.get("visits", {}).get("complete") is True) or (bool(dashboard.get("items")) and all(
         item.get("visitsCoverageComplete") is True for item in dashboard.get("items") or [])
+    )
     return {
         "id": int(account["id"]), "label": str(label), "client_id": str(account["client_id"]),
         "period": (period.get("dateFrom"), period.get("dateTo")),
@@ -33,6 +35,8 @@ def project_account(account, dashboard):
                   "returnsOrdersCount", "returnsOrdersAvailable", "adsNoSales",
                   "investmentNoAdsSales")},
         "visits_complete": visits_complete,
+        "cancelled_orders": (official.get("cancelledOrders", {}).get("total")
+                             if official.get("cancelledOrders", {}).get("complete") is True else None),
         "daily": [{**{key: row.get(key) for key in ("date", *DAILY_FIELDS, "partial")},
                    "visits": row.get("visits") if visits_complete else None}
                   for row in dashboard.get("accountDailySeries") or []],
@@ -59,6 +63,7 @@ def combine(accounts, start, end):
     sums["adsNoSales"] = sum(float(a["kpis"].get("adsNoSales") or 0) for a in accepted)
     sums["investmentNoAdsSales"] = sum(float(a["kpis"].get("investmentNoAdsSales") or 0) for a in accepted)
     sums["visits"] = sum(float(row.get("visits") or 0) for a in accepted for row in a["daily"]) if accepted and all(a.get("visits_complete") for a in accepted) else None
+    sums["cancelledOrders"] = sum(float(a["cancelled_orders"]) for a in accepted) if accepted and all(a.get("cancelled_orders") is not None for a in accepted) else None
     sums["returnsAmount"] = sum(float(a["kpis"].get("returnsAmount") or 0) for a in accepted) if accepted and all(a["kpis"].get("returnsAvailable") is True for a in accepted) else None
     sums["returnsOrdersCount"] = sum(float(a["kpis"].get("returnsOrdersCount") or 0) for a in accepted) if accepted and all(a["kpis"].get("returnsOrdersAvailable") is True for a in accepted) else None
     daily = defaultdict(lambda: {**{key: 0.0 for key in DAILY_FIELDS}, "sources": 0})
@@ -172,7 +177,7 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
             ("PEDIDOS POR ITEM", _number(sums["orders"])),
             ("PREÇO MÉDIO POR UNIDADE", _money(sums["price"])),
             ("VISITAS DOS PRODUTOS", _number(sums["visits"])),
-            ("VENDAS CANCELADAS", "N/D"),
+            ("VENDAS CANCELADAS", _number(sums["cancelledOrders"])),
             ("DEVOLUÇÕES CONFIRMADAS", _money(sums["returnsAmount"])),
             ("PEDIDOS DEVOLVIDOS", _number(sums["returnsOrdersCount"])),
             ("RECEITA ATRIBUÍDA ADS", _money(sums["adsRevenue"])),
