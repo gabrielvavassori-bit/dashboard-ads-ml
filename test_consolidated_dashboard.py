@@ -100,6 +100,30 @@ class ConsolidatedMathTests(unittest.TestCase):
         self.assertIsNone(result["sums"]["visits"])
         self.assertIsNone(result["chart"][0]["visits"])
 
+    def test_official_visits_and_cancellations_require_every_account(self):
+        accounts = []
+        for account_id in (1, 2):
+            data = self.account(account_id, 100, 10)
+            data["accountMetrics"] = {
+                "visits": {"complete": True, "total": 12},
+                "cancelledOrders": {"complete": True, "total": account_id},
+            }
+            for row in data["daily"]:
+                row["visits"] = 6
+            link = {"id": account_id, "client_id": str(account_id),
+                    "official_store": f"Conta {account_id}", "nickname": ""}
+            dashboard = {"meta": {"period": {"dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+                                  "onlineMode": {"complete": True, "periodMatch": True}},
+                         "kpis": data["kpis"], "items": data["items"],
+                         "accountDailySeries": data["daily"], "accountMetrics": data["accountMetrics"]}
+            accounts.append(consolidated.project_account(link, dashboard))
+        result = consolidated.combine(accounts, "2026-10-01", "2026-10-02")
+        self.assertEqual(result["sums"]["visits"], 24)
+        self.assertEqual(result["sums"]["cancelledOrders"], 3)
+        self.assertEqual([row["visits"] for row in result["chart"]], [12, 12])
+        accounts[1]["cancelled_orders"] = None
+        self.assertIsNone(consolidated.combine(accounts, "2026-10-01", "2026-10-02")["sums"]["cancelledOrders"])
+
     def test_account_namespace_applies_to_every_grouping(self):
         items = [
             {"account_id": 1, "account": "A", "code": "MLB1", "sku": "SKU",
