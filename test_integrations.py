@@ -596,8 +596,8 @@ class AdminRecoveryObservabilityTests(unittest.TestCase):
             "ml_link_detail": "conta-um",
             "ml_link_count": 2,
             "ml_links": [
-                {"client_id": "conta-um", "nickname": "Conta Um"},
-                {"client_id": "conta-dois", "official_store": "Conta Dois"},
+                {"id": 1, "client_id": "conta-um", "nickname": "Conta Um"},
+                {"id": 2, "client_id": "conta-dois", "official_store": "Conta Dois"},
             ],
         }]
         payload = {
@@ -627,12 +627,33 @@ class AdminRecoveryObservabilityTests(unittest.TestCase):
         self.assertTrue(view["available"])
         self.assertEqual(view["rows"][0]["account"], "Conta Dois")
         self.assertEqual(view["rows"][0]["coverage_missing_item_days"], 42)
+        self.assertEqual(view["artifact_pending"], 0)
+        self.assertEqual(view["source_pending"], 1)
         rendered = templates.render_admin_users(users, recovery_view=view)
         self.assertIn("Recuperacao de integridade por conta", rendered)
         self.assertIn("Conta Dois", rendered)
+        self.assertIn("Ultima medicao registrada nas tentativas: 42 dias-item", rendered)
+        self.assertIn("<details>", rendered)
+        self.assertIn("Ver detalhes de 1 janela(s)", rendered)
+        self.assertIn("max-height:320px;overflow:auto", rendered)
+        self.assertNotIn("42 dias-item de cobertura pendente", rendered)
         self.assertNotIn("999999", rendered)
         self.assertNotIn("must-not-render", rendered)
         self.assertNotIn("access_token", rendered)
+
+    def test_admin_artifact_pending_is_not_reported_as_current_coverage_gap(self):
+        payload = {"ok": True, "clients": [{"client_id": "cliente", "records": [{
+            "date_from": "2026-09-30", "date_to": "2026-10-29",
+            "coverage_missing_item_days": 5078,
+            "reason": "integrity_repair_period_artifacts_unready",
+        }]}]}
+        with patch.object(app, "_fetch_dash_ads_json", return_value=payload):
+            view = app._admin_integrity_recovery_view([])
+        self.assertEqual(view["artifact_pending"], 1)
+        self.assertEqual(view["source_pending"], 0)
+        rendered = templates.render_admin_users([], recovery_view=view)
+        self.assertIn("1 recorte(s) aguardando certificacao", rendered)
+        self.assertIn("nao representa cobertura atual comprovada", rendered)
 
     def test_admin_recovery_view_fails_closed_when_agent_is_unavailable(self):
         with patch.object(app, "_fetch_dash_ads_json", return_value={"ok": False}):
@@ -1251,8 +1272,8 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(data["kpis"]["adsRevenue"], 100)
         self.assertEqual(data["kpis"]["revenue"], 200)
         self.assertEqual(data["items"][0]["organicRevenue"], 130)
-        self.assertEqual(data["items"][0]["tacosBaseRevenue"], 230)
-        self.assertAlmostEqual(data["items"][0]["tacos"], 10 / 230)
+        self.assertEqual(data["items"][0]["tacosBaseRevenue"], 200)
+        self.assertAlmostEqual(data["items"][0]["tacos"], 10 / 200)
         self.assertEqual(data["kpis"]["organicRevenue"], 130)
         self.assertEqual(data["kpis"]["tacosBaseRevenue"], 200)
         self.assertAlmostEqual(data["kpis"]["tacos"], 0.05)
@@ -1406,8 +1427,8 @@ class HTTPRouteTests(unittest.TestCase):
 
         self.assertEqual(message, "")
         advertised_item = next(item for item in data["items"] if item["code"] == "MLB123")
-        self.assertEqual(advertised_item["tacosBaseRevenue"], 50000)
-        self.assertAlmostEqual(advertised_item["tacos"], 0.04)
+        self.assertEqual(advertised_item["tacosBaseRevenue"], 0)
+        self.assertEqual(advertised_item["tacos"], 0)
         self.assertEqual(data["kpis"]["tacosBaseRevenue"], 50000)
 
     def test_online_dashboard_blocks_partial_sales_before_calculating_kpis(self):
@@ -1536,6 +1557,59 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertGreater(user["expires_at"], int(app.time.time()) + (6 * 86400))
         raised.exception.close()
 
+    def test_admin_demo_is_cookie_only_and_never_returns_real_identifiers(self):
+        user_id, _ = self._login_cookie("demo-privacy@example.com")
+        account_id = db.upsert_user_ml_link(
+            user_id, client_id="lonas-online-real", nickname="LONAS_ONLINE", slot_number=1,
+            advertiser_id="adv-real",
+        )
+        admin_cookie = self._admin_cookie()
+        opener = self._no_redirect_opener()
+        activate = Request(
+            f"{self.base_url}/admin/demo/activate",
+            data=urlencode({"account_id": account_id}).encode("utf-8"),
+            headers={"Content-Type": "application/x-www-form-urlencoded", "Cookie": admin_cookie},
+            method="POST",
+        )
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(activate, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        self.assertEqual(raised.exception.headers.get("Location"), "/online?confirmed=1")
+        demo_cookie = raised.exception.headers.get("Set-Cookie", "").split(";", 1)[0]
+        raised.exception.close()
+        self.assertTrue(demo_cookie.startswith(f"{auth.DEMO_COOKIE}="))
+
+        dashboard = {
+            "kpis": {"clientName": "lonas-online-real", "revenue": 30000, "investment": 800},
+            "meta": {"onlineMode": {"enabled": True, "onlinePeriod": {"dateFrom": "2026-09-01", "dateTo": "2026-09-07"}}},
+            "items": [{"sku": "LAZ-5X4", "code": "MLB5913675930", "title": "Lona Real", "thumbnailUrl": "https://real.example/image.jpg", "totalRevenue": 30000, "investment": 800}],
+            "onlineBeta": {"enabled": True, "client": "lonas-online-real", "latest": {"secret": "not-for-browser"}},
+        }
+        with patch.object(app, "_build_online_dashboard_data", return_value=(dashboard, "")):
+            with urlopen(Request(f"{self.base_url}/online?confirmed=1", headers={"Cookie": demo_cookie}), timeout=5) as response:
+                body = response.read().decode("utf-8")
+            app._build_online_dashboard_data.assert_called_once()
+            args, kwargs = app._build_online_dashboard_data.call_args
+        self.assertEqual(args[0], "lonas-online-real")
+        self.assertEqual(kwargs["advertiser_id"], "adv-real")
+        self.assertIn("MODO DEMO ATIVO", body)
+        self.assertNotIn("lonas-online-real", body)
+        self.assertNotIn("LAZ-5X4", body)
+        self.assertNotIn("MLB5913675930", body)
+        self.assertNotIn("real.example", body)
+        self.assertIn("SKU DEMO 001", body)
+
+        deactivate = Request(
+            f"{self.base_url}/admin/demo/deactivate", data=b"",
+            headers={"Cookie": f"{admin_cookie}; {demo_cookie}"}, method="POST",
+        )
+        with self.assertRaises(HTTPError) as cleared:
+            opener.open(deactivate, timeout=5)
+        self.assertEqual(cleared.exception.code, 302)
+        self.assertEqual(cleared.exception.headers.get("Location"), "/admin?info=Modo%20Demo%20desativado")
+        self.assertIn(f"{auth.DEMO_COOKIE}=;", "\n".join(cleared.exception.headers.get_all("Set-Cookie") or []))
+        cleared.exception.close()
+
     def test_admin_can_impersonate_client_without_ending_client_session(self):
         user_id, client_cookie = self._login_cookie("impersonated-client@example.com")
         account_id = db.upsert_user_ml_link(
@@ -1616,6 +1690,31 @@ class HTTPRouteTests(unittest.TestCase):
             "/contas?return_to=%2Finteligencia-vendas",
         )
         raised.exception.close()
+
+    def test_admin_impersonation_selects_requested_account_directly(self):
+        user_id, _ = self._login_cookie("impersonated-exact@example.com")
+        db.set_user_ml_slot_limit(user_id, 2)
+        first_id = db.upsert_user_ml_link(user_id, client_id="charme", nickname="Charme", slot_number=1)
+        lima_id = db.upsert_user_ml_link(user_id, client_id="lima-shop-premium-0884", nickname="Lima Shop", slot_number=2)
+        request = Request(
+            f"{self.base_url}/admin/users/{user_id}/impersonate",
+            data=urlencode({"account_id": str(lima_id), "return_to": "/online?confirmed=1"}).encode("utf-8"),
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cookie": self._admin_cookie(),
+            },
+            method="POST",
+        )
+        opener = self._no_redirect_opener()
+        with self.assertRaises(HTTPError) as raised:
+            opener.open(request, timeout=5)
+        self.assertEqual(raised.exception.code, 302)
+        self.assertEqual(raised.exception.headers.get("Location"), "/online?confirmed=1")
+        set_cookie = raised.exception.headers.get("Set-Cookie", "")
+        raised.exception.close()
+        token = set_cookie.split(";", 1)[0].split("=", 1)[1]
+        self.assertNotEqual(first_id, lima_id)
+        self.assertEqual(db.get_session(token)["selected_ml_account_id"], lima_id)
 
     def test_admin_can_allow_and_block_beta_without_changing_real_access(self):
         user_id = db.upsert_manual_user(

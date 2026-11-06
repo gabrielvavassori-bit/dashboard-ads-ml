@@ -40,6 +40,7 @@ Variaveis de ambiente:
 """
 import html as _html
 import calendar
+import copy
 import gzip
 import hashlib
 import hmac
@@ -81,6 +82,7 @@ from gerar_dashboard_ads_ml import (
     decision,
     mark_condition_context,
     mark_possible_catalog,
+    anonymize_dashboard_data,
     render_dashboard,
 )
 
@@ -200,7 +202,7 @@ def _parse_multipart(handler):
     return files, fields
 
 
-def _send_html(handler, html: str, status: int = 200, set_cookie: str = None):
+def _send_html(handler, html: str, status: int = 200, set_cookie: str | list[str] | tuple[str, ...] | None = None):
     html = _inject_admin_impersonation_banner(handler, html)
     data = html.encode("utf-8")
     handler.send_response(status)
@@ -210,18 +212,20 @@ def _send_html(handler, html: str, status: int = 200, set_cookie: str = None):
     handler.send_header("X-Content-Type-Options", "nosniff")
     handler.send_header("X-Frame-Options", "SAMEORIGIN")
     handler.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
-    if set_cookie:
-        handler.send_header("Set-Cookie", set_cookie)
+    for cookie in (set_cookie if isinstance(set_cookie, (list, tuple)) else [set_cookie]):
+        if cookie:
+            handler.send_header("Set-Cookie", cookie)
     handler.send_header("Content-Length", str(len(data)))
     handler.end_headers()
     handler.wfile.write(data)
 
 
-def _redirect(handler, location: str, set_cookie: str = None, status: int = 302):
+def _redirect(handler, location: str, set_cookie: str | list[str] | tuple[str, ...] | None = None, status: int = 302):
     handler.send_response(status)
     handler.send_header("Location", location)
-    if set_cookie:
-        handler.send_header("Set-Cookie", set_cookie)
+    for cookie in (set_cookie if isinstance(set_cookie, (list, tuple)) else [set_cookie]):
+        if cookie:
+            handler.send_header("Set-Cookie", cookie)
     handler.send_header("Content-Length", "0")
     handler.end_headers()
 
@@ -255,12 +259,25 @@ def _inject_admin_impersonation_banner(handler, page_html: str) -> str:
     client = _html.escape(session["name"] or session["email"] or "cliente")
     email = _html.escape(session["email"] or "")
     banner = f"""
-    <div style="position:sticky;top:0;z-index:2147483647;background:#fff3cd;border-bottom:1px solid #e5bd55;color:#513c00;padding:10px 18px;display:flex;gap:14px;align-items:center;justify-content:center;font:600 14px Arial,sans-serif">
+    <div id="admin-impersonation-banner" class="admin-impersonation-banner" style="position:sticky;top:0;z-index:2147483647;background:#fff3cd;border-bottom:1px solid #e5bd55;color:#513c00;padding:10px 18px;display:flex;gap:14px;align-items:center;justify-content:center;font:600 14px Arial,sans-serif">
       <span>Acesso administrativo temporario: <strong>{client}</strong> ({email})</span>
       <form method="post" action="/admin/stop-impersonation" style="margin:0">
         <button type="submit" style="border:0;border-radius:8px;background:#10243b;color:#fff;padding:8px 12px;font-weight:700;cursor:pointer">Voltar ao painel admin</button>
       </form>
     </div>
+    <script>
+      (() => {{
+        const banner = document.getElementById('admin-impersonation-banner');
+        if (!banner) return;
+        const updateOffset = () => document.documentElement.style.setProperty(
+          '--admin-impersonation-banner-height',
+          `${{Math.ceil(banner.getBoundingClientRect().height)}}px`
+        );
+        updateOffset();
+        window.addEventListener('resize', updateOffset, {{ passive: true }});
+        if ('ResizeObserver' in window) new ResizeObserver(updateOffset).observe(banner);
+      }})();
+    </script>
     """
     lower = page_html.lower()
     body_start = lower.find("<body")
@@ -269,6 +286,15 @@ def _inject_admin_impersonation_banner(handler, page_html: str) -> str:
         if body_end >= 0:
             return page_html[:body_end + 1] + banner + page_html[body_end + 1:]
     return banner + page_html
+
+
+# Séries diárias por anúncio crescem com o catálogo (Lonas: visits-daily 8,6 MB em 06/10/2026
+# com 1.054 anúncios × 30 dias) e eram cortadas no limite antigo de 8 MB.
+_DASH_ADS_LARGE_RESPONSE_PATHS = ("/order-financials", "/visits-daily", "/sales-daily", "/ads-daily")
+
+
+def _dash_ads_max_response_bytes(path: str) -> int:
+    return 64_000_000 if path.endswith(_DASH_ADS_LARGE_RESPONSE_PATHS) else 8_000_000
 
 
 def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
@@ -289,19 +315,31 @@ def _fetch_dash_ads_json(path: str, params: dict | None = None) -> dict:
         method="GET",
     )
     try:
-        max_response_bytes = 64_000_000 if path.endswith('/order-financials') else 8_000_000
+        max_response_bytes = _dash_ads_max_response_bytes(path)
         with urlopen(req, timeout=18) as response:
-            raw = response.read(max_response_bytes)
+            # +1 byte: distingue resposta que coube exatamente de resposta cortada.
+            raw = response.read(max_response_bytes + 1)
             status = response.status
     except HTTPError as exc:
-        raw = exc.read(max_response_bytes)
+        raw = exc.read(max_response_bytes + 1)
         status = exc.code
     except (URLError, TimeoutError) as exc:
+        timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError) or "timed out" in str(exc).lower()
+        return {
+            "ok": False,
+            "http_status": 504 if timed_out else 502,
+            "message": "Tempo limite da consulta ao agente-ml excedido." if timed_out else "Falha ao consultar agente-ml.",
+            "error": "agent_timeout" if timed_out else exc.__class__.__name__,
+        }
+    if len(raw) > max_response_bytes:
+        # Nunca interpretar uma resposta cortada: vira erro explícito (N/D), não "formato inválido".
         return {
             "ok": False,
             "http_status": 502,
-            "message": "Falha ao consultar agente-ml.",
-            "error": exc.__class__.__name__,
+            "error": "agent_response_too_large",
+            "message": "Resposta do agente acima do limite de leitura.",
+            "limit_bytes": max_response_bytes,
+            "token_exposed": False,
         }
     try:
         payload = json.loads(raw.decode("utf-8", errors="replace"))
@@ -362,6 +400,8 @@ def _admin_integrity_recovery_view(users: list[dict]) -> dict:
         "available": True,
         "rows": rows,
         "stalled": sum(1 for row in rows if row["stalled"]),
+        "artifact_pending": sum(1 for row in rows if row["reason"] == "integrity_repair_period_artifacts_unready"),
+        "source_pending": sum(1 for row in rows if row["reason"] != "integrity_repair_period_artifacts_unready"),
         "coverage_missing_item_days": sum(row["coverage_missing_item_days"] for row in rows),
     }
 
@@ -837,6 +877,111 @@ def _deduplicate_online_ads_rows(ads_rows: list) -> tuple[list, dict]:
     }
 
 
+def _daily_series_by_item(daily_sales_rows, daily_ads_rows, daily_visits_rows, daily_partial):
+    """Série diária por anúncio a partir das linhas do agente (página e detalhe sob demanda usam a mesma)."""
+    daily_by_item_date: dict[str, dict[str, dict]] = {}
+    for daily_raw in daily_sales_rows:
+        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
+        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
+        if not daily_code or not snapshot_date:
+            continue
+        daily_by_item_date.setdefault(daily_code, {})[snapshot_date] = {
+            "date": snapshot_date,
+            "salesPresent": True,
+            "adsPresent": False,
+            "orders": _number(daily_raw.get("orders_count")),
+            "units": _number(daily_raw.get("units_total")),
+            "revenue": _number(daily_raw.get("revenue_total")),
+            "lastSaleDate": str(daily_raw.get("last_sale_date") or "").strip(),
+            "lastSalePrice": _number(daily_raw.get("last_price")),
+            "adsRevenue": 0.0,
+            "adsDirectRevenue": 0.0,
+            "adsIndirectRevenue": 0.0,
+            "investment": 0.0,
+            "impressions": 0.0,
+            "clicks": 0.0,
+            "adsUnits": 0.0,
+            "visits": 0.0,
+        }
+    for daily_raw in daily_ads_rows:
+        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
+        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
+        if not daily_code or not snapshot_date:
+            continue
+        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
+            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
+            "lastSaleDate": "", "lastSalePrice": 0.0,
+        })
+        daily.update({
+            "adsPresent": True,
+            "adsRevenue": _number(daily_raw.get("total_amount")),
+            "adsDirectRevenue": _number(daily_raw.get("direct_amount")),
+            "adsIndirectRevenue": _number(daily_raw.get("indirect_amount")),
+            "investment": _number(daily_raw.get("cost")),
+            "impressions": _number(daily_raw.get("prints")),
+            "clicks": _number(daily_raw.get("clicks")),
+            "adsUnits": _number(daily_raw.get("units_quantity")),
+        })
+    for daily_raw in daily_visits_rows:
+        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
+        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
+        if not daily_code or not snapshot_date:
+            continue
+        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
+            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
+            "lastSaleDate": "", "lastSalePrice": 0.0,
+        })
+        daily["visits"] = _number(daily_raw.get("visits_total"))
+    daily_series_by_item: dict[str, list[dict]] = {}
+    for daily_code, daily_by_date in daily_by_item_date.items():
+        daily_series = []
+        for daily in daily_by_date.values():
+            daily["partial"] = daily_partial
+            daily.setdefault("salesPresent", False)
+            # Attribution is not additional turnover. Use the same base as the KPI.
+            daily["tacosBaseRevenue"] = _number(daily.get("revenue"))
+            daily_series.append(daily)
+        daily_series_by_item[daily_code] = sorted(daily_series, key=lambda row: row["date"])
+    return daily_by_item_date, daily_series_by_item
+
+
+_ITEM_DAILY_MAX_CODES = 50
+
+
+def _strip_item_daily_series(data: dict) -> None:
+    """Página normal: histórico diário por anúncio sai do HTML e é buscado ao abrir o detalhe.
+
+    Lonas (06/10/2026): 14 MB dos 37 MB da página eram ``items[].dailySeries`` que só o
+    detalhe de um anúncio usa. Gráfico da conta e comparações já foram calculados antes.
+    """
+    def strip(node):
+        if isinstance(node, dict):
+            node.pop("dailySeries", None)
+            node.pop("dailySeriesItemIndex", None)
+            for child in node.get("children") or []:
+                strip(child)
+    for item in data.get("items") or []:
+        strip(item)
+    # Filhos dos agrupamentos SKU/Campanha também (falha da REGRESSION-035 original:
+    # o detalhe nessas visões mostrava série vazia em vez de carregar).
+    for key in ("skuAds", "campaignAds"):
+        for group in data.get(key) or []:
+            strip(group)
+    data.setdefault("meta", {})["itemDailyOnDemand"] = True
+
+
+def _item_daily_payload(client: str, codes: list[str], date_from: str, date_to: str, partial: bool) -> dict:
+    ids = ",".join(codes)
+    sales, _sc, sales_err = _sales_intelligence_fetch_daily_sales(client, date_from, date_to, ids)
+    ads, _ac, ads_err = _sales_intelligence_fetch_daily_ads(client, date_from, date_to, ids)
+    visits, _vc, _visits_err = _sales_intelligence_fetch_daily_visits(client, date_from, date_to, ids)
+    if sales_err or ads_err:
+        # Nunca devolve série financeira incompleta como se fosse zero: o detalhe mostra indisponível.
+        return {"ok": False, "error": sales_err or ads_err}
+    _by_date, series = _daily_series_by_item(sales, ads, visits, partial)
+    return {"ok": True, "series": {code: series.get(code, []) for code in codes}}
+
+
 def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from: str = "", date_to: str = "", requested_period: dict | None = None) -> tuple[dict | None, str]:
     """Converte apenas o cache autenticado do agente em dados para o Dash ADS."""
     requested_at = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -853,6 +998,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     )
     if not latest_payload:
         return None, cache_error
+
+    daily_partial = bool(latest_payload.get("operational_partial")) and not latest_payload.get("chart_period_verified", False)
 
     latest = latest_payload.get("latest") if isinstance(latest_payload.get("latest"), dict) else {}
     ads = latest_payload.get("ads") if isinstance(latest_payload.get("ads"), dict) else {}
@@ -907,7 +1054,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "Dados financeiros não foram exibidos. A receita atribuída por Ads supera o faturamento bruto "
             "do cache completo; a janela precisa ser reparada na origem. Estado da reparação: blocked."
         )
-    daily_sales_result = (latest_payload.get("daily_sales", []), {}, "partial_operational_cache") if latest_payload.get("operational_partial") else _sales_intelligence_fetch_daily_sales(
+    daily_sales_result = (latest_payload.get("daily_sales", []), {}, "partial_operational_cache") if daily_partial else _sales_intelligence_fetch_daily_sales(
         client,
         latest_date_from,
         latest_date_to,
@@ -917,12 +1064,10 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         daily_sales_coverage_days = {}
     else:
         daily_sales_rows, daily_sales_coverage_days, daily_sales_error = daily_sales_result
-    daily_visits_rows, daily_visits_coverage_by_item, daily_visits_error = (
-        ([], {}, "partial_operational_cache")
-        if latest_payload.get("operational_partial")
-        else _sales_intelligence_fetch_daily_visits(client, latest_date_from, latest_date_to)
-    )
-    daily_ads_rows, daily_ads_coverage_days, daily_ads_error = (latest_payload.get("daily_ads", []), {}, "partial_operational_cache") if latest_payload.get("operational_partial") else _sales_intelligence_fetch_daily_ads(
+    # Listing visits are independent facts; incomplete Ads cannot suppress them.
+    daily_visits_rows, daily_visits_coverage_by_item, daily_visits_error = _sales_intelligence_fetch_daily_visits(
+        client, latest_date_from, latest_date_to)
+    daily_ads_rows, daily_ads_coverage_days, daily_ads_error = (latest_payload.get("daily_ads", []), {}, "partial_operational_cache") if daily_partial else _sales_intelligence_fetch_daily_ads(
         client,
         latest_date_from,
         latest_date_to,
@@ -947,71 +1092,15 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         )
         if issue
     ]
-    if daily_coverage_issues and not latest_payload.get("operational_partial"):
+    if daily_coverage_issues and not daily_partial:
         return None, (
             f"{ONLINE_CACHE_INTEGRITY_PREFIX}Período solicitado: {requested_from or 'sem data'} a {requested_to or 'sem data'}. "
             f"Dados financeiros não foram exibidos. {'; '.join(daily_coverage_issues)}. "
             "Estado da reparação: blocked."
         )
-    daily_by_item_date: dict[str, dict[str, dict]] = {}
-    for daily_raw in daily_sales_rows:
-        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
-        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
-        if not daily_code or not snapshot_date:
-            continue
-        daily_by_item_date.setdefault(daily_code, {})[snapshot_date] = {
-            "date": snapshot_date,
-            "orders": _number(daily_raw.get("orders_count")),
-            "units": _number(daily_raw.get("units_total")),
-            "revenue": _number(daily_raw.get("revenue_total")),
-            "lastSaleDate": str(daily_raw.get("last_sale_date") or "").strip(),
-            "lastSalePrice": _number(daily_raw.get("last_price")),
-            "adsRevenue": 0.0,
-            "adsDirectRevenue": 0.0,
-            "adsIndirectRevenue": 0.0,
-            "investment": 0.0,
-            "impressions": 0.0,
-            "clicks": 0.0,
-            "adsUnits": 0.0,
-            "visits": 0.0,
-        }
-    for daily_raw in daily_ads_rows:
-        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
-        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
-        if not daily_code or not snapshot_date:
-            continue
-        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
-            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
-            "lastSaleDate": "", "lastSalePrice": 0.0,
-        })
-        daily.update({
-            "adsRevenue": _number(daily_raw.get("total_amount")),
-            "adsDirectRevenue": _number(daily_raw.get("direct_amount")),
-            "adsIndirectRevenue": _number(daily_raw.get("indirect_amount")),
-            "investment": _number(daily_raw.get("cost")),
-            "impressions": _number(daily_raw.get("prints")),
-            "clicks": _number(daily_raw.get("clicks")),
-            "adsUnits": _number(daily_raw.get("units_quantity")),
-        })
-    for daily_raw in daily_visits_rows:
-        daily_code = _normalize_mlb_code(daily_raw.get("item_id") or daily_raw.get("id"))
-        snapshot_date = str(daily_raw.get("snapshot_date") or daily_raw.get("date") or "").strip()
-        if not daily_code or not snapshot_date:
-            continue
-        daily = daily_by_item_date.setdefault(daily_code, {}).setdefault(snapshot_date, {
-            "date": snapshot_date, "orders": 0.0, "units": 0.0, "revenue": 0.0,
-            "lastSaleDate": "", "lastSalePrice": 0.0,
-        })
-        daily["visits"] = _number(daily_raw.get("visits_total"))
-    daily_series_by_item: dict[str, list[dict]] = {}
-    for daily_code, daily_by_date in daily_by_item_date.items():
-        daily_series = []
-        for daily in daily_by_date.values():
-            daily["tacosBaseRevenue"] = _number(daily.get("revenue")) + max(
-                0.0, _number(daily.get("adsIndirectRevenue"))
-            )
-            daily_series.append(daily)
-        daily_series_by_item[daily_code] = sorted(daily_series, key=lambda row: row["date"])
+    daily_by_item_date, daily_series_by_item = _daily_series_by_item(
+        daily_sales_rows, daily_ads_rows, daily_visits_rows, daily_partial
+    )
     account_daily_by_date: dict[str, dict] = {}
     for daily_by_date in daily_by_item_date.values():
         for daily in daily_by_date.values():
@@ -1020,6 +1109,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 continue
             account_daily = account_daily_by_date.setdefault(snapshot_date, {
                 "date": snapshot_date,
+                "partial": daily_partial,
+                "salesPresent": False,
+                "adsPresent": False,
                 "orders": 0.0,
                 "units": 0.0,
                 "revenue": 0.0,
@@ -1034,6 +1126,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 "visits": 0.0,
                 "priceFallback": 0.0,
             })
+            account_daily["salesPresent"] |= daily.get("salesPresent", False)
+            account_daily["adsPresent"] |= daily.get("adsPresent", False)
             for field in (
                 "orders", "units", "revenue", "adsRevenue", "adsDirectRevenue",
                 "adsIndirectRevenue", "investment", "tacosBaseRevenue", "impressions",
@@ -1042,6 +1136,17 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
                 account_daily[field] += _number(daily.get(field))
             if _number(daily.get("lastSalePrice")) > 0:
                 account_daily["priceFallback"] = _number(daily.get("lastSalePrice"))
+    if daily_partial:
+        cursor = date.fromisoformat(latest_date_from)
+        end = date.fromisoformat(latest_date_to)
+        while cursor <= end:
+            key = cursor.isoformat()
+            account_daily_by_date.setdefault(key, {
+                "date": key, "partial": True, "salesPresent": False, "adsPresent": False,
+                "revenue": 0, "units": 0, "priceFallback": 0, "adsRevenue": 0,
+                "investment": 0, "tacosBaseRevenue": 0,
+            })
+            cursor += timedelta(days=1)
     account_daily_series = []
     for account_daily in sorted(account_daily_by_date.values(), key=lambda row: row["date"]):
         account_daily["price"] = (
@@ -1109,7 +1214,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         impressions = _number(raw.get("prints"))
         clicks = _number(raw.get("clicks"))
         organic_revenue = max(0.0, total_revenue - ads_direct_revenue)
-        tacos_base = organic_revenue + ads_direct_revenue + ads_indirect_revenue
+        tacos_base = total_revenue
         campaign_id = str(raw.get("campaign_id") or "").strip()
         campaign_config = campaign_config_by_id.get(campaign_id, {})
         campaign_observed = set(campaign_config.get("observed_fields") or [])
@@ -1131,6 +1236,31 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             or raw.get("price")
             or raw.get("current_price")
         )
+        # Legacy listings can have several seller SKUs under one MLB. Their
+        # root metadata is refreshed independently of immutable daily facts;
+        # never present an old parent-level quote as a current SKU price.
+        possible_legacy_multisku = bool(
+            not str(raw.get("sku") or "").strip()
+            and not str(raw.get("family_id") or "").strip()
+            and not str(raw.get("user_product_id") or "").strip()
+            and raw.get("legacy_multi_sku") is not False
+        )
+        quote_at = str(raw.get("price_updated_at") or "").strip()
+        quote_fresh = False
+        if possible_legacy_multisku and (raw.get("legacy_multi_sku") is True
+                                         or raw.get("price_source") == "sale_price") and quote_at:
+            try:
+                quote_dt = datetime.fromisoformat(quote_at.replace("Z", "+00:00"))
+                quote_fresh = bool(quote_dt.tzinfo and 0 <=
+                                   (datetime.now(ONLINE_TZ) - quote_dt).total_seconds() <= 7200)
+            except ValueError:
+                pass
+        price_status = ("verified_legacy_multisku" if raw.get("legacy_multi_sku") is True
+                        else "verified_official_quote") if quote_fresh else (
+            "pending_legacy_quote" if possible_legacy_multisku else "ordinary_snapshot"
+        )
+        if possible_legacy_multisku and not quote_fresh:
+            current_price = 0.0
         last_sale_price = _number(sale.get("last_price") or sale.get("lastPrice"))
         last_price = last_sale_price or current_price
         avg_sale_price = (total_revenue / units) if units else last_sale_price
@@ -1156,6 +1286,13 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             fast_shipping = shipping.get("is_fast")
         item = {
             "sku": str(raw.get("sku") or "").strip() or sale_sku,
+            # Vendas são agregadas por MLB. Um SKU vindo apenas da última
+            # venda é referência, não prova de atribuição das unidades a ele.
+            "skuIsReference": not bool(str(raw.get("sku") or "").strip()) and bool(sale_sku),
+            "legacyMultiSku": bool(raw.get("legacy_multi_sku")),
+            "variationSkus": raw.get("variation_skus") if isinstance(raw.get("variation_skus"), list) else [],
+            "priceStatus": price_status,
+            "priceUpdatedAt": quote_at if quote_fresh else "",
             "code": code,
             "title": str(raw.get("title") or "").strip() or sale_title,
             "lastSaleDate": sale_last_date,
@@ -1170,10 +1307,15 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "pricingSignal": pricing_signal,
             "dailySeries": daily_series_by_item.get(code, []),
             "performance7d": {
-                **{k: latest_payload.get("performance_7d", {}).get(k) for k in
+                **{key: latest_payload.get("performance_7d", {}).get(key) for key in
                    ("date_from", "date_to", "previous_to", "current_from")},
                 **latest_payload.get("performance_7d", {}).get("items", {}).get(code, {}),
-            } if latest_payload.get("performance_7d", {}).get("client_id") == client else {},
+            } if (
+                isinstance(latest_payload.get("performance_7d"), dict)
+                and latest_payload["performance_7d"].get("client_id") == client
+                and isinstance(latest_payload["performance_7d"].get("items"), dict)
+                and isinstance(latest_payload["performance_7d"]["items"].get(code, {}), dict)
+            ) else {},
             # Visitas são uma métrica operacional independente: somente
             # habilitamos a comparação quando cada dia do período foi salvo.
             "visitsCoverageComplete": (
@@ -1201,6 +1343,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "adsIndirectRevenue": ads_indirect_revenue,
             "organicRevenue": organic_revenue,
             "tacosBaseRevenue": tacos_base,
+            "tacosDefined": tacos_base > 0,
             "revenueOutsideAds": organic_revenue,
             "adsDependencyRatio": (ads_direct_revenue / total_revenue) if total_revenue else 0.0,
             "outsideAdsRatio": (organic_revenue / total_revenue) if total_revenue else 0.0,
@@ -1265,9 +1408,13 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     apply_abc(items, "totalRevenue", "abcCode")
     apply_abc(sku_ads, "totalRevenue", "abcSku")
     apply_abc(campaign_ads, "totalRevenue", "abcCampaign")
-    sku_abc = {item["sku"]: item["abcSku"] for item in sku_ads}
+    sku_abc = {
+        ("mlb", item["code"]) if item.get("skuIsReference") else ("sku", item["sku"]): item["abcSku"]
+        for item in sku_ads
+    }
     for item in items:
-        item["abcSku"] = sku_abc.get(item.get("sku") or "(sem SKU)", "C")
+        key = ("mlb", item["code"]) if item.get("skuIsReference") else ("sku", item.get("sku") or "(sem SKU)")
+        item["abcSku"] = sku_abc.get(key, "C")
 
     total_revenue = sum(item["totalRevenue"] for item in items)
     total_investment = sum(item["investment"] for item in items)
@@ -1433,6 +1580,134 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         "finishedNoSku": [item for item in items if not item.get("sku")],
         "onlineBeta": {"enabled": True, "client": client, "latest": latest_payload, "summary": {"totalItems": len(items)}, "requestedPeriod": requested_period or {}, "apiPeriod": {"dateFrom": latest_date_from, "dateTo": latest_date_to}, "periodMatch": period_match, "snapshot": snapshot_meta},
     }, ""
+
+
+def _attach_official_account_metrics(data, client, start, end):
+    """Read persisted official counts; opening the dashboard never backfills."""
+    try:
+        payload = _fetch_dash_ads_json('/internal/dash-ads/account-metrics',
+            {'client': client, 'date_from': start, 'date_to': end})
+    except Exception:
+        return
+    if not isinstance(payload, dict) or (payload.get('client_id'), payload.get('date_from'), payload.get('date_to')) != (client,start,end):
+        return
+    from datetime import date, timedelta
+    expected = {(date.fromisoformat(start)+timedelta(days=n)).isoformat()
+                for n in range((date.fromisoformat(end)-date.fromisoformat(start)).days+1)}
+    series = {r['date']: r for r in data.get('accountDailySeries', [])}
+    accepted = {}
+    metrics = payload.get('metrics')
+    if not isinstance(metrics, dict):
+        return
+    for metric in ('visits', 'cancelledOrders'):
+        record = metrics.get(metric, {})
+        if not isinstance(record, dict):
+            continue
+        rows = record.get('rows', [])
+        if record.get('complete') is not True or not isinstance(rows,list):
+            continue
+        if len(rows)!=len(expected) or not all(isinstance(r,dict) for r in rows) or {r.get('date') for r in rows}!=expected:
+            continue
+        values=[r.get('value') for r in rows]
+        if not all(isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v) and v>=0 for v in values):
+            continue
+        if record.get('total') != sum(values):
+            continue
+        accepted[metric]=record
+        for row in rows:
+            day=series.setdefault(row['date'], {'date':row['date'], 'partial':True, 'salesPresent':False, 'adsPresent':False})
+            day[metric]=row['value']
+    data['accountMetrics']=accepted
+    data['accountDailySeries']=[series[d] for d in sorted(series)]
+
+
+_PREVIOUS_PERIOD_CACHE: dict = {}
+_PREVIOUS_PERIOD_CACHE_TTL_SECONDS = 1800
+_PREVIOUS_PERIOD_CACHE_MAX = 64
+
+
+def _previous_period_compact(client, advertiser_id, selected):
+    """Resumo do período anterior para a comparação, sem segurar a página inteira.
+
+    Montar o dashboard completo do período anterior a cada acesso dobrava tempo e
+    memória da página (Passo a Passo, 06/10/2026: 15–37 s, pico 485/512 MB) e a
+    conexão caía antes da entrega. Só os campos lidos por ``summary`` e pela
+    verificação de cobertura são mantidos; resumos completos expiram em 30 min.
+    Resumos parciais são retornados sem cache para permitir a recuperação na
+    próxima consulta, depois que a fonte publicar a cobertura que faltava.
+    """
+    import time as _time
+    key = (client, advertiser_id or "", selected['dateFrom'], selected['dateTo'])
+    hit = _PREVIOUS_PERIOD_CACHE.get(key)
+    if hit and hit[0] > _time.time():
+        return copy.deepcopy(hit[1])
+    previous, _error = _build_online_dashboard_data(
+        client, advertiser_id, selected['dateFrom'], selected['dateTo']
+    )
+    if not previous:
+        return previous
+    compact = {
+        'meta': {'period': (previous.get('meta') or {}).get('period')},
+        'kpis': previous.get('kpis') or {},
+        'items': [{'orders': x.get('orders', 0),
+                   'visitsCoverageComplete': x.get('visitsCoverageComplete')}
+                  for x in previous.get('items') or []],
+        'accountDailySeries': [{'date': r.get('date'), 'partial': r.get('partial', True),
+                                'visits': r.get('visits', 0)}
+                               for r in previous.get('accountDailySeries') or []],
+    }
+    del previous
+    series = compact['accountDailySeries']
+    if series and not any(row['partial'] for row in series):
+        if len(_PREVIOUS_PERIOD_CACHE) >= _PREVIOUS_PERIOD_CACHE_MAX:
+            _PREVIOUS_PERIOD_CACHE.pop(next(iter(_PREVIOUS_PERIOD_CACHE)))
+        _PREVIOUS_PERIOD_CACHE[key] = (_time.time() + _PREVIOUS_PERIOD_CACHE_TTL_SECONDS, compact)
+    return copy.deepcopy(compact)
+
+
+def _attach_account_period_comparison(data, client, advertiser_id, period):
+    from period_comparison import summary, compare
+    current_period = data.get('meta', {}).get('period', {})
+    if current_period.get('dateFrom') and current_period.get('dateTo'):
+        _attach_official_account_metrics(data, client, current_period['dateFrom'], current_period['dateTo'])
+    data['periodSummary'] = summary(data)
+    selected = period.get('comparePeriod')
+    if not selected or period.get('compareMode') == 'none':
+        data['periodComparison'] = {'enabled': False}
+        return
+    current_financial_verified = bool(data.get('accountDailySeries')) and not any(
+        row.get('partial', True) for row in data['accountDailySeries'])
+    if current_financial_verified:
+        previous = _previous_period_compact(client, advertiser_id, selected)
+    else:
+        # Financial comparison cannot be certified from a partial current
+        # window. Do not allocate a second full product/history dashboard just
+        # to discard it; independent official metrics need only their own rows.
+        previous = {'meta': {'period': {'dateFrom': selected['dateFrom'],
+                                      'dateTo': selected['dateTo']}}}
+    exact = bool(previous and previous.get('meta', {}).get('period') == {
+        'dateFrom': selected['dateFrom'], 'dateTo': selected['dateTo']})
+    current_exact = data.get('meta', {}).get('period') == {
+        'dateFrom': period['dateFrom'], 'dateTo': period['dateTo']}
+    # A failed financial reader must not suppress independently certified
+    # visits/cancellations for the requested comparison window.
+    official_previous = previous if exact else {'meta': {'period': {
+        'dateFrom': selected['dateFrom'], 'dateTo': selected['dateTo']}}}
+    _attach_official_account_metrics(official_previous, client, selected['dateFrom'], selected['dateTo'])
+    # Use positive daily certification, never a global health status or an old window.
+    verified = bool(exact and current_exact and all(
+        d.get('accountDailySeries') and not any(r.get('partial', True) for r in d['accountDailySeries'])
+        for d in (data, previous)))
+    verified_metrics = {key: verified for key in data['periodSummary']}
+    for key in ('visits','cancelledOrders'):
+        verified_metrics[key] = bool(current_exact and all(
+            d.get('accountMetrics', {}).get(key, {}).get('complete') is True for d in (data,official_previous)))
+    data['periodComparison'] = {
+        'enabled': True, 'period': selected,
+        'metrics': compare(data['periodSummary'], summary(official_previous), verified=verified_metrics),
+        'available': verified,
+        'reason': '' if verified else 'Comparacao N/D: cobertura dos dois periodos ainda nao comprovada.',
+    }
 
 
 def _build_online_beta_payload(data: dict, client: str, advertiser_id: str = "") -> dict:
@@ -1627,6 +1902,22 @@ def _current_admin(handler):
     cookies = _get_cookies(handler)
     token = cookies.get(auth.ADMIN_COOKIE)
     return auth.get_admin_session(token), token
+
+
+def _current_demo_account(handler):
+    """Returns the selected account from the signed transient Demo cookie.
+
+    This deliberately does not create a user session or mutate an account row.
+    A malformed or stale cookie is reported separately so the caller can fail
+    closed instead of falling back to a real dashboard.
+    """
+    token = _get_cookies(handler).get(auth.DEMO_COOKIE)
+    if not token:
+        return None, False
+    context = auth.get_demo_context(token)
+    if not context:
+        return None, True
+    return db.get_active_ml_account_by_id(context["account_id"]), True
 
 
 def _beta_access_allowed(user) -> bool:
@@ -1936,17 +2227,80 @@ def _online_cache_integrity_state(
     return {"ready": True, "pending": False, "terminal": False, "message": ""}
 
 
+def _dash_ads_operational_matches_committed(payload: dict, committed: dict) -> bool:
+    """Certify operational values only when every financial row matches the commit."""
+    if not all(isinstance(source.get(section), dict)
+               for source in (payload, committed) for section in ("sales", "ads")):
+        return False
+    operational_sales = payload["sales"].get("items")
+    committed_sales = committed["sales"].get("items")
+    operational_ads = payload["ads"].get("items")
+    committed_ads = committed["ads"].get("items")
+    if not all((isinstance(operational_sales, dict), isinstance(committed_sales, dict),
+                isinstance(operational_ads, list), isinstance(committed_ads, list))):
+        return False
+
+    def sales_signature(rows):
+        signature = {}
+        for code, row in rows.items():
+            item_id = _normalize_mlb_code(code)
+            if not item_id or not isinstance(row, dict) or item_id in signature:
+                return None
+            values = tuple(round(_number(row.get(field)), 4) for field in
+                ("orders_count", "units_total", "revenue_total"))
+            if values != (0, 0, 0):
+                signature[item_id] = values
+        return signature
+
+    operational_sales_signature = sales_signature(operational_sales)
+    committed_sales_signature = sales_signature(committed_sales)
+    if (operational_sales_signature is None or committed_sales_signature is None
+            or operational_sales_signature != committed_sales_signature):
+        return False
+
+    fields = ("prints", "clicks", "cost", "total_amount", "direct_amount",
+              "indirect_amount", "units_quantity")
+
+    def ads_signature(rows):
+        grouped = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                return None
+            code = _normalize_mlb_code(row.get("item_id") or row.get("id"))
+            if not code:
+                return None
+            key = (code, str(row.get("campaign_id") or "").strip())
+            totals = grouped.setdefault(key, [0.0] * len(fields))
+            for index, field in enumerate(fields):
+                totals[index] += _number(row.get(field))
+        return {key: tuple(round(value, 4) for value in totals)
+                for key, totals in grouped.items()}
+
+    operational_ads_signature = ads_signature(operational_ads)
+    committed_ads_signature = ads_signature(committed_ads)
+    return (operational_ads_signature is not None and committed_ads_signature is not None
+            and operational_ads_signature == committed_ads_signature)
+
+
 def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_from: str, date_to: str) -> tuple[dict | None, str]:
     """Main Ads may display explicitly partial data, never another account/window."""
     payload = _fetch_dash_ads_json("/internal/dash-ads/operational-cache", {
         "client": client, "advertiser_id": advertiser_id, "date_from": date_from, "date_to": date_to,
     })
     if not payload.get("ok"):
+        error = str(payload.get("error") or "").lower()
+        if error in ("agent_timeout", "timeouterror", "timeout", "readtimeout") or "timed out" in str(payload.get("message") or "").lower():
+            return None, "A consulta ao cache operacional do agente excedeu o tempo limite. A integridade desta janela não foi confirmada; tente novamente."
+        if error == "urlerror" and "timed out" in str(payload.get("reason") or "").lower():
+            return None, "A consulta ao cache operacional do agente excedeu o tempo limite. A integridade desta janela não foi confirmada; tente novamente."
+        if error == "agent_response_too_large":
+            return None, "A resposta do cache operacional excedeu o limite de leitura. A integridade desta janela não foi confirmada."
+        if payload.get("http_status") in (502, 503, 504):
+            return None, "O agente não respondeu à consulta do cache operacional. A integridade desta janela não foi confirmada; tente novamente."
         return None, "Ainda não há dados operacionais disponíveis no cache desta conta e período."
-    # Compatibilidade transitória com agentes que ainda retornam o recibo
-    # financeiro completo na rota operacional. Nunca aceita esse formato se a
-    # prova de conta, período e cobertura não for exatamente a solicitada.
-    if payload.get("client_id") is None and payload.get("operational_partial") is None:
+    # O agente entrega diretamente o snapshot certificado quando a janela exata
+    # já está pronta. Nunca aceita esse formato sem a prova de integridade.
+    if payload.get("operational_partial") is None:
         integrity = _online_cache_integrity_state(payload, client, advertiser_id, date_from, date_to)
         if integrity["ready"]:
             return payload, ""
@@ -1959,6 +2313,57 @@ def _dash_ads_fetch_operational_latest(client: str, advertiser_id: str, date_fro
                 or source.get("date_to") != date_to
                 or (advertiser_id and str(source.get("advertiser_id") or "") != advertiser_id)):
             return None, "A conta ou o período do cache operacional não corresponde à consulta."
+    committed = payload.get("committed_period")
+    if isinstance(committed, dict):
+        integrity = _online_cache_integrity_state(committed, client, advertiser_id, date_from, date_to)
+        if integrity["ready"]:
+            # Keep operational product metadata and table values intact.
+            # The exact committed contract certifies the daily chart and may
+            # also carry a fresher advertising status for the same immutable
+            # row.  Copy only that status: financial values and product
+            # metadata continue coming from the operational cache.
+            operational_ads = payload.get("ads") if isinstance(payload.get("ads"), dict) else {}
+            committed_ads = committed.get("ads") if isinstance(committed.get("ads"), dict) else {}
+            operational_rows = operational_ads.get("items") if isinstance(operational_ads.get("items"), list) else []
+            committed_rows = committed_ads.get("items") if isinstance(committed_ads.get("items"), list) else []
+            if operational_rows and committed_rows:
+                statuses_by_key = {}
+
+                def status_key(row):
+                    return (
+                        _normalize_mlb_code(row.get("item_id") or row.get("id")),
+                        str(row.get("campaign_id") or "").strip(),
+                    )
+
+                for row in committed_rows:
+                    if not isinstance(row, dict):
+                        continue
+                    status = str(row.get("status") or "").strip()
+                    if status:
+                        statuses_by_key.setdefault(status_key(row), []).append(status)
+                merged_rows = []
+                for row in operational_rows:
+                    if not isinstance(row, dict) or str(row.get("status") or "").strip():
+                        merged_rows.append(row)
+                        continue
+                    candidates = statuses_by_key.get(status_key(row)) or []
+                    if candidates:
+                        merged_rows.append({**row, "status": candidates.pop(0)})
+                    else:
+                        merged_rows.append(row)
+                payload = {
+                    **payload,
+                    "ads": {**operational_ads, "items": merged_rows},
+                }
+            if _dash_ads_operational_matches_committed(payload, committed):
+                latest = payload.get("latest") if isinstance(payload.get("latest"), dict) else {}
+                sales_state = latest.get("sales") if isinstance(latest.get("sales"), dict) else {}
+                payload = {
+                    **payload,
+                    "operational_partial": False,
+                    "latest": {**latest, "sales": {**sales_state, "complete": True}},
+                }
+            return {**payload, "chart_period_verified": True}, ""
     return payload, ""
 
 
@@ -2161,13 +2566,14 @@ def _sales_intelligence_fetch_orders(client: str, item_ids: list[str], date_from
     return collected, errors
 
 
-def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: str) -> tuple[list[dict], dict, str]:
+def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: str, item_ids: str = "") -> tuple[list[dict], dict, str]:
     payload = _fetch_dash_ads_json(
         "/internal/dash-ads/sales-daily",
         {
             "client": client,
             "date_from": date_from,
             "date_to": date_to,
+            "item_ids": item_ids,
         },
     )
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
@@ -2178,7 +2584,7 @@ def _sales_intelligence_fetch_daily_sales(client: str, date_from: str, date_to: 
     return [], coverage_days, source_error or "snapshots_diarios_indisponiveis"
 
 
-def _sales_intelligence_fetch_daily_visits(client: str, date_from: str, date_to: str) -> tuple[list[dict], dict, str]:
+def _sales_intelligence_fetch_daily_visits(client: str, date_from: str, date_to: str, item_ids: str = "") -> tuple[list[dict], dict, str]:
     """Lê somente visitas diárias já persistidas pelo agente.
 
     Não aciona OAuth, coleta nem repara o cache durante a consulta do beta.
@@ -2191,6 +2597,7 @@ def _sales_intelligence_fetch_daily_visits(client: str, date_from: str, date_to:
             "client": client,
             "date_from": date_from,
             "date_to": date_to,
+            "item_ids": item_ids,
         },
     )
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
@@ -2302,13 +2709,14 @@ def _daily_financial_coverage_issue(
     return ""
 
 
-def _sales_intelligence_fetch_daily_ads(client: str, date_from: str, date_to: str) -> tuple[list[dict], dict, str]:
+def _sales_intelligence_fetch_daily_ads(client: str, date_from: str, date_to: str, item_ids: str = "") -> tuple[list[dict], dict, str]:
     payload = _fetch_dash_ads_json(
         "/internal/dash-ads/ads-daily",
         {
             "client": client,
             "date_from": date_from,
             "date_to": date_to,
+            "item_ids": item_ids,
         },
     )
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
@@ -2820,8 +3228,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not user:
                     _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
                     return
-                if not beta_config.BETA_MODE or not _beta_access_allowed(user):
-                    _send_json(self, {"ok": False, "message": "Promocoes online estao disponiveis somente no beta autorizado."}, 403)
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Usuario sem acesso ao ambiente beta."}, 403)
                     return
                 link, _, _ = _current_ml_account(user, token)
                 item_id = _exact_mlb(parse_qs(url.query or "").get("item_id", [""])[0])
@@ -2873,8 +3281,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not user:
                     _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
                     return
-                if not beta_config.BETA_MODE or not _beta_access_allowed(user):
-                    _send_json(self, {"ok": False, "message": "Inventario de campanhas disponivel somente no beta autorizado."}, 403)
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Usuario sem acesso ao ambiente beta."}, 403)
                     return
                 link, _, _ = _current_ml_account(user, token)
                 if not link:
@@ -2905,8 +3313,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not user:
                     _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
                     return
-                if not beta_config.BETA_MODE or not _beta_access_allowed(user):
-                    _send_json(self, {"ok": False, "message": "Historico de promocoes disponivel somente no beta autorizado."}, 403)
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Usuario sem acesso ao ambiente beta."}, 403)
                     return
                 link, _, _ = _current_ml_account(user, token)
                 if not link:
@@ -2954,7 +3362,11 @@ class Handler(BaseHTTPRequestHandler):
                 _, token = _current_admin(self)
                 if token:
                     auth.destroy_admin_session(token)
-                _redirect(self, "/admin/login", set_cookie=auth.make_admin_clear_cookie())
+                _redirect(
+                    self,
+                    "/admin/login",
+                    set_cookie=[auth.make_admin_clear_cookie(), auth.make_demo_clear_cookie()],
+                )
                 return
             if path == "/admin/eduzz/connect":
                 admin, _ = _current_admin(self)
@@ -3013,7 +3425,18 @@ class Handler(BaseHTTPRequestHandler):
                     users.append(user)
                 info = (qs.get("info", [""])[0] or "")
                 recovery_view = _admin_integrity_recovery_view(users)
-                _send_html(self, templates.render_admin_users(users, q, info, recovery_view))
+                demo_context = auth.get_demo_context(_get_cookies(self).get(auth.DEMO_COOKIE))
+                _send_html(
+                    self,
+                    templates.render_admin_users(
+                        users,
+                        q,
+                        info,
+                        recovery_view,
+                        demo_accounts=db.list_active_ml_accounts_for_admin(),
+                        demo_account_id=(demo_context or {}).get("account_id"),
+                    ),
+                )
                 return
             if path == "/":
                 user, token = _current_user(self)
@@ -3100,27 +3523,69 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/inteligencia/order-financials":
                 self._get_intelligence_order_financials()
                 return
-            if path == "/online":
+            if path == "/online/item-daily":
+                demo_link, _demo_cookie = _current_demo_account(self)
+                if demo_link is not None:
+                    _send_json(self, {"ok": False, "error": "indisponivel_no_demo"}, 404)
+                    return
                 user, token = _current_user(self)
                 if not user:
-                    _redirect(self, "/login")
+                    _send_json(self, {"ok": False, "error": "nao_autenticado"}, 401)
                     return
                 if beta_config.BETA_MODE and not _beta_access_allowed(user):
-                    _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
+                    _send_json(self, {"ok": False, "error": "nao_autorizado"}, 403)
                     return
+                link, _links, _selected = _current_ml_account(user, token)
+                client_id = ((link["client_id"] or "") if link else "").strip()
                 qs = parse_qs(url.query or "")
-                confirmed = (qs.get("confirmed", [""])[0] or "").strip() == "1"
+                codes = sorted({_normalize_mlb_code(c) for c in (qs.get("codes", [""])[0] or "").split(",") if _normalize_mlb_code(c)})
+                date_from = (qs.get("date_from", [""])[0] or "").strip()
+                date_to = (qs.get("date_to", [""])[0] or "").strip()
+                try:
+                    valid_period = date.fromisoformat(date_from) <= date.fromisoformat(date_to)
+                except ValueError:
+                    valid_period = False
+                if not client_id or not codes or len(codes) > _ITEM_DAILY_MAX_CODES or not valid_period:
+                    _send_json(self, {"ok": False, "error": "parametros_invalidos"}, 400)
+                    return
+                partial = (qs.get("partial", ["1"])[0] or "1") != "0"
+                _send_json(self, _item_daily_payload(client_id, codes, date_from, date_to, partial))
+                return
+            if path == "/online":
+                demo_link, demo_cookie_present = _current_demo_account(self)
+                is_demo = demo_link is not None
+                if demo_cookie_present and not is_demo:
+                    _send_html(
+                        self,
+                        templates.render_error_page("O Modo Demo expirou ou a conta selecionada nao esta mais ativa. Volte ao Admin para selecionar uma conta."),
+                        403,
+                    )
+                    return
+                user = token = None
+                if not is_demo:
+                    user, token = _current_user(self)
+                    if not user:
+                        _redirect(self, "/login")
+                        return
+                    if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                        _send_html(self, templates.render_error_page("Este usuario nao esta autorizado para o ambiente beta."), 403)
+                        return
+                qs = parse_qs(url.query or "")
+                confirmed = is_demo or (qs.get("confirmed", [""])[0] or "").strip() == "1"
                 period = _resolve_online_period(
                     mode=qs.get("period", ["30d"])[0],
                     month=qs.get("month", [""])[0],
                     date_from=qs.get("date_from", [""])[0],
                     date_to=qs.get("date_to", [""])[0],
-                    compare=qs.get("compare", ["none"])[0],
+                    compare=qs.get("compare", ["previous"])[0],
                 )
                 if period["error"]:
                     _send_html(self, templates.render_error_page(period["error"]), 400)
                     return
-                link, links, selected_account_id = _current_ml_account(user, token)
+                if is_demo:
+                    link, links, selected_account_id = demo_link, [demo_link], demo_link["id"]
+                else:
+                    link, links, selected_account_id = _current_ml_account(user, token)
                 if links and not link:
                     _redirect(self, "/contas?" + urlencode({"return_to": self.path}))
                     return
@@ -3141,8 +3606,11 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 client_id = (link["client_id"] or "").strip()
                 if not client_id:
-                    db.mark_user_ml_link_disconnected(user["id"], link["id"])
-                    _redirect(self, "/ml-link/start?return_to=/online?confirmed=1")
+                    if is_demo:
+                        _send_html(self, templates.render_error_page("A conta selecionada nao possui identificador ativo para o Modo Demo."), 400)
+                    else:
+                        db.mark_user_ml_link_disconnected(user["id"], link["id"])
+                        _redirect(self, "/ml-link/start?return_to=/online?confirmed=1")
                     return
                 with _online_dashboard_semaphore:
                     dashboard_data, message = _build_online_dashboard_data(
@@ -3173,9 +3641,34 @@ class Handler(BaseHTTPRequestHandler):
                             return
                         _send_html(self, templates.render_error_page(message), 503)
                         return
-                    promotion_csrf = _promotion_csrf_token(user, token)
+                    from gerar_dashboard_ads_ml import _compact_dashboard_transport
+                    dashboard_data = _compact_dashboard_transport(dashboard_data)
+                    _attach_account_period_comparison(
+                        dashboard_data, client_id, (link['advertiser_id'] or '').strip(), period
+                    )
+                    if not is_demo:
+                        _strip_item_daily_series(dashboard_data)
+                        from gerar_dashboard_ads_ml import _dedupe_group_children
+                        dashboard_data = _dedupe_group_children(dashboard_data)
+                    if is_demo:
+                        try:
+                            dashboard_data = anonymize_dashboard_data(dashboard_data)
+                        except Exception:
+                            _send_html(
+                                self,
+                                templates.render_error_page("A anonimização do Modo Demo falhou; nenhum dado comercial foi exibido."),
+                                503,
+                            )
+                            return
+                    # Modo demo é estritamente somente leitura e não possui
+                    # sessão de usuário apta a assinar ações promocionais.
+                    promotion_csrf = None if is_demo else _promotion_csrf_token(user, token)
                     dashboard_data["promotionApi"] = {
-                        "enabled": bool(beta_config.BETA_MODE and promotion_csrf),
+                        "enabled": bool(promotion_csrf),
+                        # O fluxo individual validado pode operar no principal.
+                        # A execução coletiva permanece isolada no beta até o
+                        # worker persistente e os testes de grande volume.
+                        "bulkEnabled": bool(beta_config.BETA_MODE),
                         "csrfToken": promotion_csrf,
                     }
                     _send_html(self, render_dashboard(dashboard_data))
@@ -3257,8 +3750,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not user:
                     _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
                     return
-                if not beta_config.BETA_MODE or not _beta_access_allowed(user):
-                    _send_json(self, {"ok": False, "message": "Promocoes online estao disponiveis somente no beta autorizado."}, 403)
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "message": "Usuario sem acesso ao ambiente beta."}, 403)
                     return
                 if not _promotion_csrf_valid(self, user, token):
                     _send_json(self, {"ok": False, "message": "Confirmacao de seguranca invalida."}, 403)
@@ -3371,6 +3864,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/admin/beta-sync-all":
                 self._post_admin_beta_sync_all()
+                return
+            if path == "/admin/demo/activate":
+                self._post_admin_demo_activate()
+                return
+            if path == "/admin/demo/deactivate":
+                self._post_admin_demo_deactivate()
                 return
             if path.startswith("/admin/users/") and path.endswith("/reset_password"):
                 self._post_admin_reset_password(path)
@@ -3842,6 +4341,36 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, KeyError, TypeError) as exc:
             _send_html(self, templates.render_error_page(f"Nao foi possivel abrir o beta: {exc}"), 400)
 
+    def _post_admin_demo_activate(self):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        form = _parse_form(self)
+        try:
+            account_id = int((form.get("account_id", "") or "").strip())
+        except (TypeError, ValueError):
+            _redirect(self, "/admin?info=Selecione%20uma%20conta%20valida%20para%20o%20Modo%20Demo")
+            return
+        if not db.get_active_ml_account_by_id(account_id):
+            _redirect(self, "/admin?info=A%20conta%20selecionada%20nao%20esta%20ativa")
+            return
+        try:
+            cookie = auth.make_demo_set_cookie(account_id)
+        except RuntimeError as exc:
+            _send_html(self, templates.render_error_page(str(exc)), 503)
+            return
+        # No audit/session record is created: this switch is only presentation state.
+        _redirect(self, "/online?confirmed=1", set_cookie=cookie)
+
+    def _post_admin_demo_deactivate(self):
+        admin, _ = _current_admin(self)
+        if not admin:
+            _redirect(self, "/admin/login")
+            return
+        _read_and_discard_body(self)
+        _redirect(self, "/admin?info=Modo%20Demo%20desativado", set_cookie=auth.make_demo_clear_cookie())
+
     def _post_admin_login(self):
         form = _parse_form(self)
         email = (form.get("email", "") or "").strip().lower()
@@ -3875,6 +4404,16 @@ class Handler(BaseHTTPRequestHandler):
         if not links:
             _send_html(self, templates.render_error_page("Este cliente ainda nao possui conta Mercado Livre vinculada."), 400)
             return
+        requested_account = None
+        raw_account_id = (form.get("account_id", "") or "").strip()
+        if raw_account_id:
+            try:
+                requested_account = db.get_ml_account_for_user(user_id, int(raw_account_id))
+            except ValueError:
+                requested_account = None
+            if not requested_account or requested_account["status"] != "active":
+                _send_html(self, templates.render_error_page("Esta conta Mercado Livre nao pertence ao cliente selecionado."), 403)
+                return
         session_token = auth.new_session_token()
         db.create_session(
             user_id,
@@ -3884,7 +4423,9 @@ class Handler(BaseHTTPRequestHandler):
             replace_existing=False,
             impersonated_by_admin=admin["email"],
         )
-        if len(links) == 1:
+        if requested_account:
+            db.set_session_selected_ml_account(session_token, user_id, requested_account["id"])
+        elif len(links) == 1:
             db.set_session_selected_ml_account(session_token, user_id, links[0]["id"])
         else:
             destination = "/contas?" + urlencode({"return_to": destination})

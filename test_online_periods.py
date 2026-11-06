@@ -334,6 +334,32 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn("campaignChildSort.direction === 'desc' ? -comparison : comparison", campaign_children)
         self.assertIn("updatedSearch.setSelectionRange", source)
 
+    def test_main_and_demo_campaign_detail_is_readable_on_mobile(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        mobile_css = source.split("@media (max-width:700px) {{\n      .detail-modal-backdrop", 1)[1].split("</style>", 1)[0]
+        campaign_children = source.split("function campaignChildren(item)", 1)[1].split(
+            "const campaignChildSortKeys", 1
+        )[0]
+        self.assertIn(".detail-modal-body .child-table {{ display:block; width:100%; min-width:0", mobile_css)
+        self.assertIn(".detail-modal-body .child-table tr {{ display:grid", mobile_css)
+        self.assertIn("content:attr(data-label)", mobile_css)
+        for label in ("SKU", "Anúncio", "Condição/opção", "Título", "Pedidos", "Unidades",
+                      "Receita", "Receita ADS", "Invest.", "CTR", "CVR", "TACOS", "Alerta"):
+            self.assertIn(f'data-label="{label}"', campaign_children)
+
+    def test_campaign_table_scrolls_both_axes_without_clipping_columns(self):
+        source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
+        campaign_children = source.split("function campaignChildren(item)", 1)[1].split(
+            "const campaignChildSortKeys", 1
+        )[0]
+        self.assertIn(".campaign-child-scroll {{ width:100%; max-width:100%; max-height:min(58vh,560px); overflow:auto", source)
+        self.assertIn("touch-action:pan-x pan-y", source)
+        self.assertIn(".detail-modal-body .campaign-child-block {{ min-width:0; }}", source)
+        self.assertIn('class="campaign-child-scroll"', campaign_children)
+        self.assertIn('aria-label="Tabela de itens da campanha; role horizontal e verticalmente"', campaign_children)
+        self.assertIn('class="child-table"', campaign_children)
+        self.assertIn('</table></div></div>', campaign_children)
+
     def test_online_builder_keeps_campaign_condition_and_catalog_links_separate(self):
         payload = {
             **complete_integrity_contract("conta-ativa", "adv-1", "2026-08-04", "2026-08-10"),
@@ -568,7 +594,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual([row["date"] for row in item["dailySeries"]], ["2026-08-11", "2026-08-12", "2026-08-13"])
         self.assertEqual(item["dailySeries"][0]["adsRevenue"], 50)
         self.assertEqual(item["dailySeries"][0]["investment"], 10)
-        self.assertEqual(item["dailySeries"][0]["tacosBaseRevenue"], 39.90)
+        self.assertEqual(item["dailySeries"][0]["tacosBaseRevenue"], 29.90)
         account_daily = data["accountDailySeries"]
         self.assertEqual([row["date"] for row in account_daily], ["2026-08-11", "2026-08-12", "2026-08-13"])
         self.assertEqual(account_daily[0]["orders"], 3)
@@ -578,7 +604,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertEqual(account_daily[0]["investment"], 15)
         self.assertAlmostEqual(account_daily[0]["price"], 129.90 / 3)
         self.assertAlmostEqual(account_daily[0]["roas"], 80 / 15)
-        self.assertAlmostEqual(account_daily[0]["tacos"], 15 / 149.90)
+        self.assertAlmostEqual(account_daily[0]["tacos"], 15 / 129.90)
 
         html = render_dashboard(data)
         self.assertIn('data-account-daily-chart', html)
@@ -649,7 +675,7 @@ class OnlinePeriodTests(unittest.TestCase):
         self.assertIn(">Desconto total</th>", html)
         self.assertIn(">Rebate ML</th>", html)
         self.assertIn(">Você recebe (estim.)</th>", html)
-        self.assertIn("Revisar preço e condições antes de confirmar a alteração", html)
+        self.assertIn("Clique em Participar, Alterar ou Sair para abrir a revisão local antes da aplicação", html)
         self.assertIn("Revisar a saída antes de confirmar", html)
         self.assertIn("function promotionWriteAccessHtml(data)", html)
         self.assertIn("Ações bloqueadas para esta conta.", html)

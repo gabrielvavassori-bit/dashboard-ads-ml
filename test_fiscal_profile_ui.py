@@ -44,10 +44,18 @@ class FiscalProfileUiTests(unittest.TestCase):
         self.assertNotIn('id="fiscalConfig"', self.intelligence)
 
     def test_primary_navigation_is_sticky_and_hides_technical_online_beta_tab(self):
-        self.assertIn('.page-nav {{ position:sticky; top:0;', self.source)
+        self.assertIn('.page-nav {{ position:sticky; top:var(--admin-impersonation-banner-height, 0px);', self.source)
         self.assertNotIn('data-view="online-beta" type="button"', self.source)
         self.assertIn('id="view-online-beta"', self.source)
         self.assertLess(self.source.index('<nav class="page-nav"'), self.source.index("{f'<section class=\"online-notice\""))
+
+    def test_admin_banner_exposes_dynamic_sticky_navigation_offset(self):
+        import app
+
+        source = pathlib.Path(app.__file__).read_text(encoding="utf-8")
+        self.assertIn('id="admin-impersonation-banner"', source)
+        self.assertIn("--admin-impersonation-banner-height", source)
+        self.assertIn("ResizeObserver(updateOffset).observe(banner)", source)
 
     def test_detailed_tax_data_is_saved_per_sku(self):
         self.assertIn('skus.map(sku =>', self.source)
