@@ -1774,10 +1774,48 @@ class HTTPRouteTests(unittest.TestCase):
             self.assertEqual(build.call_count, 2)
             self.assertIn("R$ 400,00", body)
             self.assertIn("10,00%", body)
-            self.assertIn("Faturamento diário consolidado", body)
+            self.assertIn("Desempenho diário das contas", body)
             self.assertIn("Loja A", body)
             self.assertIn("Loja B", body)
             self.assertNotIn("Gráfico N/D", body)
+
+    def test_consolidated_comparison_is_scoped_and_requires_exact_complete_period(self):
+        user_id, cookie = self._login_cookie("consolidated-comparison@example.com")
+        own_id = db.upsert_user_ml_link(user_id, client_id="compare-owned", nickname="Própria", slot_number=1)
+        other_id, _ = self._login_cookie("consolidated-comparison-other@example.com")
+        foreign_id = db.upsert_user_ml_link(other_id, client_id="compare-foreign", nickname="Alheia", slot_number=1)
+        period = app._resolve_online_period(mode="30d", compare="previous")
+        previous_period = period["comparePeriod"]
+        start = date.fromisoformat(previous_period["dateFrom"])
+        end = date.fromisoformat(previous_period["dateTo"])
+        rows = []
+        while start <= end:
+            rows.append({"date": start.isoformat(), "partial": False, "visits": 10})
+            start += timedelta(days=1)
+        complete = {"meta": {"period": {"dateFrom": previous_period["dateFrom"],
+                                        "dateTo": previous_period["dateTo"]}},
+                    "kpis": {"revenue": 300, "investment": 30, "adsRevenue": 60, "units": 3},
+                    "accountDailySeries": rows, "items": [{"orders": 2, "visitsCoverageComplete": True}]}
+        query = urlencode({"account_id": own_id, "date_from": period["dateFrom"], "date_to": period["dateTo"]})
+        with patch.object(app, "_previous_period_compact", return_value=complete) as build:
+            request = Request(f"{self.base_url}/online/consolidado/comparison?{query}", headers={"Cookie": cookie})
+            with urlopen(request, timeout=5) as response:
+                payload = json.load(response)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["summary"]["revenue"], 300)
+            self.assertEqual(build.call_count, 1)
+            forbidden = Request(f"{self.base_url}/online/consolidado/comparison?" +
+                                urlencode({"account_id": foreign_id, "date_from": period["dateFrom"],
+                                           "date_to": period["dateTo"]}), headers={"Cookie": cookie})
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(forbidden, timeout=5)
+            self.assertEqual(raised.exception.code, 403)
+            raised.exception.close()
+            self.assertEqual(build.call_count, 1)
+            incomplete = dict(complete, accountDailySeries=rows[:-1])
+            build.return_value = incomplete
+            with urlopen(request, timeout=5) as response:
+                self.assertFalse(json.load(response)["ok"])
 
     def test_admin_impersonation_selects_requested_account_directly(self):
         user_id, _ = self._login_cookie("impersonated-exact@example.com")
