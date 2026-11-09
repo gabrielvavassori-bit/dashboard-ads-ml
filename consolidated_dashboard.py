@@ -178,9 +178,25 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
         names = ", ".join(escape(name) for name in failures)
         warning = '<div class="alert err">Visão incompleta: {}. Os totais abaixo incluem somente contas com leitura disponível da janela exata; não são o total de todas as contas selecionadas.</div>'.format(
             "falha em " + names if names else "há dias ou contas sem certificação")
-    cards = chart = table = ""
+    cards = chart = table = reconciliation = ""
     if result:
         sums = result["sums"]
+        by_id = {account["id"]: account for account in projections}
+        reconciliation = '<section class="panel"><h2>Conferência por conta</h2><small>Mesma janela e mesma leitura usada nos painéis individuais. Não substitui a conferência com o Mercado Livre.</small><div class="scroll"><table><thead><tr><th>Conta</th><th>Período</th><th>Receita</th><th>Investimento Ads</th><th>Situação</th></tr></thead><tbody>'
+        for link in selected:
+            account = by_id.get(int(link["id"]))
+            exact = bool(account and account["period"] == (period["dateFrom"], period["dateTo"]))
+            label = str(link["official_store"] or link["nickname"] or link["client_id"])
+            reconciliation += '<tr><td>{}</td><td>{} a {}</td><td>{}</td><td>{}</td><td>{}</td></tr>'.format(
+                escape(label), escape(period["dateFrom"]), escape(period["dateTo"]),
+                escape(_money(account["kpis"].get("revenue"))) if exact else "N/D",
+                escape(_money(account["kpis"].get("investment"))) if exact else "N/D",
+                "Completa" if exact and account["complete"] else "Não certificada")
+        reconciliation += '</tbody><tfoot><tr><th>Soma das contas selecionadas</th><th>{} a {}</th><th>{}</th><th>{}</th><th>{}</th></tr></tfoot></table></div></section>'.format(
+            escape(period["dateFrom"]), escape(period["dateTo"]),
+            escape(_money(sums["revenue"])) if overall_complete else "N/D",
+            escape(_money(sums["investment"])) if overall_complete else "N/D",
+            "Completa" if overall_complete else "Não certificada")
         kpi_rows = [
             ("PRODUTOS ANALISADOS", _number(sums["products"])),
             ("RECEITA TOTAL", _money(sums["revenue"])),
@@ -220,7 +236,9 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
         table += '<div class="toolbar"><span>VISUALIZAR POR</span><nav class="view-modes" id="view-modes">' + "".join(
             '<a data-view="{}" class="{}" href="?{}">{}</a>'.format(mode,
                 'active' if mode == view else '',
-                escape(urlencode([("account_id", str(i)) for i in sorted(selected_ids)] + [("view", mode)]), quote=True),
+                escape(urlencode([("account_id", str(i)) for i in sorted(selected_ids)] + [
+                    ("view", mode), ("period", period.get("mode") or "30d"),
+                    ("date_from", period["dateFrom"]), ("date_to", period["dateTo"])]), quote=True),
                 escape(title)) for mode, title in modes) + '</nav><label>Buscar conta, anúncio ou SKU <input id="item-search" type="search" placeholder="Buscar na seleção"></label></div>'
         table += '<div class="scroll"><table><thead><tr><th>Produto / agrupamento</th><th>Conta</th><th>MLB / SKU</th><th>Receita</th><th>Pedidos</th><th>Unidades</th><th>Investimento</th><th>Receita Ads</th><th>ROAS</th><th>TACOS</th><th>ACOS</th><th>Visitas</th><th>Detalhe</th></tr></thead><tbody id="item-rows">'
         page = max(1, min(int(page), max(1, (len(rows) + 99) // 100)))
@@ -368,4 +386,4 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
             element.textContent=(change>=0?'▲ +':'▼ ')+change.toLocaleString('pt-BR',{{maximumFractionDigits:1}})+'% vs. período anterior';
           }});
         }})();</script>'''.format(comparison_data)
-    return _layout("Visão consolidada", body + warning + cards + chart + table + script + comparison_script, css)
+    return _layout("Visão consolidada", body + warning + cards + reconciliation + chart + table + script + comparison_script, css)
