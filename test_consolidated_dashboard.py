@@ -153,12 +153,41 @@ class ConsolidatedMathTests(unittest.TestCase):
         self.assertIn('Math.abs(dailyTotal-g.totalRevenue)>0.01', page)
         self.assertIn('"account_id":1', page)
         self.assertNotIn('src="javascript:', page)
+        self.assertIn('Conferência por conta', page)
+        self.assertIn('Soma das contas selecionadas', page)
+        self.assertIn('period=custom&amp;date_from=2026-10-01&amp;date_to=2026-10-02', page)
         if shutil.which("node"):
             scripts = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', page, re.S)
             for script in scripts:
                 if script.lstrip().startswith("(function") or script.lstrip().startswith("(async function"):
                     result = subprocess.run(["node", "--check"], input=script, text=True, capture_output=True, encoding="utf-8")
                     self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_uncertified_account_is_not_presented_as_certified_total(self):
+        accounts = [
+            {"id": 1, "client_id": "a", "official_store": "Conta A", "nickname": ""},
+            {"id": 2, "client_id": "b", "official_store": "Conta B", "nickname": ""},
+        ]
+        first = self.account(1, 100, 10)
+        second = self.account(2, 300, 60, complete=False)
+        page = consolidated.render(accounts, {1, 2},
+                                   {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+                                   [first, second], [])
+        self.assertIn("Não certificada", page)
+        self.assertIn("Visão incompleta", page)
+        self.assertIn("Soma das contas selecionadas", page)
+        self.assertIn("<th>N/D</th><th>N/D</th><th>Não certificada</th>", page)
+
+    def test_five_selected_accounts_reconcile_without_touching_individual_views(self):
+        accounts = [{"id": i, "client_id": f"client-{i}",
+                     "official_store": f"Conta {i}", "nickname": ""} for i in range(1, 6)]
+        projections = [self.account(i, i * 100, i * 10) for i in range(1, 6)]
+        page = consolidated.render(accounts, {1, 2, 3, 4, 5},
+                                   {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+                                   projections, [])
+        for i in range(1, 6):
+            self.assertIn(f"Conta {i}</td><td>2026-10-01 a 2026-10-02</td>", page)
+        self.assertIn("<th>R$ 1.500,00</th><th>R$ 150,00</th><th>Completa</th>", page)
 
 
 if __name__ == "__main__":
