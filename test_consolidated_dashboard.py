@@ -1,4 +1,8 @@
 import unittest
+import re
+import json
+import shutil
+import subprocess
 
 import consolidated_dashboard as consolidated
 
@@ -133,6 +137,93 @@ class ConsolidatedMathTests(unittest.TestCase):
         ]
         for mode in ("hibrida", "familia", "variacao", "mlb", "sku", "campanha"):
             self.assertEqual(len(consolidated._group_items(items, mode)), 2, mode)
+
+    def test_photo_detail_and_period_stay_on_consolidated_page(self):
+        accounts = [{"id": 1, "client_id": "a", "official_store": "Conta A", "nickname": ""}]
+        first = self.account(1, 100, 10)
+        first["items"][0].update({"account": "Conta A", "account_id": 1,
+                                  "thumbnailUrl": "https://example.com/product.jpg"})
+        page = consolidated.render(accounts, {1},
+                                   {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+                                   [first], [])
+        self.assertIn('name="period"', page)
+        self.assertIn('value="custom" selected', page)
+        self.assertIn('src="https://example.com/product.jpg"', page)
+        self.assertIn('id="detail-backdrop"', page)
+        self.assertIn('id="detail-chart-modes"', page)
+        self.assertIn('id="detail-tooltip"', page)
+        self.assertIn("['revenue','Faturamento']", page)
+        self.assertIn("['investment','Investimento']", page)
+        self.assertIn("['tacos','TACOS']", page)
+        self.assertIn('salesComplete=false', page)
+        self.assertIn('adsComplete=false', page)
+        self.assertIn('id="chart-tooltip"', page)
+        self.assertIn("points:segment.join(' ')", page)
+        self.assertIn("r.tacosBaseRevenue>0?r.investment/r.tacosBaseRevenue", page)
+        self.assertIn("tip.appendChild(line)", page)
+        self.assertIn('/online/consolidado/item-daily?', page)
+        self.assertIn('Math.abs(dailyTotal-g.totalRevenue)>0.01', page)
+        self.assertIn('"account_id":1', page)
+        self.assertNotIn('src="javascript:', page)
+        self.assertIn('Conferência por conta', page)
+        self.assertIn('Soma das contas selecionadas', page)
+        self.assertIn('period=custom&amp;date_from=2026-10-01&amp;date_to=2026-10-02', page)
+        if shutil.which("node"):
+            scripts = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', page, re.S)
+            for script in scripts:
+                if script.lstrip().startswith("(function") or script.lstrip().startswith("(async function"):
+                    result = subprocess.run(["node", "--check"], input=script, text=True, capture_output=True, encoding="utf-8")
+                    self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_uncertified_account_is_not_presented_as_certified_total(self):
+        accounts = [
+            {"id": 1, "client_id": "a", "official_store": "Conta A", "nickname": ""},
+            {"id": 2, "client_id": "b", "official_store": "Conta B", "nickname": ""},
+        ]
+        first = self.account(1, 100, 10)
+        second = self.account(2, 300, 60, complete=False)
+        page = consolidated.render(accounts, {1, 2},
+                                   {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+                                   [first, second], [])
+        self.assertIn("Não certificada", page)
+        self.assertIn("Visão incompleta", page)
+        self.assertIn("Soma das contas selecionadas", page)
+        self.assertIn("<th>N/D</th><th>N/D</th><th>Não certificada</th>", page)
+
+    def test_five_selected_accounts_reconcile_without_touching_individual_views(self):
+        accounts = [{"id": i, "client_id": f"client-{i}",
+                     "official_store": f"Conta {i}", "nickname": ""} for i in range(1, 6)]
+        projections = [self.account(i, i * 100, i * 10) for i in range(1, 6)]
+        page = consolidated.render(accounts, {1, 2, 3, 4, 5},
+                                   {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+                                   projections, [])
+        for i in range(1, 6):
+            self.assertIn(f"Conta {i}</td><td>2026-10-01 a 2026-10-02</td>", page)
+        self.assertIn("<th>R$ 1.500,00</th><th>R$ 150,00</th><th>Completa</th>", page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js required for browser comparison test")
+    def test_five_previous_periods_are_summed_after_one_transient_failure(self):
+        accounts = [{"id": i, "client_id": f"client-{i}",
+                     "official_store": f"Conta {i}", "nickname": ""} for i in range(1, 6)]
+        period = {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02",
+                  "comparePeriod": {"dateFrom": "2026-09-29", "dateTo": "2026-09-30"}}
+        page = consolidated.render(accounts, {1, 2, 3, 4, 5}, period,
+                                   [self.account(i, i * 100, i * 10) for i in range(1, 6)], [])
+        script = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', page, re.S)[-1]
+        config = json.loads(re.search(r'<script type="application/json" id="comparison-request">(.*?)</script>', page).group(1))
+        harness = '''
+        const config=CONFIG, attempts={}, elements=[{dataset:{metric:'revenue'},textContent:'N/D'}];
+        global.document={getElementById:()=>({textContent:JSON.stringify(config)}),querySelectorAll:()=>elements};
+        global.fetch=async url=>{const id=Number(new URL(url,'https://example.com').searchParams.get('account_id'));
+          attempts[id]=(attempts[id]||0)+1;if(id===3&&attempts[id]===1)throw new Error('transient');
+          return {ok:true,status:200,json:async()=>({ok:true,period:config.period.comparePeriod,
+            summary:{revenue:id*50,units:id,orders:id,investment:id,adsRevenue:id,tacosBaseRevenue:id*50}})};};
+        '''.replace('CONFIG', json.dumps(config)) + script + '''
+        setTimeout(()=>{if(elements[0].textContent!=='▲ +100% vs. período anterior'||attempts[3]!==2)
+          {console.error(elements[0].textContent,attempts);process.exitCode=1}},100);
+        '''
+        result = subprocess.run(["node"], input=harness, text=True, capture_output=True, encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":
