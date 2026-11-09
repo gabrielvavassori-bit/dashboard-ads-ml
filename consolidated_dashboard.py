@@ -222,8 +222,10 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
                        "organicRevenue", "investment", "tacosBaseRevenue", "tacos", "acos",
                        "roas", "adsNoSales", "investmentNoAdsSales")
         cards = '<div class="cards">' + "".join(
-            '<div class="card"><small>{}</small><strong>{}</strong><span class="comparison" data-metric="{}">Comparação N/D — período anterior ainda não certificado nesta visão</span></div>'.format(
-                escape(label), escape(value), metric_keys[index]) for index, (label, value) in enumerate(kpi_rows)) + '</div>'
+            '<div class="card"><small>{}</small><strong>{}</strong>{}</div>'.format(
+                escape(label), escape(value),
+                '' if metric_keys[index] == 'products' else '<span class="comparison" data-metric="{}">Comparação N/D — período anterior ainda não certificado nesta visão</span>'.format(metric_keys[index]))
+            for index, (label, value) in enumerate(kpi_rows)) + '</div>'
         if overall_complete:
             chart = '<section class="panel"><div class="panel-head"><div><h2>Desempenho diário das contas</h2><small id="chart-summary">Dados consolidados das contas selecionadas, dia a dia.</small></div><div class="chart-modes" id="chart-modes"></div></div><div class="chart-shell"><div id="daily-chart" class="chart-area"></div><div id="chart-tooltip" class="chart-tooltip" hidden></div></div></section>'
             chart_data = json.dumps(result["chart"], ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
@@ -395,17 +397,27 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
                                       "current": result["sums"]}, separators=(",", ":")).replace("<", "\\u003c")
         comparison_script = '''<script type="application/json" id="comparison-request">{}</script><script>
         (async function(){{var source=document.getElementById('comparison-request');if(!source)return;
-          var config=JSON.parse(source.textContent), previous=[];
-          for(var id of config.accounts){{
+          var config=JSON.parse(source.textContent), previous=new Array(config.accounts.length), next=0;
+          async function loadPrevious(id){{
             var qs=new URLSearchParams({{account_id:String(id),period:config.period.mode||'30d',date_from:config.period.dateFrom,date_to:config.period.dateTo}});
-            try{{var controller=new AbortController(),timer=setTimeout(function(){{controller.abort()}},45000);
-              var response=await fetch('/online/consolidado/comparison?'+qs,{{credentials:'same-origin',signal:controller.signal}});
-              clearTimeout(timer);var data=await response.json();if(!response.ok||!data.ok)return;previous.push(data.summary);
-            }}catch(error){{return}}
+            for(var attempt=0;attempt<2;attempt++){{
+              var controller=new AbortController(),timer=setTimeout(function(){{controller.abort()}},60000);
+              try{{var response=await fetch('/online/consolidado/comparison?'+qs,{{credentials:'same-origin',signal:controller.signal}});
+                var data=await response.json();
+                if(response.ok&&data.ok&&data.period&&data.period.dateFrom===config.period.comparePeriod.dateFrom&&data.period.dateTo===config.period.comparePeriod.dateTo)return data.summary;
+                if(response.status===401||response.status===403||response.status===400||response.status===409)return null;
+              }}catch(error){{}}
+              finally{{clearTimeout(timer)}}
+            }}
+            return null;
           }}
+          async function loadNext(){{while(next<config.accounts.length){{var index=next++;previous[index]=await loadPrevious(config.accounts[index])}}}}
+          await Promise.all([loadNext(),loadNext()]);
+          if(previous.some(function(row){{return !row}}))return;
           function total(key){{return previous.every(function(row){{return typeof row[key]==='number'&&Number.isFinite(row[key])}})
             ?previous.reduce(function(sum,row){{return sum+row[key]}},0):null}}
           var old={{revenue:total('revenue'),units:total('units'),orders:total('orders'),visits:total('visits'),
+            cancelledOrders:total('cancelledOrders'),
             returnsAmount:total('returnsAmount'),returnsOrdersCount:total('returnsOrdersCount'),
             adsRevenue:total('adsRevenue'),organicRevenue:total('organicRevenue'),investment:total('investment'),
             tacosBaseRevenue:total('tacosBaseRevenue'),adsNoSales:total('adsNoSales'),

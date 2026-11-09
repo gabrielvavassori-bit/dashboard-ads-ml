@@ -1,5 +1,6 @@
 import unittest
 import re
+import json
 import shutil
 import subprocess
 
@@ -199,6 +200,30 @@ class ConsolidatedMathTests(unittest.TestCase):
         for i in range(1, 6):
             self.assertIn(f"Conta {i}</td><td>2026-10-01 a 2026-10-02</td>", page)
         self.assertIn("<th>R$ 1.500,00</th><th>R$ 150,00</th><th>Completa</th>", page)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js required for browser comparison test")
+    def test_five_previous_periods_are_summed_after_one_transient_failure(self):
+        accounts = [{"id": i, "client_id": f"client-{i}",
+                     "official_store": f"Conta {i}", "nickname": ""} for i in range(1, 6)]
+        period = {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02",
+                  "comparePeriod": {"dateFrom": "2026-09-29", "dateTo": "2026-09-30"}}
+        page = consolidated.render(accounts, {1, 2, 3, 4, 5}, period,
+                                   [self.account(i, i * 100, i * 10) for i in range(1, 6)], [])
+        script = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', page, re.S)[-1]
+        config = json.loads(re.search(r'<script type="application/json" id="comparison-request">(.*?)</script>', page).group(1))
+        harness = '''
+        const config=CONFIG, attempts={}, elements=[{dataset:{metric:'revenue'},textContent:'N/D'}];
+        global.document={getElementById:()=>({textContent:JSON.stringify(config)}),querySelectorAll:()=>elements};
+        global.fetch=async url=>{const id=Number(new URL(url,'https://example.com').searchParams.get('account_id'));
+          attempts[id]=(attempts[id]||0)+1;if(id===3&&attempts[id]===1)throw new Error('transient');
+          return {ok:true,status:200,json:async()=>({ok:true,period:config.period.comparePeriod,
+            summary:{revenue:id*50,units:id,orders:id,investment:id,adsRevenue:id,tacosBaseRevenue:id*50}})};};
+        '''.replace('CONFIG', json.dumps(config)) + script + '''
+        setTimeout(()=>{if(elements[0].textContent!=='▲ +100% vs. período anterior'||attempts[3]!==2)
+          {console.error(elements[0].textContent,attempts);process.exitCode=1}},100);
+        '''
+        result = subprocess.run(["node"], input=harness, text=True, capture_output=True, encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":
