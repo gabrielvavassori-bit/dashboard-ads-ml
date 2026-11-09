@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from html import escape
 import json
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 
 SUM_FIELDS = ("revenue", "investment", "adsRevenue", "units", "tacosBaseRevenue")
@@ -111,6 +111,12 @@ def _percent(value):
     return "N/D" if value is None else f"{float(value) * 100:.2f}%".replace(".", ",")
 
 
+def _image_url(value):
+    url = str(value or "").strip()
+    parsed = urlparse(url)
+    return url if parsed.scheme in {"http", "https"} and parsed.netloc else ""
+
+
 def _group_items(items, view):
     groups = {}
     for item in items:
@@ -131,8 +137,9 @@ def _group_items(items, view):
             title = item.get("title") or identity
         key = (item["account_id"], view, identity)
         if key not in groups:
-            groups[key] = {"account": item["account"], "code": identity,
+            groups[key] = {"account": item["account"], "account_id": item["account_id"], "code": identity,
                            "sku": identity if view == "sku" else item.get("sku") or "", "title": title,
+                           "thumbnailUrl": _image_url(item.get("thumbnailUrl")), "codes": [],
                            "totalRevenue": 0.0, "units": 0.0, "orders": 0.0,
                            "investment": 0.0, "adsRevenue": 0.0, "visits": 0.0,
                            "impressions": 0.0, "clicks": 0.0, "members": 0, "visitsKnown": 0}
@@ -141,6 +148,10 @@ def _group_items(items, view):
         for field in ("visits", "impressions", "clicks"):
             groups[key][field] += float(item.get(field) or 0)
         groups[key]["members"] += 1
+        if str(item.get("code") or "").upper().startswith("MLB") and item["code"] not in groups[key]["codes"]:
+            groups[key]["codes"].append(item["code"])
+        if not groups[key]["thumbnailUrl"]:
+            groups[key]["thumbnailUrl"] = _image_url(item.get("thumbnailUrl"))
         if item.get("visitsCoverageComplete") is True:
             groups[key]["visitsKnown"] += 1
     return sorted(groups.values(), key=lambda row: -row["totalRevenue"])
@@ -211,7 +222,7 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
                 'active' if mode == view else '',
                 escape(urlencode([("account_id", str(i)) for i in sorted(selected_ids)] + [("view", mode)]), quote=True),
                 escape(title)) for mode, title in modes) + '</nav><label>Buscar conta, anúncio ou SKU <input id="item-search" type="search" placeholder="Buscar na seleção"></label></div>'
-        table += '<div class="scroll"><table><thead><tr><th>Conta</th><th>Produto / agrupamento</th><th>MLB / SKU</th><th>Receita</th><th>Pedidos</th><th>Unidades</th><th>Investimento</th><th>Receita Ads</th><th>ROAS</th><th>TACOS</th><th>ACOS</th><th>Visitas</th></tr></thead><tbody id="item-rows">'
+        table += '<div class="scroll"><table><thead><tr><th>Produto / agrupamento</th><th>Conta</th><th>MLB / SKU</th><th>Receita</th><th>Pedidos</th><th>Unidades</th><th>Investimento</th><th>Receita Ads</th><th>ROAS</th><th>TACOS</th><th>ACOS</th><th>Visitas</th><th>Detalhe</th></tr></thead><tbody id="item-rows">'
         page = max(1, min(int(page), max(1, (len(rows) + 99) // 100)))
         for item in rows[(page - 1) * 100:page * 100]:
             revenue = float(item.get("totalRevenue") or 0)
@@ -220,8 +231,10 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
             tacos = _percent(investment / revenue) if revenue else "N/D"
             acos = _percent(investment / ads_revenue) if ads_revenue else "N/D"
             roas = f'{ads_revenue/investment:.2f}x'.replace(".", ",") if investment else "N/D"
-            table += '<tr><td><b>{}</b></td><td>{}</td><td>{}<br>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>'.format(
-                escape(str(item.get("account") or "")), escape(str(item.get("title") or "")),
+            photo = ('<img class="product-photo" src="{}" alt="">'.format(escape(item["thumbnailUrl"], quote=True))
+                     if item["thumbnailUrl"] else '<span class="product-photo empty">Sem foto</span>')
+            table += '<tr><td><div class="product-name">{}<b>{}</b></div></td><td>{}</td><td>{}<br>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td><button class="detail-open" type="button">Abrir</button></td></tr>'.format(
+                photo, escape(str(item.get("title") or "")), escape(str(item.get("account") or "")),
                 escape(str(item.get("code") or "")), escape(str(item.get("sku") or "")),
                 escape(_money(revenue)), _number(item.get("orders")), _number(item.get("units")),
                 escape(_money(investment)), escape(_money(ads_revenue)), roas, tacos, acos,
@@ -230,21 +243,30 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
             page, max(1, (len(rows) + 99) // 100), len(rows))
         def page_link(number, title):
             query = [("account_id", str(i)) for i in sorted(selected_ids)]
-            query.extend((("view", view), ("page", str(number))))
+            query.extend((("view", view), ("page", str(number)), ("period", period.get("mode") or "30d")))
+            if period.get("mode") == "custom":
+                query.extend((("date_from", period["dateFrom"]), ("date_to", period["dateTo"])))
             return '<a href="?{}">{}</a>'.format(escape(urlencode(query), quote=True), title)
         table += '<nav class="pagination" id="item-pagination">{} {}</nav></section>'.format(page_link(page - 1, "Anterior") if page > 1 else "",
                                              page_link(page + 1, "Próxima") if page * 100 < len(rows) else "")
         item_data = json.dumps(result["items"], ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
         table += '<script type="application/json" id="consolidated-items">{}</script>'.format(item_data)
+        table += '<script type="application/json" id="consolidated-period">{}</script>'.format(
+            json.dumps({"dateFrom": period["dateFrom"], "dateTo": period["dateTo"]}))
+        table += '<div class="detail-backdrop" id="detail-backdrop" hidden><section class="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title"><header><div><h2 id="detail-title"></h2><small id="detail-account"></small></div><button type="button" id="detail-close" aria-label="Fechar">×</button></header><div class="detail-content"><h3>Desempenho diário do produto</h3><div id="detail-status">Selecione um produto.</div><div class="detail-chart" id="detail-chart"></div><div class="detail-summary" id="detail-summary"></div></div></section></div>'
     css = '''<style>
     body{background:#f5f7fb;color:#101828}main{max-width:1440px;margin:0 auto;padding:20px 16px;background:transparent;border:0;border-radius:0;box-shadow:none}
-    .accounts{display:flex;flex-wrap:wrap;gap:10px}.account{margin:0;padding:8px;border:1px solid #d9e1ec;border-radius:8px;background:white}.account small{font-weight:normal}
-    .chart-modes button,.pagination button{width:auto;margin-top:0}.toolbar input[type=search]{width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px}
-    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;margin:18px 0}.card,.panel{background:#fff;border:1px solid #d9e1ec;border-radius:9px;padding:14px}.card{min-height:105px}.card small{display:block;color:#52627a;font-size:10px;font-weight:700;letter-spacing:.4px}.card strong{display:block;font-size:21px;margin:7px 0}.comparison{font-size:11px;color:#667085}.panel{margin:10px 0}.panel h2{font-size:16px;margin:3px 0 8px}.panel-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.panel-head small{color:#667085}.chart-modes,.view-modes{display:flex;flex-wrap:wrap;gap:4px}.chart-modes button,.view-modes a{font-size:11px;border:1px solid #d9e1ec;border-radius:6px;padding:7px 9px;background:#fff;color:#102033;text-decoration:none;cursor:pointer}.chart-modes .active,.view-modes .active{background:#102033;color:#fff}.chart-area{height:290px;display:flex;align-items:flex-end;gap:3px;padding:24px 5px 30px;border-bottom:1px solid #d9e1ec;position:relative}.chart-col{flex:1;height:100%;display:flex;align-items:flex-end;min-width:4px}.chart-bar{width:100%;background:#b5a1ed;border-radius:5px 5px 0 0;min-height:2px}.chart-line{position:absolute;left:5px;right:5px;top:24px;bottom:30px;width:calc(100% - 10px);height:calc(100% - 54px);pointer-events:none}.chart-label{position:absolute;bottom:5px;color:#667085;font-size:10px}.toolbar{margin:16px 0}.toolbar span{font-size:11px;color:#667085;font-weight:700}.toolbar input{display:block;max-width:270px;margin-top:5px}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:12px}th{background:#eef2f7;color:#52627a;text-align:left;font-size:10px}td,th{padding:9px;border-bottom:1px solid #e5eaf1;vertical-align:top}td{white-space:nowrap}td:nth-child(2){white-space:normal;min-width:170px}.pagination{margin:14px 0}.pagination button{margin-right:12px;width:auto}form button{width:auto;margin-top:12px}input[type=checkbox]{width:auto}
+    .accounts{display:flex;flex-wrap:wrap;gap:10px}.account{margin:0;padding:8px;border:1px solid #d9e1ec;border-radius:8px;background:white}.account small{font-weight:normal}.period-picker{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:12px 0}.period-picker label{margin:0}.period-picker select,.period-picker input{display:block;width:auto;min-width:140px;padding:9px;border:1px solid #cfd6e4;border-radius:8px;background:#fff}.period-picker button{margin:0}
+    .chart-modes button,.pagination button{width:auto;margin-top:0}.toolbar input[type=search]{width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px}.detail-backdrop[hidden]{display:none}.detail-backdrop{position:fixed;inset:0;background:#10182899;z-index:100;display:grid;place-items:center;padding:15px}.detail-modal{width:min(1050px,96vw);max-height:90vh;overflow:auto;background:#f5f7fb;border-radius:12px}.detail-modal header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#fff;border-bottom:1px solid #d9e1ec}.detail-modal header h2{margin:0;font-size:18px}.detail-modal header small{color:#667085}.detail-modal header button{width:auto;margin:0;background:#fff;color:#102033;border:1px solid #d9e1ec}.detail-content{padding:18px}.detail-chart{height:210px;display:flex;align-items:end;gap:3px;background:#fff;border:1px solid #d9e1ec;border-radius:8px;padding:16px}.detail-chart span{flex:1;min-width:2px;background:#b5a1ed;border-radius:4px 4px 0 0}.detail-summary{margin-top:15px;display:flex;gap:10px;flex-wrap:wrap}.detail-summary span{padding:10px;border:1px solid #d9e1ec;border-radius:8px;background:#fff}
+    .cards{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin:18px 0}.card,.panel{background:#fff;border:1px solid #d9e1ec;border-radius:9px;padding:14px}.card{min-height:105px}.card small{display:block;color:#52627a;font-size:10px;font-weight:700;letter-spacing:.4px}.card strong{display:block;font-size:21px;margin:7px 0}.comparison{font-size:11px;color:#667085}.panel{margin:10px 0}.panel h2{font-size:16px;margin:3px 0 8px}.panel-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.panel-head small{color:#667085}.chart-modes,.view-modes{display:flex;flex-wrap:wrap;gap:4px}.chart-modes button,.view-modes a{font-size:11px;border:1px solid #d9e1ec;border-radius:6px;padding:7px 9px;background:#fff;color:#102033;text-decoration:none;cursor:pointer}.chart-modes .active,.view-modes .active{background:#102033;color:#fff}.chart-area{height:290px;display:flex;align-items:flex-end;gap:3px;padding:24px 5px 30px;border-bottom:1px solid #d9e1ec;position:relative}.chart-col{flex:1;height:100%;display:flex;align-items:flex-end;min-width:4px}.chart-bar{width:100%;background:#b5a1ed;border-radius:5px 5px 0 0;min-height:2px}.chart-line{position:absolute;left:5px;right:5px;top:24px;bottom:30px;width:calc(100% - 10px);height:calc(100% - 54px);pointer-events:none}.chart-label{position:absolute;bottom:5px;color:#667085;font-size:10px}.toolbar{margin:16px 0}.toolbar span{font-size:11px;color:#667085;font-weight:700}.toolbar input{display:block;max-width:270px;margin-top:5px}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:12px}th{background:#eef2f7;color:#52627a;text-align:left;font-size:10px}td,th{padding:9px;border-bottom:1px solid #e5eaf1;vertical-align:top}td{white-space:nowrap}td:first-child{white-space:normal;min-width:220px}.product-name{display:flex;align-items:center;gap:9px}.product-photo{width:44px;height:44px;object-fit:contain;border:1px solid #d9e1ec;border-radius:6px;flex:none}.product-photo.empty{display:grid;place-items:center;background:#f1f4f8;color:#667085;font-size:9px}.detail-open{width:auto;margin:0;padding:7px 10px;background:#fff;color:#102033;border:1px solid #d9e1ec}.pagination{margin:14px 0}.pagination button{margin-right:12px;width:auto}form button{width:auto}input[type=checkbox]{width:auto}@media(max-width:1100px){.cards{grid-template-columns:repeat(3,1fr)}}@media(max-width:700px){.cards{grid-template-columns:repeat(2,1fr)}}
     </style>'''
     body = '<h1>Dashboard ADS Mercado Livre — visão consolidada</h1><p>Selecione as contas vinculadas a este cliente. Esta visão é somente leitura e não ocupa um slot ML.</p>'
     body += '<p><a href="/contas">Contas</a> · <a href="/online?confirmed=1">Dashboard individual</a></p>'
-    body += '<form method="get" action="/online/consolidado"><input type="hidden" name="selection" value="1"><div class="accounts">{}</div><button type="submit">Atualizar seleção</button></form>'.format(options)
+    period_options = "".join('<option value="{}" {}>{}</option>'.format(mode, "selected" if period.get("mode") == mode else "", label)
+                             for mode, label in (("7d", "Últimos 7 dias"), ("15d", "Últimos 15 dias"),
+                                                 ("30d", "Últimos 30 dias"), ("custom", "Personalizado")))
+    body += '<form method="get" action="/online/consolidado"><input type="hidden" name="selection" value="1"><div class="accounts">{}</div><div class="period-picker"><label>Período <select name="period">{}</select></label><label>De <input name="date_from" type="date" value="{}"></label><label>Até <input name="date_to" type="date" value="{}"></label><button type="submit">Atualizar visão</button></div></form>'.format(
+        options, period_options, escape(period["dateFrom"], quote=True), escape(period["dateTo"], quote=True))
     body += '<p>Período: {} a {} · {} de {} conta(s) com dados da janela exata.</p>'.format(
         escape(period["dateFrom"]), escape(period["dateTo"]), result["accepted"] if result else 0, len(selected))
     script = '''<script>
@@ -267,19 +289,46 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
     (function(){var src=document.getElementById('consolidated-items');if(!src)return;
       var items=JSON.parse(src.textContent),body=document.getElementById('item-rows'),count=document.getElementById('item-count'),pager=document.getElementById('item-pagination'),search=document.getElementById('item-search'),modes=document.getElementById('view-modes');
       var mode=(modes.querySelector('.active')||{}).dataset?.view||'hibrida',page=1;
+      var backdrop=document.getElementById('detail-backdrop'),close=document.getElementById('detail-close');
+      close.onclick=function(){backdrop.hidden=true};backdrop.onclick=function(e){if(e.target===backdrop)close.click()};
+      document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!backdrop.hidden)close.click()});
+      function imageUrl(value){try{var u=new URL(value);return ['http:','https:'].includes(u.protocol)?u.href:''}catch(e){return ''}}
+      async function openDetail(g){
+        backdrop.hidden=false;document.getElementById('detail-title').textContent=g.title;
+        document.getElementById('detail-account').textContent='Conta: '+g.account+' · '+g.codes.join(', ');
+        var status=document.getElementById('detail-status'),chart=document.getElementById('detail-chart'),summary=document.getElementById('detail-summary');
+        chart.textContent='';summary.textContent='';
+        [['Receita',money(g.totalRevenue)],['Pedidos',fmt(g.orders)],['Unidades',fmt(g.units)],['Investimento Ads',money(g.investment)],['TACOS',pct(g.totalRevenue?g.investment/g.totalRevenue:null)],['ROAS',g.investment?(g.adsRevenue/g.investment).toLocaleString('pt-BR',{maximumFractionDigits:2})+'x':'N/D']].forEach(function(pair){var el=document.createElement('span');el.textContent=pair[0]+': '+pair[1];summary.appendChild(el)});
+        if(!g.codes.length){status.textContent='Série diária N/D: não há código MLB comprovado para este agrupamento.';return}
+        status.textContent='Carregando série diária da conta de origem…';
+        var period=JSON.parse(document.getElementById('consolidated-period').textContent),from=period.dateFrom,to=period.dateTo;
+        var chunks=[];for(var i=0;i<g.codes.length;i+=50)chunks.push(g.codes.slice(i,i+50));
+        try{
+          var payloads=await Promise.all(chunks.map(async function(codes){var qs=new URLSearchParams({account_id:String(g.account_id),codes:codes.join(','),date_from:from,date_to:to});var response=await fetch('/online/consolidado/item-daily?'+qs,{credentials:'same-origin'});return response.ok?response.json():{ok:false}}));
+          if(payloads.some(function(p){return p.ok!==true})){status.textContent='Série diária indisponível. Nenhum zero foi inventado.';return}
+          var byDate=new Map(),partial=false;payloads.forEach(function(p){g.codes.forEach(function(code){(p.series[code]||[]).forEach(function(row){if(row.salesPresent!==true||row.partial){partial=true;return}byDate.set(row.date,(byDate.get(row.date)||0)+Number(row.revenue||0))})})});
+          var dailyTotal=Array.from(byDate.values()).reduce(function(sum,value){return sum+value},0);
+          if(partial||Math.abs(dailyTotal-g.totalRevenue)>0.01){status.textContent='Série diária N/D: a soma dos dias não confere com a receita do produto neste período.';return}
+          if(!byDate.size){status.textContent='Série diária N/D: a consulta não retornou vendas para os códigos deste agrupamento.';return}
+          var dates=Array.from(byDate.keys()).sort(),peak=Math.max(1,...dates.map(function(d){return byDate.get(d)}));
+          dates.forEach(function(d){var bar=document.createElement('span');bar.style.height=Math.max(1,100*byDate.get(d)/peak)+'%';bar.title=d+' · '+money(byDate.get(d));chart.appendChild(bar)});
+          status.textContent='Vendas diárias disponíveis para '+dates.length+' dia(s); passe o mouse sobre as barras. A série não certifica, por si só, todos os dias do período.';
+        }catch(e){status.textContent='Série diária indisponível. Nenhum zero foi inventado.'}
+      }
       function num(x){return Number(x)||0}function fmt(x){return num(x).toLocaleString('pt-BR',{maximumFractionDigits:0})}function money(x){return 'R$ '+num(x).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}function pct(x){return x==null?'N/D':(100*x).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'%'}
       function grouped(){var groups=new Map();items.forEach(function(item){var id=item.code||item.sku||'sem-anuncio',title=item.title||id;
         if((mode==='familia'||mode==='hibrida')&&item.familyId){id=item.familyId;title=item.familyName||title}
         else if((mode==='variacao'||mode==='mlbu')&&item.userProductId){id=item.userProductId;title=item.userProductName||title}
         else if(mode==='campanha'&&item.campaignId){id=item.campaignId;title=item.campaignName||item.campaign||title}
         else if(mode==='sku'&&item.sku&&!item.skuIsReference){id=item.sku;title=id}
-        var key=String(item.account_id)+'|'+mode+'|'+id,g=groups.get(key);if(!g){g={account:item.account,code:id,sku:mode==='sku'?id:(item.sku||''),title:title,totalRevenue:0,orders:0,units:0,investment:0,adsRevenue:0,visits:0,members:0,visitsKnown:0};groups.set(key,g)}
-        ['totalRevenue','orders','units','investment','adsRevenue','visits'].forEach(function(k){g[k]+=num(item[k])});g.members++;if(item.visitsCoverageComplete===true)g.visitsKnown++});
+        var key=String(item.account_id)+'|'+mode+'|'+id,g=groups.get(key);if(!g){g={account:item.account,account_id:item.account_id,code:id,sku:mode==='sku'?id:(item.sku||''),title:title,thumbnailUrl:imageUrl(item.thumbnailUrl),codes:[],totalRevenue:0,orders:0,units:0,investment:0,adsRevenue:0,visits:0,members:0,visitsKnown:0};groups.set(key,g)}
+        ['totalRevenue','orders','units','investment','adsRevenue','visits'].forEach(function(k){g[k]+=num(item[k])});g.members++;if(item.visitsCoverageComplete===true)g.visitsKnown++;if(String(item.code||'').toUpperCase().startsWith('MLB')&&!g.codes.includes(item.code))g.codes.push(item.code);if(!g.thumbnailUrl)g.thumbnailUrl=imageUrl(item.thumbnailUrl)});
         return Array.from(groups.values()).sort(function(a,b){return b.totalRevenue-a.totalRevenue})}
       function cell(row,text){var td=document.createElement('td');td.textContent=text;row.appendChild(td)}
       function draw(){var query=search.value.trim().toLocaleLowerCase('pt-BR'),all=grouped().filter(function(r){return !query||[r.account,r.title,r.code,r.sku].some(function(v){return String(v||'').toLocaleLowerCase('pt-BR').includes(query)})});
         var pages=Math.max(1,Math.ceil(all.length/100));page=Math.max(1,Math.min(page,pages));body.textContent='';all.slice((page-1)*100,page*100).forEach(function(g){var tr=document.createElement('tr');
-          cell(tr,g.account);cell(tr,g.title);cell(tr,g.code+' / '+g.sku);cell(tr,money(g.totalRevenue));cell(tr,fmt(g.orders));cell(tr,fmt(g.units));cell(tr,money(g.investment));cell(tr,money(g.adsRevenue));cell(tr,g.investment?num(g.adsRevenue/g.investment).toLocaleString('pt-BR',{maximumFractionDigits:2})+'x':'N/D');cell(tr,pct(g.totalRevenue?g.investment/g.totalRevenue:null));cell(tr,pct(g.adsRevenue?g.investment/g.adsRevenue:null));cell(tr,g.visitsKnown===g.members?fmt(g.visits):'N/D');body.appendChild(tr)});
+          var td=document.createElement('td'),wrap=document.createElement('div');wrap.className='product-name';var photo=document.createElement(g.thumbnailUrl?'img':'span');photo.className='product-photo'+(g.thumbnailUrl?'':' empty');if(g.thumbnailUrl)photo.src=g.thumbnailUrl;else photo.textContent='Sem foto';wrap.appendChild(photo);var title=document.createElement('b');title.textContent=g.title;wrap.appendChild(title);td.appendChild(wrap);tr.appendChild(td);
+          cell(tr,g.account);cell(tr,g.code+' / '+g.sku);cell(tr,money(g.totalRevenue));cell(tr,fmt(g.orders));cell(tr,fmt(g.units));cell(tr,money(g.investment));cell(tr,money(g.adsRevenue));cell(tr,g.investment?num(g.adsRevenue/g.investment).toLocaleString('pt-BR',{maximumFractionDigits:2})+'x':'N/D');cell(tr,pct(g.totalRevenue?g.investment/g.totalRevenue:null));cell(tr,pct(g.adsRevenue?g.investment/g.adsRevenue:null));cell(tr,g.visitsKnown===g.members?fmt(g.visits):'N/D');var detail=document.createElement('td'),button=document.createElement('button');button.type='button';button.className='detail-open';button.textContent='Abrir';button.onclick=function(){openDetail(g)};detail.appendChild(button);tr.appendChild(detail);body.appendChild(tr)});
         count.textContent='Página '+page+' de '+pages+' · '+all.length+' linhas, ordenadas por receita.';pager.textContent='';
         if(page>1){var prev=document.createElement('button');prev.type='button';prev.textContent='Anterior';prev.onclick=function(){page--;draw()};pager.appendChild(prev)}
         if(page<pages){var next=document.createElement('button');next.type='button';next.textContent='Próxima';next.onclick=function(){page++;draw()};pager.appendChild(next)}
@@ -294,7 +343,7 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
         (async function(){{var source=document.getElementById('comparison-request');if(!source)return;
           var config=JSON.parse(source.textContent), previous=[];
           for(var id of config.accounts){{
-            var qs=new URLSearchParams({{account_id:String(id),date_from:config.period.dateFrom,date_to:config.period.dateTo}});
+            var qs=new URLSearchParams({{account_id:String(id),period:config.period.mode||'30d',date_from:config.period.dateFrom,date_to:config.period.dateTo}});
             try{{var controller=new AbortController(),timer=setTimeout(function(){{controller.abort()}},45000);
               var response=await fetch('/online/consolidado/comparison?'+qs,{{credentials:'same-origin',signal:controller.signal}});
               clearTimeout(timer);var data=await response.json();if(!response.ok||!data.ok)return;previous.push(data.summary);

@@ -3512,6 +3512,36 @@ class Handler(BaseHTTPRequestHandler):
                 partial = (qs.get("partial", ["1"])[0] or "1") != "0"
                 _send_json(self, _item_daily_payload(client_id, codes, date_from, date_to, partial))
                 return
+            if path == "/online/consolidado/item-daily":
+                user, _token = _current_user(self)
+                if not user:
+                    _send_json(self, {"ok": False, "error": "unauthorized"}, 401)
+                    return
+                if beta_config.BETA_MODE and not _beta_access_allowed(user):
+                    _send_json(self, {"ok": False, "error": "forbidden"}, 403)
+                    return
+                qs = parse_qs(url.query or "")
+                try:
+                    account_id = int(qs.get("account_id", [""])[0])
+                except ValueError:
+                    _send_json(self, {"ok": False, "error": "invalid_account"}, 400)
+                    return
+                links = {int(link["id"]): link for link in db.list_active_ml_links_for_user(user["id"])}
+                if account_id not in links:
+                    _send_json(self, {"ok": False, "error": "forbidden"}, 403)
+                    return
+                codes = sorted({_normalize_mlb_code(code) for code in (qs.get("codes", [""])[0] or "").split(",") if _normalize_mlb_code(code)})
+                start, end = qs.get("date_from", [""])[0], qs.get("date_to", [""])[0]
+                try:
+                    first, last = date.fromisoformat(start), date.fromisoformat(end)
+                    valid_period = first <= last < datetime.now(ONLINE_TZ).date() and (last - first).days <= 89
+                except ValueError:
+                    valid_period = False
+                if not codes or len(codes) > _ITEM_DAILY_MAX_CODES or not valid_period:
+                    _send_json(self, {"ok": False, "error": "invalid_parameters"}, 400)
+                    return
+                _send_json(self, _item_daily_payload((links[account_id]["client_id"] or "").strip(), codes, start, end, False))
+                return
             if path == "/online/consolidado/comparison":
                 user, _token = _current_user(self)
                 if not user:
@@ -3530,7 +3560,15 @@ class Handler(BaseHTTPRequestHandler):
                 if account_id not in links:
                     _send_json(self, {"ok": False, "error": "forbidden"}, 403)
                     return
-                period = _resolve_online_period(mode="30d", compare="previous")
+                mode = (qs.get("period", ["30d"])[0] or "30d").strip()
+                if mode not in {"7d", "15d", "30d", "custom"}:
+                    _send_json(self, {"ok": False, "error": "invalid_period"}, 400)
+                    return
+                period = _resolve_online_period(mode=mode, date_from=qs.get("date_from", [""])[0],
+                                                date_to=qs.get("date_to", [""])[0], compare="previous")
+                if period["error"] or period["partial"] or (date.fromisoformat(period["dateTo"]) - date.fromisoformat(period["dateFrom"])).days > 89:
+                    _send_json(self, {"ok": False, "error": "invalid_period"}, 400)
+                    return
                 if (qs.get("date_from", [""])[0], qs.get("date_to", [""])[0]) != (period["dateFrom"], period["dateTo"]):
                     _send_json(self, {"ok": False, "error": "period_changed"}, 409)
                     return
@@ -3581,7 +3619,15 @@ class Handler(BaseHTTPRequestHandler):
                     page = max(1, int(qs.get("page", ["1"])[0]))
                 except ValueError:
                     page = 1
-                period = _resolve_online_period(mode="30d", compare="none")
+                mode = (qs.get("period", ["30d"])[0] or "30d").strip()
+                if mode not in {"7d", "15d", "30d", "custom"}:
+                    _send_html(self, templates.render_error_page("Periodo invalido."), 400)
+                    return
+                period = _resolve_online_period(mode=mode, date_from=qs.get("date_from", [""])[0],
+                                                date_to=qs.get("date_to", [""])[0], compare="previous")
+                if period["error"] or period["partial"] or (date.fromisoformat(period["dateTo"]) - date.fromisoformat(period["dateFrom"])).days > 89:
+                    _send_html(self, templates.render_error_page("Selecione ate 90 dias ja fechados."), 400)
+                    return
                 import consolidated_dashboard
                 import gc
                 projections, failures = [], []

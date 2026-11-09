@@ -1,4 +1,7 @@
 import unittest
+import re
+import shutil
+import subprocess
 
 import consolidated_dashboard as consolidated
 
@@ -133,6 +136,29 @@ class ConsolidatedMathTests(unittest.TestCase):
         ]
         for mode in ("hibrida", "familia", "variacao", "mlb", "sku", "campanha"):
             self.assertEqual(len(consolidated._group_items(items, mode)), 2, mode)
+
+    def test_photo_detail_and_period_stay_on_consolidated_page(self):
+        accounts = [{"id": 1, "client_id": "a", "official_store": "Conta A", "nickname": ""}]
+        first = self.account(1, 100, 10)
+        first["items"][0].update({"account": "Conta A", "account_id": 1,
+                                  "thumbnailUrl": "https://example.com/product.jpg"})
+        page = consolidated.render(accounts, {1},
+                                   {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+                                   [first], [])
+        self.assertIn('name="period"', page)
+        self.assertIn('value="custom" selected', page)
+        self.assertIn('src="https://example.com/product.jpg"', page)
+        self.assertIn('id="detail-backdrop"', page)
+        self.assertIn('/online/consolidado/item-daily?', page)
+        self.assertIn('Math.abs(dailyTotal-g.totalRevenue)>0.01', page)
+        self.assertIn('"account_id":1', page)
+        self.assertNotIn('src="javascript:', page)
+        if shutil.which("node"):
+            scripts = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', page, re.S)
+            for script in scripts:
+                if script.lstrip().startswith("(function") or script.lstrip().startswith("(async function"):
+                    result = subprocess.run(["node", "--check"], input=script, text=True, capture_output=True, encoding="utf-8")
+                    self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":
