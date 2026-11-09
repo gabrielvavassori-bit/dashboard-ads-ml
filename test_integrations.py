@@ -1779,6 +1779,27 @@ class HTTPRouteTests(unittest.TestCase):
             self.assertIn("Loja B", body)
             self.assertNotIn("Gráfico N/D", body)
 
+    def test_consolidated_item_daily_reads_only_an_owned_account(self):
+        owner_id, cookie = self._login_cookie("consolidated-detail-owner@example.com")
+        owned_id = db.upsert_user_ml_link(owner_id, client_id="detail-owned", nickname="Própria", slot_number=1)
+        foreign_user_id, _ = self._login_cookie("consolidated-detail-other@example.com")
+        foreign_id = db.upsert_user_ml_link(foreign_user_id, client_id="detail-foreign", nickname="Alheia", slot_number=1)
+        period = app._resolve_online_period(mode="7d", compare="previous")
+        params = {"codes": "MLB123", "date_from": period["dateFrom"], "date_to": period["dateTo"]}
+        with patch.object(app, "_item_daily_payload", return_value={"ok": True, "series": []}) as read:
+            own_query = urlencode(dict(params, account_id=owned_id))
+            with urlopen(Request(f"{self.base_url}/online/consolidado/item-daily?{own_query}",
+                                 headers={"Cookie": cookie}), timeout=5) as response:
+                self.assertTrue(json.load(response)["ok"])
+            read.assert_called_once_with("detail-owned", ["MLB123"], period["dateFrom"], period["dateTo"], False)
+            foreign_query = urlencode(dict(params, account_id=foreign_id))
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(Request(f"{self.base_url}/online/consolidado/item-daily?{foreign_query}",
+                                headers={"Cookie": cookie}), timeout=5)
+            self.assertEqual(raised.exception.code, 403)
+            raised.exception.close()
+            self.assertEqual(read.call_count, 1)
+
     def test_consolidated_comparison_is_scoped_and_requires_exact_complete_period(self):
         user_id, cookie = self._login_cookie("consolidated-comparison@example.com")
         own_id = db.upsert_user_ml_link(user_id, client_id="compare-owned", nickname="Própria", slot_number=1)
