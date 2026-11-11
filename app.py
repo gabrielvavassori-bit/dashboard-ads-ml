@@ -1437,6 +1437,32 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         and str(returns_payload.get("date_from") or "") == latest_date_from
         and str(returns_payload.get("date_to") or "") == latest_date_to
     )
+    # Um recibo incompleto não certifica o total. Ainda assim, a coleta
+    # oficial pode ter observado devoluções nesta conta/janela exatas.
+    # Mostre-as separadamente como parciais, nunca como total ou taxa.
+    returns_observed = False
+    observed_amount = 0.0
+    observed_orders_count = 0
+    if (
+        not returns_available
+        and returns_payload.get("complete") is False
+        and returns_payload.get("cache_hit") is True
+        and returns_payload.get("read_only") is True
+        and returns_payload.get("source") == "mercado_livre_claims_returns_v2"
+        and str(returns_payload.get("date_from") or "") == latest_date_from
+        and str(returns_payload.get("date_to") or "") == latest_date_to
+        and str(returns_payload.get("observed_at") or "").strip()
+    ):
+        try:
+            amount = float(returns_payload["amount"])
+            count = int(returns_payload["returns_count"])
+            orders_count = int(returns_payload["returned_orders_count"])
+            if math.isfinite(amount) and amount > 0 and count > 0 and orders_count > 0:
+                returns_observed = True
+                observed_amount = amount
+                observed_orders_count = orders_count
+        except (KeyError, TypeError, ValueError, OverflowError):
+            pass
     returns_amount = _number(returns_payload.get("amount")) if returns_available else 0.0
     returns_rate = (returns_amount / total_revenue) if returns_available and total_revenue else 0.0
     returns_orders_available = bool(
@@ -1456,6 +1482,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
     )
     returns_meta = {
         "available": returns_available,
+        "observedPartial": returns_observed,
+        "observedAmount": observed_amount if returns_observed else None,
+        "observedOrdersCount": observed_orders_count if returns_observed else None,
         "amount": returns_amount,
         "rate": returns_rate,
         "count": int(_number(returns_payload.get("returns_count"))) if returns_available else 0,
@@ -1515,6 +1544,8 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
         )
     if returns_available:
         notice += " Devolucoes: valor dos produtos com dinheiro reembolsado; o frete de retorno nao esta somado ao indicador."
+    elif returns_observed:
+        notice += " Devolucoes: ha valor e pedidos observados nesta coleta, mas o total ainda nao foi certificado; o detalhe pendente nao foi tratado como zero."
     else:
         notice += " A leitura oficial de devolucoes ainda nao ficou completa; os indicadores aparecem como N/D."
     return {
@@ -1528,6 +1559,9 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "adsDirectRevenue": total_ads_direct,
             "organicRevenue": total_organic,
             "returnsAvailable": returns_available,
+            "returnsObservedPartial": returns_observed,
+            "returnsObservedAmount": observed_amount if returns_observed else None,
+            "returnsObservedOrdersCount": observed_orders_count if returns_observed else None,
             "returnsAmount": returns_amount,
             "returnsRate": returns_rate,
             "returnsOrdersAvailable": returns_orders_available,

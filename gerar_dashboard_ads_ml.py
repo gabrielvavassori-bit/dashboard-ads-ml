@@ -3238,6 +3238,10 @@ def render_dashboard(data):
             ? `${{num(k.returnsOrdersCount || 0)}} de ${{num(k.returnsOrdersTotal || 0)}} · ${{pct(k.returnsOrdersRate || 0)}}`
             : `${{num(k.returnsOrdersCount || 0)}} pedidos confirmados`, k.returnsOrdersCount > 0 ? 'danger' : '']
         ] : []),
+        ...(k.returnsObservedPartial && !k.returnsAvailable ? [
+          ['Devolucoes observadas (parcial)', brl(k.returnsObservedAmount), 'danger', 'Valor observado nesta coleta; ha detalhe pendente. Nao e o total certificado.'],
+          ['Pedidos devolvidos observados (parcial)', `${{num(k.returnsObservedOrdersCount)}} pedidos`, 'danger', 'Contagem observada nesta coleta; nao representa o total certificado.']
+        ] : []),
         ['Receita atribuida ADS', brl(k.adsRevenue), ''],
         ['Receita organica estimada', brl(k.organicRevenue || 0), ''],
         ['Investimento ADS', brl(k.investment), ''],

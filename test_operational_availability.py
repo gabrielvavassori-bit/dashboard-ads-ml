@@ -1,4 +1,5 @@
 import copy
+import json
 import subprocess
 import unittest
 from datetime import datetime, timedelta
@@ -285,6 +286,56 @@ class OperationalAvailabilityTests(unittest.TestCase):
         html = render_dashboard(data)
         self.assertIn("pedidos confirmados", html)
         self.assertNotIn("taxa N/D", html)
+
+    def test_incomplete_returns_show_only_observed_amount_for_exact_receipt(self):
+        returns = {
+            "ok": False, "complete": False, "cache_hit": True, "read_only": True,
+            "source": "mercado_livre_claims_returns_v2",
+            "date_from": "2026-09-01", "date_to": "2026-09-02",
+            "observed_at": "2026-09-03T01:00:00Z",
+            "amount": 12.50, "returns_count": 1, "returned_orders_count": 1,
+            "error": "claims_detail_incomplete:return_http_401",
+        }
+        with patch.object(app, "_fetch_dash_ads_json", side_effect=[self.payload(), {}, returns]):
+            data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+        self.assertEqual(error, "")
+        self.assertFalse(data["kpis"]["returnsAvailable"])
+        self.assertTrue(data["kpis"]["returnsObservedPartial"])
+        self.assertEqual(data["kpis"]["returnsObservedAmount"], 12.50)
+        self.assertEqual(data["kpis"]["returnsObservedOrdersCount"], 1)
+        self.assertEqual(data["kpis"]["returnsAmount"], 0.0)
+        self.assertIn("total ainda nao foi certificado", data["meta"]["onlineMode"]["notice"])
+
+        html = render_dashboard(data)
+        render_kpis = "function renderKpis()" + html.split("function renderKpis()", 1)[1].split("function renderAlerts()", 1)[0]
+        script = (
+            "const target={innerHTML:''};"
+            "const document={getElementById:()=>target};"
+            "const num=String,brl=String,pct=String,periodComparisonInline=()=>'';"
+            f"const DATA={json.dumps({'periodSummary': None, 'kpis': data['kpis']})};"
+            + render_kpis + "renderKpis();console.log(target.innerHTML);"
+        )
+        result = subprocess.run(["node", "-e", script], check=True, text=True, encoding="utf-8", capture_output=True)
+        self.assertIn("Devolucoes observadas (parcial)", result.stdout)
+        self.assertIn("12.5", result.stdout)
+        self.assertNotIn("Devolucoes confirmadas", result.stdout)
+
+    def test_incomplete_returns_without_exact_persisted_evidence_stay_unavailable(self):
+        returns = {
+            "ok": False, "complete": False, "cache_hit": True, "read_only": True,
+            "source": "mercado_livre_claims_returns_v2",
+            "date_from": "2026-09-01", "date_to": "2026-09-02",
+            "observed_at": "2026-09-03T01:00:00Z",
+            "amount": 12.50, "returns_count": 1, "returned_orders_count": 1,
+        }
+        for mutation in ({"date_to": "2026-09-03"}, {"cache_hit": False}, {"amount": 0}, {"amount": "nan"}):
+            with self.subTest(mutation=mutation):
+                candidate = {**returns, **mutation}
+                with patch.object(app, "_fetch_dash_ads_json", side_effect=[self.payload(), {}, candidate]):
+                    data, error = app._build_online_dashboard_data("demo", "7", "2026-09-01", "2026-09-02")
+                self.assertEqual(error, "")
+                self.assertFalse(data["kpis"]["returnsObservedPartial"])
+                self.assertIsNone(data["kpis"]["returnsObservedAmount"])
 
     def test_kpi_cards_only_render_returns_with_complete_source(self):
         html = render_dashboard({"items": [], "meta": {}})
