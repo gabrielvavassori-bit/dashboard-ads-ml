@@ -32,7 +32,8 @@ def project_account(account, dashboard):
                     and all(not row.get("partial", True) for row in dashboard.get("accountDailySeries") or []),
         "kpis": {key: dashboard.get("kpis", {}).get(key) for key in
                  (*SUM_FIELDS, "products", "organicRevenue", "returnsAmount", "returnsAvailable",
-                  "returnsOrdersCount", "returnsOrdersAvailable", "adsNoSales",
+                  "returnsOrdersCount", "returnsOrdersAvailable", "returnsObservedPartial",
+                  "returnsObservedAmount", "returnsObservedOrdersCount", "adsNoSales",
                   "investmentNoAdsSales")},
         "visits_complete": visits_complete,
         "cancelled_orders": (official.get("cancelledOrders", {}).get("total")
@@ -64,8 +65,23 @@ def combine(accounts, start, end):
     sums["investmentNoAdsSales"] = sum(float(a["kpis"].get("investmentNoAdsSales") or 0) for a in accepted)
     sums["visits"] = sum(float(row.get("visits") or 0) for a in accepted for row in a["daily"]) if accepted and all(a.get("visits_complete") for a in accepted) else None
     sums["cancelledOrders"] = sum(float(a["cancelled_orders"]) for a in accepted) if accepted and all(a.get("cancelled_orders") is not None for a in accepted) else None
-    sums["returnsAmount"] = sum(float(a["kpis"].get("returnsAmount") or 0) for a in accepted) if accepted and all(a["kpis"].get("returnsAvailable") is True for a in accepted) else None
-    sums["returnsOrdersCount"] = sum(float(a["kpis"].get("returnsOrdersCount") or 0) for a in accepted) if accepted and all(a["kpis"].get("returnsOrdersAvailable") is True for a in accepted) else None
+    sums["returnsAmount"] = sum(float(a["kpis"].get("returnsAmount")) for a in accepted) if accepted and len(accepted) == len(accounts) and all(a["kpis"].get("returnsAvailable") is True and a["kpis"].get("returnsAmount") is not None for a in accepted) else None
+    sums["returnsOrdersCount"] = sum(float(a["kpis"].get("returnsOrdersCount")) for a in accepted) if accepted and len(accepted) == len(accounts) and all(a["kpis"].get("returnsOrdersAvailable") is True and a["kpis"].get("returnsOrdersCount") is not None for a in accepted) else None
+    observed_amounts, observed_orders = [], []
+    for account in accepted:
+        kpis = account["kpis"]
+        if kpis.get("returnsAvailable") is True and kpis.get("returnsAmount") is not None:
+            observed_amounts.append(float(kpis["returnsAmount"]))
+        elif kpis.get("returnsObservedPartial") is True and kpis.get("returnsObservedAmount") is not None:
+            observed_amounts.append(float(kpis["returnsObservedAmount"]))
+        if kpis.get("returnsOrdersAvailable") is True and kpis.get("returnsOrdersCount") is not None:
+            observed_orders.append(float(kpis["returnsOrdersCount"]))
+        elif kpis.get("returnsObservedPartial") is True and kpis.get("returnsObservedOrdersCount") is not None:
+            observed_orders.append(float(kpis["returnsObservedOrdersCount"]))
+    sums["returnsObservedAmount"] = sum(observed_amounts) if observed_amounts else None
+    sums["returnsObservedAmountAccounts"] = len(observed_amounts)
+    sums["returnsObservedOrdersCount"] = sum(observed_orders) if observed_orders else None
+    sums["returnsObservedOrdersAccounts"] = len(observed_orders)
     daily = defaultdict(lambda: {**{key: 0.0 for key in DAILY_FIELDS}, "sources": 0})
     for account in accepted:
         for row in account["daily"]:
@@ -205,8 +221,12 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
             ("PREÇO MÉDIO POR UNIDADE", _money(sums["price"])),
             ("VISITAS DOS PRODUTOS", _number(sums["visits"])),
             ("VENDAS CANCELADAS", _number(sums["cancelledOrders"])),
-            ("DEVOLUÇÕES CONFIRMADAS", _money(sums["returnsAmount"])),
-            ("PEDIDOS DEVOLVIDOS", _number(sums["returnsOrdersCount"])),
+            (("DEVOLUÇÕES CONFIRMADAS" if sums["returnsAmount"] is not None or sums["returnsObservedAmount"] is None else
+              "DEVOLUÇÕES OBSERVADAS (PARCIAL, {}/{} CONTAS; NÃO É TOTAL)".format(sums["returnsObservedAmountAccounts"], len(selected))),
+             _money(sums["returnsAmount"] if sums["returnsAmount"] is not None else sums["returnsObservedAmount"])),
+            (("PEDIDOS DEVOLVIDOS" if sums["returnsOrdersCount"] is not None or sums["returnsObservedOrdersCount"] is None else
+              "PEDIDOS DEVOLVIDOS OBSERVADOS (PARCIAL, {}/{} CONTAS; NÃO É TOTAL)".format(sums["returnsObservedOrdersAccounts"], len(selected))),
+             _number(sums["returnsOrdersCount"] if sums["returnsOrdersCount"] is not None else sums["returnsObservedOrdersCount"])),
             ("RECEITA ATRIBUÍDA ADS", _money(sums["adsRevenue"])),
             ("RECEITA ORGÂNICA ESTIMADA", _money(sums["organicRevenue"])),
             ("INVESTIMENTO ADS", _money(sums["investment"])),
