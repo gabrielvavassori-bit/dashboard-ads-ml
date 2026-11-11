@@ -190,6 +190,61 @@ class ConsolidatedMathTests(unittest.TestCase):
         for mode in ("hibrida", "familia", "variacao", "mlb", "sku", "campanha"):
             self.assertEqual(len(consolidated._group_items(items, mode)), 2, mode)
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js required for hierarchy behavior test")
+    def test_hierarchy_reveals_only_source_account_listings_without_fetch(self):
+        links = [
+            {"id": 1, "client_id": "variety", "official_store": "VARIETYSHOP1", "nickname": ""},
+            {"id": 2, "client_id": "lima", "official_store": "LIMA_SHOP_PREMIUM", "nickname": ""},
+        ]
+        first, second = self.account(1, 100, 10), self.account(2, 200, 20)
+        first["items"] = [
+            {"code": "MLB5001816208", "sku": "4093 AREIA- 42", "familyId": "F1",
+             "familyName": "Família de teste", "userProductId": "MLBU1", "title": "Anúncio A",
+             "totalRevenue": 40, "orders": 1, "units": 1},
+            {"code": "MLB5001816209", "sku": "4093 AREIA- 42", "familyId": "F1",
+             "familyName": "Família de teste", "userProductId": "MLBU2", "title": "Anúncio B",
+             "totalRevenue": 60, "orders": 1, "units": 1},
+        ]
+        second["items"] = [
+            {"code": "MLB3923370735", "sku": "4093 AREIA- 42", "familyId": "F1",
+             "familyName": "Família de teste", "userProductId": "MLBU3", "title": "Anúncio C",
+             "totalRevenue": 200, "orders": 2, "units": 2},
+        ]
+        projections = [
+            {**first, "label": "VARIETYSHOP1"},
+            {**second, "label": "LIMA_SHOP_PREMIUM"},
+        ]
+        page = consolidated.render(links, {1, 2},
+                                   {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+                                   projections, [])
+        self.assertIn("className='hierarchy-toggle'", page)
+        self.assertIn("if(!childRow.firstChild)appendHierarchy(g,childRow)", page)
+        script = re.search(r"function grouped\(\).*?function draw\(\)", page, re.S).group(0).split("function draw()")[0]
+        payload = json.loads(re.search(r'<script type="application/json" id="consolidated-items">(.*?)</script>', page, re.S).group(1))
+        harness = f"""
+          var items={json.dumps(payload)},mode='hibrida';
+          function num(x){{return Number(x)||0}}
+          function fmt(x){{return String(x)}}
+          function money(x){{return String(x)}}
+          function imageUrl(x){{return x||''}}
+          var fetch=function(){{throw Error('hierarchy must not fetch')}};
+          var document={{createElement:function(tag){{return {{tag:tag,children:[],appendChild:function(x){{this.children.push(x);this.firstChild=this.children[0]}},set textContent(x){{this.text=x}}}}}}}};
+          {script}
+          var groups=grouped();
+          if(groups.length!==2)throw Error('account groups mixed');
+          var variety=groups.find(function(g){{return g.account_id===1}});
+          var lima=groups.find(function(g){{return g.account_id===2}});
+          if(variety.totalRevenue!==100||lima.totalRevenue!==200)throw Error('totals changed');
+          if(variety.children.length!==2||lima.children.length!==1)throw Error('children mixed');
+          var row=document.createElement('tr');appendHierarchy(variety,row);
+          function collect(node){{return [node.text||'',...(node.children||[]).map(collect)].join(' ')}}
+          var text=collect(row);
+          for(var value of ['MLBU1','MLBU2','MLB5001816208','MLB5001816209','4093 AREIA- 42','VARIETYSHOP1']){{if(!text.includes(value))throw Error('missing '+value)}}
+          if(text.includes('MLB3923370735')||text.includes('LIMA_SHOP_PREMIUM'))throw Error('other account leaked');
+        """
+        result = subprocess.run(["node"], input=harness, text=True, capture_output=True, encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_photo_detail_and_period_stay_on_consolidated_page(self):
         accounts = [{"id": 1, "client_id": "a", "official_store": "Conta A", "nickname": ""}]
         first = self.account(1, 100, 10)
