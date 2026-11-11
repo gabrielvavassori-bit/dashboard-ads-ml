@@ -128,6 +128,58 @@ class ConsolidatedMathTests(unittest.TestCase):
         accounts[1]["cancelled_orders"] = None
         self.assertIsNone(consolidated.combine(accounts, "2026-10-01", "2026-10-02")["sums"]["cancelledOrders"])
 
+    def test_partial_official_returns_are_visible_without_certifying_total(self):
+        links = [
+            {"id": 1, "client_id": "a", "official_store": "Conta A", "nickname": ""},
+            {"id": 2, "client_id": "b", "official_store": "Variety", "nickname": ""},
+        ]
+        first, variety = self.account(1, 100, 10), self.account(2, 300, 60)
+        first["kpis"].update({"returnsAvailable": True, "returnsAmount": 20,
+                              "returnsOrdersAvailable": True, "returnsOrdersCount": 2})
+        variety["kpis"].update({"returnsAvailable": False, "returnsAmount": None,
+                                "returnsOrdersAvailable": False, "returnsOrdersCount": None,
+                                "returnsObservedPartial": True, "returnsObservedAmount": 35,
+                                "returnsObservedOrdersCount": 3})
+        result = consolidated.combine([first, variety], "2026-10-01", "2026-10-02")
+        self.assertIsNone(result["sums"]["returnsAmount"])
+        self.assertIsNone(result["sums"]["returnsOrdersCount"])
+        self.assertEqual(result["sums"]["returnsObservedAmount"], 55)
+        self.assertEqual(result["sums"]["returnsObservedOrdersCount"], 5)
+        page = consolidated.render(links, {1, 2},
+                                   {"dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+                                   [first, variety], [])
+        self.assertIn("DEVOLUÇÕES OBSERVADAS (PARCIAL, 2/2 CONTAS; NÃO É TOTAL)", page)
+        self.assertIn("R$ 55,00", page)
+        self.assertIn("PEDIDOS DEVOLVIDOS OBSERVADOS (PARCIAL, 2/2 CONTAS; NÃO É TOTAL)", page)
+        self.assertNotIn("DEVOLUÇÕES CONFIRMADAS</small><strong>R$ 55,00", page)
+
+    def test_projection_preserves_only_validated_partial_returns_from_individual_view(self):
+        link = {"id": 2, "client_id": "varietyshop1-1985", "official_store": "Variety", "nickname": ""}
+        dashboard = {
+            "meta": {"period": {"dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+                     "onlineMode": {"complete": True, "periodMatch": True}},
+            "kpis": {"returnsAvailable": False, "returnsObservedPartial": True,
+                     "returnsObservedAmount": 35, "returnsObservedOrdersCount": 3},
+            "accountDailySeries": [{"date": "2026-10-01", "partial": False},
+                                   {"date": "2026-10-02", "partial": False}],
+        }
+        projected = consolidated.project_account(link, dashboard)
+        self.assertEqual(projected["kpis"]["returnsObservedAmount"], 35)
+        self.assertEqual(projected["kpis"]["returnsObservedOrdersCount"], 3)
+        self.assertIsNone(projected["kpis"]["returnsAmount"])
+
+    def test_unknown_returns_or_wrong_period_are_never_silently_zero(self):
+        first, unknown = self.account(1, 100, 10), self.account(2, 300, 60)
+        first["kpis"].update({"returnsAvailable": True, "returnsAmount": 20})
+        unknown["period"] = ("2026-09-01", "2026-09-02")
+        sums = consolidated.combine([first, unknown], "2026-10-01", "2026-10-02")["sums"]
+        self.assertIsNone(sums["returnsAmount"])
+        self.assertEqual(sums["returnsObservedAmount"], 20)
+        self.assertEqual(sums["returnsObservedAmountAccounts"], 1)
+        first["kpis"].clear()
+        sums = consolidated.combine([first, unknown], "2026-10-01", "2026-10-02")["sums"]
+        self.assertIsNone(sums["returnsObservedAmount"])
+
     def test_account_namespace_applies_to_every_grouping(self):
         items = [
             {"account_id": 1, "account": "A", "code": "MLB1", "sku": "SKU",
