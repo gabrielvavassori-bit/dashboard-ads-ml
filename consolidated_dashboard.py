@@ -12,7 +12,9 @@ DAILY_FIELDS = ("revenue", "investment", "adsRevenue", "tacosBaseRevenue", "unit
 ITEM_FIELDS = ("code", "sku", "skuIsReference", "salesRowPrimary", "globalProductId", "title", "familyId", "familyName", "userProductId",
                "userProductName", "campaign", "campaignId", "campaignName",
                "totalRevenue", "units", "orders", "investment", "adsRevenue",
-               "visits", "visitsCoverageComplete", "impressions", "clicks", "thumbnailUrl")
+               "visits", "visitsCoverageComplete", "impressions", "clicks", "thumbnailUrl",
+               "lastSaleDate", "lastSalePrice", "currentPrice", "avgSalePrice",
+               "priceStatus", "performance7d")
 
 
 def project_account(account, dashboard):
@@ -152,7 +154,7 @@ def combine(accounts, start, end):
             items.append({**item, "account": account["label"], "account_id": account["id"]})
     return {"complete": complete, "reconciliation_issues": reconciliation_issues,
             "accepted": len(accepted), "selected": len(accounts),
-            "sums": sums, "chart": chart, "items": items}
+            "sums": sums, "chart": chart, "items": items, "roots": roots}
 
 
 def _money(value):
@@ -187,6 +189,9 @@ def build_identity_tree(items):
         return {"level": level, "key": key, "title": title, "account": account,
                 "account_id": account_id, "confidence": confidence,
                 "children": [], "sources": [], "thumbnailUrl": "",
+                "lastSaleDate": "", "lastSalePrice": None, "currentPrice": None,
+                "priceMin": None, "priceMax": None, "avgSalePrice": None,
+                "performance7d": {},
                 **{field: None for field in fields}}
 
     def get_child(parent, level, key, title, **kwargs):
@@ -273,14 +278,16 @@ def build_identity_tree(items):
         account_node = get_child(root, "account", f"account:{account_id}", account,
                                  account=account, account_id=account_id)
         family_id = str(item.get("familyId") or "").strip()
-        family = get_child(account_node, "family", "family:" + (family_id or "none"),
-                           str(item.get("familyName") or family_id or "Sem família cadastrada"),
-                           account=account, account_id=account_id)
+        family_name = str(item.get("familyName") or "").strip()
+        parent = get_child(account_node, "family", "family:" + (family_id or family_name or code),
+                           family_name or family_id or "Família não cadastrada", account=account,
+                           account_id=account_id)
         mlbu_id = str(item.get("userProductId") or "").strip()
-        mlbu = get_child(family, "mlbu", "mlbu:" + (mlbu_id or "none"),
-                         str(item.get("userProductName") or mlbu_id or "Sem MLBU cadastrado"),
-                         account=account, account_id=account_id)
-        leaf = get_child(mlbu, "mlb", "mlb:" + code, str(item.get("title") or code),
+        mlbu_name = str(item.get("userProductName") or "").strip()
+        parent = get_child(parent, "mlbu", "mlbu:" + (mlbu_id or mlbu_name or code),
+                           mlbu_name or mlbu_id or "MLBU não cadastrado", account=account,
+                           account_id=account_id)
+        leaf = get_child(parent, "mlb", "mlb:" + code, str(item.get("title") or code),
                          account=account, account_id=account_id)
         leaf.update({field: item.get(field) for field in fields})
         leaf["code"] = code
@@ -289,7 +296,17 @@ def build_identity_tree(items):
         leaf["thumbnailUrl"] = _image_url(item.get("thumbnailUrl"))
         leaf["sources"] = [{"account_id": account_id, "account": account, "codes": [code]}]
         leaf["visitsKnown"] = item.get("visitsCoverageComplete") is True
+        leaf["lastSaleDate"] = str(item.get("lastSaleDate") or "")
+        leaf["lastSalePrice"] = item.get("lastSalePrice") if (item.get("lastSalePrice") or 0) > 0 else None
+        leaf["currentPrice"] = item.get("currentPrice") if (item.get("currentPrice") or 0) > 0 else None
+        leaf["priceMin"] = leaf["priceMax"] = leaf["currentPrice"]
+        leaf["avgSalePrice"] = (float(leaf["totalRevenue"]) / float(leaf["units"])
+                                if leaf["totalRevenue"] is not None and leaf["units"] else None)
+        leaf["priceStatus"] = item.get("priceStatus") or ""
+        leaf["performance7d"] = item.get("performance7d") if isinstance(item.get("performance7d"), dict) else {}
         for campaign_id, campaign_data in item["_campaign_data"].items():
+            if not campaign_id:
+                continue
             campaign_node = get_child(leaf, "campaign", "campaign:" + (campaign_id or "none"),
                                       campaign_data["title"], account=account, account_id=account_id)
             campaign_node["investment"] = campaign_data["investment"]
@@ -315,6 +332,36 @@ def build_identity_tree(items):
             current["thumbnailUrl"] = next((child["thumbnailUrl"] for child in current["children"]
                                            if child["thumbnailUrl"]), "")
             current["visitsKnown"] = all(child.get("visitsKnown") is True for child in current["children"])
+            current["avgSalePrice"] = (current["totalRevenue"] / current["units"]
+                                        if current["totalRevenue"] is not None and current["units"] else None)
+            prices = [child.get("priceMin") for child in current["children"]]
+            price_maxes = [child.get("priceMax") for child in current["children"]]
+            if all(isinstance(value, (int, float)) and value > 0 for value in prices + price_maxes):
+                current["priceMin"], current["priceMax"] = min(prices), max(price_maxes)
+                if current["priceMin"] == current["priceMax"]:
+                    current["currentPrice"] = current["priceMin"]
+            dated = [child for child in current["children"] if child.get("lastSaleDate")]
+            if dated:
+                current["lastSaleDate"] = max(child["lastSaleDate"] for child in dated)
+                latest_prices = {child.get("lastSalePrice") for child in dated
+                                 if child["lastSaleDate"] == current["lastSaleDate"]}
+                if len(latest_prices) == 1:
+                    current["lastSalePrice"] = latest_prices.pop()
+            performances = [child.get("performance7d") or {} for child in current["children"]]
+            window_keys = ("date_from", "previous_to", "current_from", "date_to")
+            if performances and all(p.get("date_to") and all(p.get(k) == performances[0].get(k)
+                                   for k in window_keys) for p in performances):
+                current["performance7d"] = {key: performances[0][key] for key in window_keys}
+                for metric in ("sales", "visits"):
+                    values = [p.get(metric) for p in performances]
+                    if all(isinstance(value, dict) and value.get("complete") is True
+                           and all(isinstance(value.get(side), (int, float)) for side in ("current", "previous"))
+                           for value in values):
+                        current["performance7d"][metric] = {
+                            "complete": True,
+                            "current": sum(value["current"] for value in values),
+                            "previous": sum(value["previous"] for value in values),
+                        }
         current["accountCount"] = len(current["sources"])
         current["children"].sort(key=lambda child: -(child.get("totalRevenue") or 0))
 
@@ -349,20 +396,37 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
     if result:
         sums = result["sums"]
         by_id = {account["id"]: account for account in projections}
-        reconciliation = '<section class="panel"><h2>Conferência por conta</h2><small>Mesma janela e mesma leitura usada nos painéis individuais. Não substitui a conferência com o Mercado Livre.</small><div class="scroll"><table><thead><tr><th>Conta</th><th>Período</th><th>Receita</th><th>Investimento Ads</th><th>Situação</th></tr></thead><tbody>'
+        reconciliation = '<section class="panel"><h2>Conferência por conta</h2><small>Mesma janela e mesma leitura usada nos painéis individuais. Não substitui a conferência com o Mercado Livre.</small><div class="scroll"><table><thead><tr><th>Conta</th><th>Período</th><th>Receita</th><th>Unidades</th><th>Pedidos por item</th><th>Investimento Ads</th><th>Receita Ads</th><th>Cancelamentos</th><th>Devoluções confirmadas</th><th>Situação</th></tr></thead><tbody>'
+        account_orders = defaultdict(list)
+        for root in result["roots"]:
+            for account_node in root["children"]:
+                account_orders[account_node["account_id"]].append(account_node.get("orders"))
         for link in selected:
             account = by_id.get(int(link["id"]))
             exact = bool(account and account["period"] == (period["dateFrom"], period["dateTo"]))
+            certified = exact and account["complete"]
             label = str(link["official_store"] or link["nickname"] or link["client_id"])
-            reconciliation += '<tr><td>{}</td><td>{} a {}</td><td>{}</td><td>{}</td><td>{}</td></tr>'.format(
+            orders = account_orders.get(int(link["id"]), [])
+            orders_total = sum(orders) if orders and all(value is not None for value in orders) else None
+            reconciliation += '<tr><td>{}</td><td>{} a {}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>'.format(
                 escape(label), escape(period["dateFrom"]), escape(period["dateTo"]),
-                escape(_money(account["kpis"].get("revenue"))) if exact and account["complete"] else "N/D",
-                escape(_money(account["kpis"].get("investment"))) if exact and account["complete"] else "N/D",
-                "Completa" if exact and account["complete"] else "Não certificada")
-        reconciliation += '</tbody><tfoot><tr><th>Soma das contas selecionadas</th><th>{} a {}</th><th>{}</th><th>{}</th><th>{}</th></tr></tfoot></table></div></section>'.format(
+                escape(_money(account["kpis"].get("revenue"))) if certified else "N/D",
+                escape(_number(account["kpis"].get("units"))) if certified else "N/D",
+                escape(_number(orders_total)) if certified else "N/D",
+                escape(_money(account["kpis"].get("investment"))) if certified else "N/D",
+                escape(_money(account["kpis"].get("adsRevenue"))) if certified else "N/D",
+                escape(_number(account.get("cancelled_orders"))) if certified else "N/D",
+                escape(_money(account["kpis"].get("returnsAmount"))) if certified and account["kpis"].get("returnsAvailable") is True else "N/D",
+                "Completa" if certified else "Não certificada")
+        reconciliation += '</tbody><tfoot><tr><th>Soma das contas selecionadas</th><th>{} a {}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th></tr></tfoot></table></div></section>'.format(
             escape(period["dateFrom"]), escape(period["dateTo"]),
             escape(_money(sums["revenue"])) if overall_complete else "N/D",
+            escape(_number(sums["units"])) if overall_complete else "N/D",
+            escape(_number(sums["orders"])) if overall_complete else "N/D",
             escape(_money(sums["investment"])) if overall_complete else "N/D",
+            escape(_money(sums["adsRevenue"])) if overall_complete else "N/D",
+            escape(_number(sums["cancelledOrders"])) if overall_complete else "N/D",
+            escape(_money(sums["returnsAmount"])) if overall_complete else "N/D",
             "Completa" if overall_complete else "Não certificada")
         if overall_complete:
             kpi_rows = [
@@ -406,7 +470,7 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
             chart += '<script type="application/json" id="consolidated-daily">{}</script>'.format(chart_data)
         else:
             chart = '<section class="panel"><h2>Desempenho diário das contas</h2><p>Gráfico N/D: nem todas as contas e datas da seleção estão completas.</p></section>'
-        roots = build_identity_tree(result["items"]) if overall_complete else []
+        roots = result["roots"] if overall_complete else []
         table = '<section class="panel"><div class="panel-head"><div><h2>Todos os itens — {} ({})</h2><small>Produto/SKU global → conta → família → variação/MLBU → MLB. SKU de referência associa anúncios; não atribui a receita inteira ao SKU.</small></div></div>'.format(
             escape(dict(modes)[view]), len(roots))
         table += '<div class="toolbar"><span>VISUALIZAR POR</span><nav class="view-modes" id="view-modes">' + "".join(
@@ -416,7 +480,7 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
                     ("view", mode), ("period", period.get("mode") or "30d"),
                     ("date_from", period["dateFrom"]), ("date_to", period["dateTo"])]), quote=True),
                 escape(title)) for mode, title in modes) + '</nav><label>Buscar conta, anúncio ou SKU <input id="item-search" type="search" placeholder="Buscar na seleção"></label></div>'
-        table += '<div class="scroll"><table><thead><tr><th>Produto / agrupamento</th><th>Conta</th><th>MLB / SKU</th><th>Receita</th><th>Pedidos</th><th>Unidades</th><th>Investimento</th><th>Receita Ads</th><th>ROAS</th><th>TACOS</th><th>ACOS</th><th>Visitas</th><th>Detalhe</th></tr></thead><tbody id="item-rows">'
+        table += '<div class="scroll hierarchy-scroll" role="region" aria-label="Tabela de produtos; deslize horizontalmente para ver todas as métricas"><table class="item-table"><thead><tr><th>Produto / agrupamento</th><th>Conta</th><th>MLB / SKU</th><th>Preço atual / médio / última venda</th><th>Última venda</th><th>Receita</th><th>Pedidos por item</th><th>Unidades</th><th>Investimento</th><th>Receita Ads</th><th>ROAS</th><th>TACOS</th><th>ACOS</th><th>Visitas</th><th>Últimos 7 dias</th><th>Detalhe</th></tr></thead><tbody id="item-rows">'
         page = max(1, min(int(page), max(1, (len(roots) + 99) // 100)))
         table += '</tbody></table></div><small id="item-count">Página {} de {} · {} agrupamentos, ordenados por receita.</small>'.format(
             page, max(1, (len(roots) + 99) // 100), len(roots))
@@ -439,7 +503,7 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
     .chart-modes button,.pagination button{width:auto;margin-top:0}.toolbar input[type=search]{width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px}.detail-backdrop[hidden]{display:none}.detail-backdrop{position:fixed;inset:0;background:#10182899;z-index:100;display:grid;place-items:center;padding:15px}.detail-modal{width:min(1050px,96vw);max-height:90vh;overflow:auto;background:#f5f7fb;border-radius:12px}.detail-modal header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#fff;border-bottom:1px solid #d9e1ec}.detail-modal header h2{margin:0;font-size:18px}.detail-modal header small{color:#667085}.detail-modal header button{width:auto;margin:0;background:#fff;color:#102033;border:1px solid #d9e1ec}.detail-content{padding:18px}.detail-chart{height:210px;display:flex;align-items:end;gap:3px;background:#fff;border:1px solid #d9e1ec;border-radius:8px;padding:16px}.detail-chart span{flex:1;min-width:2px;background:#b5a1ed;border-radius:4px 4px 0 0}.detail-summary{margin-top:15px;display:flex;gap:10px;flex-wrap:wrap}.detail-summary span{padding:10px;border:1px solid #d9e1ec;border-radius:8px;background:#fff}
     .detail-chart{height:auto;display:block;min-height:48px;border:0;padding:0}.detail-chart svg{display:block;width:100%;height:300px}.detail-summary{margin:0 0 15px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.detail-summary span{font-size:12px}.detail-content .panel h3{margin:3px 0 8px;font-size:16px}@media(max-width:700px){.detail-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
     .cards{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin:18px 0}.card,.panel{background:#fff;border:1px solid #d9e1ec;border-radius:9px;padding:14px}.card{min-height:105px}.card small{display:block;color:#52627a;font-size:10px;font-weight:700;letter-spacing:.4px}.card strong{display:block;font-size:21px;margin:7px 0}.comparison{font-size:11px;color:#667085}.panel{margin:10px 0}.panel h2{font-size:16px;margin:3px 0 8px}.panel-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.panel-head small{color:#667085}.chart-modes,.view-modes{display:flex;flex-wrap:wrap;gap:4px}.chart-modes button,.view-modes a{font-size:11px;border:1px solid #d9e1ec;border-radius:6px;padding:7px 9px;background:#fff;color:#102033;text-decoration:none;cursor:pointer}.chart-modes .active,.view-modes .active{background:#102033;color:#fff}.chart-shell{position:relative;margin-top:10px;border:1px solid #d9e1ec;border-radius:10px;background:#fff}.chart-area{min-height:320px}.chart-area svg{display:block;width:100%;height:320px}.chart-grid{stroke:#e4e7ec;stroke-width:1;stroke-dasharray:4 5}.chart-axis{fill:#667085;font-size:11px}.chart-hover-line{stroke:#a29ab8;stroke-dasharray:4 4;visibility:hidden}.chart-hit{fill:transparent;cursor:crosshair}.chart-hit:hover+.chart-hover-line{visibility:visible}.chart-tooltip{position:absolute;z-index:4;min-width:195px;padding:10px 12px;border:1px solid #d0d5dd;border-radius:10px;background:#fff;box-shadow:0 12px 26px #1018282e;font-size:11px;pointer-events:none}.chart-tooltip[hidden],.hierarchy-child-row[hidden]{display:none}.chart-tooltip b{display:block;margin-bottom:5px}.chart-tooltip div{display:flex;justify-content:space-between;gap:15px}.toolbar{margin:16px 0}.toolbar span{font-size:11px;color:#667085;font-weight:700}.toolbar input{display:block;max-width:270px;margin-top:5px}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:12px}th{background:#eef2f7;color:#52627a;text-align:left;font-size:10px}td,th{padding:9px;border-bottom:1px solid #e5eaf1;vertical-align:top}td{white-space:nowrap}td:first-child{white-space:normal;min-width:220px}.product-name{display:flex;align-items:center;gap:9px}.product-photo{width:44px;height:44px;object-fit:contain;border:1px solid #d9e1ec;border-radius:6px;flex:none}.product-photo.empty{display:grid;place-items:center;background:#f1f4f8;color:#667085;font-size:9px}.detail-open,.hierarchy-toggle{width:auto;margin:0;padding:7px 10px;background:#fff;color:#102033;border:1px solid #d9e1ec}.hierarchy-toggle{font-weight:700;min-width:30px}.hierarchy-child-row>td{padding:12px 18px;background:#f8faff}.hierarchy-child-row td:first-child{min-width:0}.hierarchy-group{margin:0 0 12px}.hierarchy-group h3{font-size:12px;margin:8px 0}.hierarchy-table td,.hierarchy-table th{white-space:normal;min-width:0}.hierarchy-table td:first-child{min-width:160px}.pagination{margin:14px 0}.pagination button{margin-right:12px;width:auto}form button{width:auto}input[type=checkbox]{width:auto}@media(max-width:1100px){.cards{grid-template-columns:repeat(3,1fr)}}@media(max-width:700px){.cards{grid-template-columns:repeat(2,1fr)}}
-    .hierarchy-branch{border:1px solid #d9e1ec;border-left:4px solid #496ba5;border-radius:7px;background:#fff;margin:7px 0;padding:9px 12px;white-space:normal}.hierarchy-branch summary{font-weight:700;cursor:pointer}.hierarchy-branch.level-family{border-left-color:#aa75c8;background:#fcf8ff}.hierarchy-branch.level-mlbu{border-left-color:#b7872e;background:#fffaf0}.hierarchy-branch.level-mlb{border-left-color:#23836b;background:#f4fcf9}.hierarchy-nested{padding-left:14px}.hierarchy-metrics{display:flex;flex-wrap:wrap;gap:7px;margin:7px 0;color:#475467;font-size:11px}.hierarchy-metrics span{padding:3px 6px;background:#f3f6fa;border-radius:4px}.hierarchy-leaf{font-size:11px}.hierarchy-branch .detail-open{font-size:11px;padding:5px 8px}.hierarchy-branch details:not([open])>.hierarchy-nested{display:none}@media(max-width:700px){.hierarchy-nested{padding-left:5px}}
+    .hierarchy-scroll{max-width:100%;border:1px solid #d9e1ec;border-radius:8px}.item-table{min-width:1920px}.item-table th{position:sticky;top:0;z-index:1}.item-table td:first-child{min-width:280px;max-width:320px}.item-table td{white-space:normal;min-width:78px}.item-table td:nth-child(4),.item-table td:nth-child(15){min-width:160px}.hierarchy-row.level-global{background:#e9f1ff;font-weight:700}.hierarchy-row.level-account{background:#f0f5ff}.hierarchy-row.level-family{background:#faf1ff}.hierarchy-row.level-mlbu{background:#fff7e8}.hierarchy-row.level-mlb{background:#f0faf6}.hierarchy-row.level-campaign{background:#f8fafc}.hierarchy-row td:first-child{border-left:4px solid #4d75b9}.hierarchy-row.level-family td:first-child{border-left-color:#aa75c8}.hierarchy-row.level-mlbu td:first-child{border-left-color:#b7872e}.hierarchy-row.level-mlb td:first-child{border-left-color:#23836b}.hierarchy-row small{display:block;color:#667085;font-size:10px;font-weight:normal}.hierarchy-row .product-name{align-items:flex-start}.hierarchy-row .detail-open{white-space:nowrap}.hierarchy-hint{font-size:11px;color:#667085;margin:7px 0 0}@media(max-width:700px){.hierarchy-scroll{margin-right:-14px}.item-table{min-width:1920px}}
     </style>'''
     body = '<h1>Dashboard ADS Mercado Livre — visão consolidada</h1><p>Selecione as contas vinculadas a este cliente. Esta visão é somente leitura e não ocupa um slot ML.</p>'
     body += '<p><a href="/contas">Contas</a> · <a href="/online?confirmed=1">Dashboard individual</a></p>'
@@ -556,20 +620,23 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
       function detailButton(node){var button=document.createElement('button');button.type='button';button.className='detail-open';button.textContent='Abrir gráfico';button.onclick=function(event){event.stopPropagation();openDetail(node)};return button}
       function atLevel(nodes,level){var out=[];nodes.forEach(function(node){if(node.level===level)out.push(node);else out.push.apply(out,atLevel(node.children,level))});return out}
       function visibleNodes(){if(mode==='familia')return atLevel(roots,'family');if(mode==='variacao')return atLevel(roots,'mlbu');if(mode==='mlb')return atLevel(roots,'mlb');if(mode==='campanha')return atLevel(roots,'campaign');return roots}
-      function branch(node,parent){var section=document.createElement('section');section.className='hierarchy-branch level-'+node.level;var header=document.createElement(node.children.length?'details':'div');
-        if(node.children.length){var summary=document.createElement('summary');summary.textContent=({account:'Conta',family:'Família',mlbu:'Variação/MLBU',mlb:'Anúncio MLB'})[node.level]+' · '+node.title+(node.level==='mlb'?' · '+node.code:'');header.appendChild(summary)}
-        else{header.className='hierarchy-leaf';var label=document.createElement('strong');label.textContent=(node.level==='campaign'?'Campanha':'Anúncio MLB')+' · '+node.title+(node.code?' · '+node.code:'');header.appendChild(label)}
-        var metrics=document.createElement('div');metrics.className='hierarchy-metrics';
-        [['Receita',money(node.totalRevenue)],['Pedidos',fmt(node.orders)],['Unidades',fmt(node.units)],['Investimento',money(node.investment)],['Receita Ads',money(node.adsRevenue)],['TACOS',pct(ratio(node.investment,node.totalRevenue))]].forEach(function(pair){var span=document.createElement('span');span.textContent=pair[0]+': '+pair[1];metrics.appendChild(span)});
-        header.appendChild(metrics);header.appendChild(detailButton(node));
-        if(node.children.length){var nested=document.createElement('div');nested.className='hierarchy-nested';node.children.forEach(function(child){branch(child,nested)});header.appendChild(nested)}
-        section.appendChild(header);parent.appendChild(section)}
-      function appendHierarchy(node,row){var container=document.createElement('td');container.colSpan=13;row.appendChild(container);node.children.forEach(function(child){branch(child,container)})}
+      var expanded=new Set(),period=JSON.parse(document.getElementById('consolidated-period').textContent);
+      function metric7d(node,key){var performance=node.performance7d||{},value=performance[key];return performance.date_to===period.dateTo&&value&&value.complete===true&&Number.isFinite(value.current)&&Number.isFinite(value.previous)?value:null}
+      function trend(value){if(!value)return 'N/D';var delta=value.current-value.previous,change=value.previous===0?(delta===0?'0%':'sem base'):(delta/value.previous*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%';return (delta>0?'▲ ':delta<0?'▼ ':'= ')+change}
+      function performanceCell(tr,node){var td=document.createElement('td'),sales=metric7d(node,'sales'),visits=metric7d(node,'visits');
+        [['Vendas',sales],['Visitas',visits]].forEach(function(pair){var line=document.createElement('div');line.textContent=pair[0]+': '+(pair[1]?fmt(pair[1].current)+' ('+trend(pair[1])+')':'N/D');td.appendChild(line)});
+        var conversion=document.createElement('div');conversion.textContent='Conversão: '+(sales&&visits&&visits.current>0&&visits.previous>0?pct(sales.current/visits.current)+' ('+trend({current:sales.current/visits.current,previous:sales.previous/visits.previous})+')':'N/D');td.appendChild(conversion);tr.appendChild(td)}
+      function priceCell(tr,node){var td=document.createElement('td'),current=node.currentPrice!=null?money(node.currentPrice):(node.priceMin!=null&&node.priceMax!=null?money(node.priceMin)+' a '+money(node.priceMax):'N/D');
+        [['Atual',current],['Médio',money(node.avgSalePrice)],['Último',money(node.lastSalePrice)]].forEach(function(pair){var line=document.createElement('div');line.textContent=pair[0]+': '+pair[1];td.appendChild(line)});tr.appendChild(td)}
+      function appendRow(node,path,depth,fragment){var tr=document.createElement('tr'),td=document.createElement('td'),wrap=document.createElement('div');tr.className='hierarchy-row level-'+node.level;wrap.className='product-name';wrap.style.paddingLeft=(depth*16)+'px';
+        if(node.children.length){var toggle=document.createElement('button'),isOpen=expanded.has(path);toggle.type='button';toggle.className='hierarchy-toggle';toggle.textContent=isOpen?'−':'+';toggle.setAttribute('aria-label',(isOpen?'Ocultar':'Mostrar')+' níveis de '+node.title);toggle.setAttribute('aria-expanded',String(isOpen));toggle.onclick=function(){if(expanded.has(path))expanded.delete(path);else expanded.add(path);draw()};wrap.appendChild(toggle)}
+        makePhoto(node,wrap);var label=document.createElement('span'),title=document.createElement('b');title.textContent=node.title;label.appendChild(title);var level=document.createElement('small');level.textContent=({global:'Produto entre contas',account:'Conta',family:'Família',mlbu:'Variação/MLBU',mlb:'Anúncio MLB',campaign:'Campanha'})[node.level];label.appendChild(level);wrap.appendChild(label);td.appendChild(wrap);tr.appendChild(td);
+        cell(tr,node.level==='global'?node.accountCount+' conta(s)':node.account);cell(tr,node.level==='global'&&node.confidence==='last_sale_reference'?'SKU de referência — associação provisória':node.level==='global'&&node.confidence==='sku_text_unverified'?'SKU declarado — vínculo não comprovado':node.code||node.sku||node.key);
+        priceCell(tr,node);cell(tr,node.lastSaleDate||'N/D');cell(tr,money(node.totalRevenue));cell(tr,fmt(node.orders));cell(tr,fmt(node.units));cell(tr,money(node.investment));cell(tr,money(node.adsRevenue));var roas=ratio(node.adsRevenue,node.investment);cell(tr,roas==null?'N/D':roas.toLocaleString('pt-BR',{maximumFractionDigits:2})+'x');cell(tr,pct(ratio(node.investment,node.totalRevenue)));cell(tr,pct(ratio(node.investment,node.adsRevenue)));cell(tr,node.visitsKnown?fmt(node.visits):'N/D');performanceCell(tr,node);
+        var detail=document.createElement('td');detail.appendChild(detailButton(node));tr.appendChild(detail);fragment.appendChild(tr);
+        if(expanded.has(path))node.children.forEach(function(child,index){appendRow(child,path+'/'+index+':'+child.key,depth+1,fragment)})}
       function draw(){var query=search.value.trim().toLocaleLowerCase('pt-BR'),all=visibleNodes().filter(function(node){return !query||matches(node,query)}),pages=Math.max(1,Math.ceil(all.length/100));page=Math.max(1,Math.min(page,pages));body.textContent='';
-        all.slice((page-1)*100,page*100).forEach(function(node,index){var tr=document.createElement('tr'),td=document.createElement('td'),wrap=document.createElement('div');wrap.className='product-name';var childRow=document.createElement('tr');childRow.id='hierarchy-'+index;childRow.className='hierarchy-child-row';childRow.hidden=true;
-          if(node.children.length){var toggle=document.createElement('button');toggle.type='button';toggle.className='hierarchy-toggle';toggle.textContent='+';toggle.setAttribute('aria-label','Mostrar níveis de '+node.title);toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls',childRow.id);toggle.onclick=function(){if(!childRow.firstChild)appendHierarchy(node,childRow);childRow.hidden=!childRow.hidden;toggle.textContent=childRow.hidden?'+':'−';toggle.setAttribute('aria-expanded',String(!childRow.hidden))};wrap.appendChild(toggle)}makePhoto(node,wrap);var title=document.createElement('b');title.textContent=node.title;wrap.appendChild(title);td.appendChild(wrap);tr.appendChild(td);
-          cell(tr,node.level==='global'?node.accountCount+' conta(s)':node.account);cell(tr,node.confidence==='last_sale_reference'?'SKU de referência — associação provisória':node.confidence==='sku_text_unverified'?'SKU declarado — vínculo entre contas não comprovado':node.key);
-          cell(tr,money(node.totalRevenue));cell(tr,fmt(node.orders));cell(tr,fmt(node.units));cell(tr,money(node.investment));cell(tr,money(node.adsRevenue));var roas=ratio(node.adsRevenue,node.investment);cell(tr,roas==null?'N/D':roas.toLocaleString('pt-BR',{maximumFractionDigits:2})+'x');cell(tr,pct(ratio(node.investment,node.totalRevenue)));cell(tr,pct(ratio(node.investment,node.adsRevenue)));cell(tr,node.visitsKnown?fmt(node.visits):'N/D');var detail=document.createElement('td');detail.appendChild(detailButton(node));tr.appendChild(detail);body.appendChild(tr);if(node.children.length)body.appendChild(childRow)});
+        var fragment=document.createDocumentFragment();all.slice((page-1)*100,page*100).forEach(function(node,index){appendRow(node,index+':'+node.key,0,fragment)});body.appendChild(fragment);
         count.textContent='Página '+page+' de '+pages+' · '+all.length+' agrupamentos em '+mode+', ordenados por receita.';pager.textContent='';if(page>1){var prev=document.createElement('button');prev.type='button';prev.textContent='Anterior';prev.onclick=function(){page--;draw()};pager.appendChild(prev)}if(page<pages){var next=document.createElement('button');next.type='button';next.textContent='Próxima';next.onclick=function(){page++;draw()};pager.appendChild(next)}
         Array.from(modes.querySelectorAll('a')).forEach(function(a){a.classList.toggle('active',a.dataset.view===mode)})}
       modes.addEventListener('click',function(e){var a=e.target.closest('a[data-view]');if(!a)return;e.preventDefault();mode=a.dataset.view;page=1;draw()});search.addEventListener('input',function(){page=1;draw()});draw();
