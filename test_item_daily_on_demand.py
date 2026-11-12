@@ -41,6 +41,21 @@ class ItemDailyOnDemandTest(unittest.TestCase):
         self.assertFalse(out["ok"])
         self.assertNotIn("series", out)
 
+    def test_sparse_zero_requires_explicit_daily_receipts(self):
+        receipts = {"2026-09-07": {"complete": True, "source": "observed"},
+                    "2026-09-08": {"complete": True, "source": "explicit_zero"},
+                    "2026-09-09": {"complete": False},
+                    "2026-09-10": {"complete": True, "error": "source_unavailable"}}
+        with patch.object(app, "_sales_intelligence_fetch_daily_sales", return_value=(SALES, receipts, "")), \
+             patch.object(app, "_sales_intelligence_fetch_daily_ads", return_value=(ADS, receipts, "")), \
+             patch.object(app, "_sales_intelligence_fetch_daily_visits", return_value=(VISITS, {}, "")):
+            out = app._item_daily_payload("c", ["MLB1"], "2026-09-07", "2026-09-10", False)
+        self.assertEqual(out["coverage"]["sales"], {
+            "2026-09-07": True, "2026-09-08": True,
+            "2026-09-09": False, "2026-09-10": False})
+        self.assertEqual(out["coverage"]["ads"], out["coverage"]["sales"])
+        self.assertFalse(any(row["date"] == "2026-09-08" for row in out["series"]["MLB1"]))
+
     def test_trace_records_account_period_codes_and_empty_response_without_financial_values(self):
         with patch.object(app, "_sales_intelligence_fetch_daily_sales", return_value=([], {}, "")), \
              patch.object(app, "_sales_intelligence_fetch_daily_ads", return_value=([], {}, "")), \

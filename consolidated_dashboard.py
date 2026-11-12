@@ -9,7 +9,7 @@ from urllib.parse import urlencode, urlparse
 
 SUM_FIELDS = ("revenue", "investment", "adsRevenue", "units", "tacosBaseRevenue")
 DAILY_FIELDS = ("revenue", "investment", "adsRevenue", "tacosBaseRevenue", "units", "orders", "visits")
-ITEM_FIELDS = ("code", "sku", "skuIsReference", "title", "familyId", "familyName", "userProductId",
+ITEM_FIELDS = ("code", "sku", "skuIsReference", "salesRowPrimary", "globalProductId", "title", "familyId", "familyName", "userProductId",
                "userProductName", "campaign", "campaignId", "campaignName",
                "totalRevenue", "units", "orders", "investment", "adsRevenue",
                "visits", "visitsCoverageComplete", "impressions", "clicks", "thumbnailUrl")
@@ -52,18 +52,30 @@ def combine(accounts, start, end):
     expected = (start, end)
     accepted = [a for a in accounts if a["period"] == expected]
     complete = len(accepted) == len(accounts) and all(a["complete"] for a in accepted)
-    sums = {key: sum(float(a["kpis"].get(key) or 0) for a in accepted)
+    sums = {key: (sum(float(a["kpis"][key]) for a in accepted)
+                  if accepted and all(isinstance(a["kpis"].get(key), (int, float)) for a in accepted) else None)
             for key in SUM_FIELDS}
-    sums["tacos"] = sums["investment"] / sums["tacosBaseRevenue"] if sums["tacosBaseRevenue"] else None
-    sums["roas"] = sums["adsRevenue"] / sums["investment"] if sums["investment"] else None
-    sums["acos"] = sums["investment"] / sums["adsRevenue"] if sums["adsRevenue"] else None
-    sums["organicRevenue"] = sum(float(a["kpis"].get("organicRevenue") or 0) for a in accepted)
-    sums["products"] = sum(len(a["items"]) for a in accepted)
-    sums["orders"] = sum(float(i.get("orders") or 0) for a in accepted for i in a["items"])
-    sums["price"] = sums["revenue"] / sums["units"] if sums["units"] else None
-    sums["adsNoSales"] = sum(float(a["kpis"].get("adsNoSales") or 0) for a in accepted)
-    sums["investmentNoAdsSales"] = sum(float(a["kpis"].get("investmentNoAdsSales") or 0) for a in accepted)
-    sums["visits"] = sum(float(row.get("visits") or 0) for a in accepted for row in a["daily"]) if accepted and all(a.get("visits_complete") for a in accepted) else None
+    sums["tacos"] = sums["investment"] / sums["tacosBaseRevenue"] if sums["investment"] is not None and sums["tacosBaseRevenue"] else None
+    sums["roas"] = sums["adsRevenue"] / sums["investment"] if sums["adsRevenue"] is not None and sums["investment"] else None
+    sums["acos"] = sums["investment"] / sums["adsRevenue"] if sums["investment"] is not None and sums["adsRevenue"] else None
+    def optional_total(key):
+        values = [a["kpis"].get(key) for a in accepted]
+        return sum(float(value) for value in values) if accepted and all(
+            isinstance(value, (int, float)) for value in values) else None
+
+    sums["organicRevenue"] = optional_total("organicRevenue")
+    # This counts account-scoped listing records, not distinct global products.
+    roots = build_identity_tree([{**item, "account": a["label"], "account_id": a["id"]}
+                                 for a in accepted for item in a["items"]])
+    sums["products"] = len(roots)
+    sums["orders"] = sum(root["orders"] for root in roots) if roots and all(root["orders"] is not None for root in roots) else None
+    sums["price"] = sums["revenue"] / sums["units"] if sums["revenue"] is not None and sums["units"] else None
+    sums["adsNoSales"] = optional_total("adsNoSales")
+    sums["investmentNoAdsSales"] = optional_total("investmentNoAdsSales")
+    visit_values = [row.get("visits") for a in accepted for row in a["daily"]]
+    sums["visits"] = sum(float(value) for value in visit_values) if accepted and visit_values and all(
+        a.get("visits_complete") for a in accepted) and all(
+        isinstance(value, (int, float)) for value in visit_values) else None
     sums["cancelledOrders"] = sum(float(a["cancelled_orders"]) for a in accepted) if accepted and all(a.get("cancelled_orders") is not None for a in accepted) else None
     sums["returnsAmount"] = sum(float(a["kpis"].get("returnsAmount")) for a in accepted) if accepted and len(accepted) == len(accounts) and all(a["kpis"].get("returnsAvailable") is True and a["kpis"].get("returnsAmount") is not None for a in accepted) else None
     sums["returnsOrdersCount"] = sum(float(a["kpis"].get("returnsOrdersCount")) for a in accepted) if accepted and len(accepted) == len(accounts) and all(a["kpis"].get("returnsOrdersAvailable") is True and a["kpis"].get("returnsOrdersCount") is not None for a in accepted) else None
@@ -82,7 +94,8 @@ def combine(accounts, start, end):
     sums["returnsObservedAmountAccounts"] = len(observed_amounts)
     sums["returnsObservedOrdersCount"] = sum(observed_orders) if observed_orders else None
     sums["returnsObservedOrdersAccounts"] = len(observed_orders)
-    daily = defaultdict(lambda: {**{key: 0.0 for key in DAILY_FIELDS}, "sources": 0})
+    daily = defaultdict(lambda: {**{key: 0.0 for key in DAILY_FIELDS}, "sources": 0,
+                                 "unknown": set()})
     for account in accepted:
         for row in account["daily"]:
             day = str(row.get("date") or "")
@@ -90,7 +103,11 @@ def combine(accounts, start, end):
                 continue
             target = daily[day]
             for key in DAILY_FIELDS:
-                target[key] += float(row.get(key) or 0)
+                value = row.get(key)
+                if isinstance(value, (int, float)):
+                    target[key] += float(value)
+                else:
+                    target["unknown"].add(key)
             target["sources"] += 1
             if row.get("visits") is not None:
                 target["visitsSources"] = target.get("visitsSources", 0) + 1
@@ -100,16 +117,41 @@ def combine(accounts, start, end):
         day = cursor.isoformat()
         row = daily.get(day)
         if row and row["sources"] == len(accounts):
-            chart.append({"date": day, **row, "visits": row["visits"] if row.get("visitsSources") == len(accounts) else None})
+            chart.append({"date": day, **{key: (None if key in row["unknown"] else row[key])
+                                            for key in DAILY_FIELDS},
+                          "visits": row["visits"] if row.get("visitsSources") == len(accounts)
+                          and "visits" not in row["unknown"] else None})
         else:
             chart.append({"date": day, "missing": True})
         cursor += timedelta(days=1)
-    complete = complete and all(not row.get("missing") for row in chart)
+    complete = complete and all(not row.get("missing") and all(
+        row.get(key) is not None for key in ("revenue", "investment", "adsRevenue", "units"))
+        for row in chart)
+    complete = complete and all(sums[key] is not None for key in SUM_FIELDS)
+    # The individual cache's KPIs, daily series and listing rows must describe
+    # the same selected accounts and window. Never certify a visually plausible
+    # aggregate whose hierarchy silently dropped or duplicated a listing.
+    reconciliation_issues = []
+    for kpi_key, item_key in (("revenue", "totalRevenue"), ("units", "units"),
+                              ("investment", "investment"), ("adsRevenue", "adsRevenue")):
+        item_values = [root.get(item_key) for root in roots]
+        expected_value = sums[kpi_key]
+        if expected_value is None or not item_values or any(value is None for value in item_values):
+            reconciliation_issues.append("itens_sem_" + kpi_key)
+        elif abs(sum(float(value) for value in item_values) - expected_value) > (0.01 if kpi_key in ("revenue", "investment", "adsRevenue") else 0):
+            reconciliation_issues.append("itens_divergentes_" + kpi_key)
+        daily_values = [row.get(kpi_key) for row in chart]
+        if expected_value is None or any(value is None for value in daily_values) or any(row.get("missing") for row in chart):
+            reconciliation_issues.append("serie_sem_" + kpi_key)
+        elif abs(sum(float(value) for value in daily_values) - expected_value) > (0.01 if kpi_key in ("revenue", "investment", "adsRevenue") else 0):
+            reconciliation_issues.append("serie_divergente_" + kpi_key)
+    complete = complete and not reconciliation_issues
     items = []
     for account in accepted:
         for item in account["items"]:
             items.append({**item, "account": account["label"], "account_id": account["id"]})
-    return {"complete": complete, "accepted": len(accepted), "selected": len(accounts),
+    return {"complete": complete, "reconciliation_issues": reconciliation_issues,
+            "accepted": len(accepted), "selected": len(accounts),
             "sums": sums, "chart": chart, "items": items}
 
 
@@ -133,44 +175,152 @@ def _image_url(value):
     return url if parsed.scheme in {"http", "https"} and parsed.netloc else ""
 
 
-def _group_items(items, view):
-    groups = {}
+def build_identity_tree(items):
+    """One server-side hierarchy for initial HTML and every browser interaction.
+
+    A last-sale SKU is only an association of listings, never a certified
+    attribution of the listing's entire revenue to that SKU.
+    """
+    fields = ("totalRevenue", "orders", "units", "investment", "adsRevenue", "visits")
+
+    def node(level, key, title, *, account="", account_id=None, confidence=""):
+        return {"level": level, "key": key, "title": title, "account": account,
+                "account_id": account_id, "confidence": confidence,
+                "children": [], "sources": [], "thumbnailUrl": "",
+                **{field: None for field in fields}}
+
+    def get_child(parent, level, key, title, **kwargs):
+        for child in parent["children"]:
+            if child["key"] == key:
+                return child
+        child = node(level, key, title, **kwargs)
+        parent["children"].append(child)
+        return child
+
+    roots = []
+    roots_by_key = {}
+    # One listing can carry several Ads campaigns; sales are counted once.
+    # Duplicate campaign rows contribute Ads only once per campaign identity.
+    listings = {}
     for item in items:
-        if view in ("familia", "hibrida") and item.get("familyId"):
-            identity = item.get("familyId") or item.get("code") or "sem-familia"
-            title = item.get("familyName") or item.get("title") or identity
-        elif view in ("variacao", "mlbu") and item.get("userProductId"):
-            identity = item["userProductId"]
-            title = item.get("userProductName") or item.get("title") or identity
-        elif view == "campanha" and item.get("campaignId"):
-            identity = item["campaignId"]
-            title = item.get("campaignName") or item.get("campaign") or identity
-        elif view == "sku" and item.get("sku") and not item.get("skuIsReference"):
-            identity = item["sku"]
-            title = identity
+        account_id = int(item["account_id"])
+        code = str(item.get("code") or "").strip().upper()
+        if not code.startswith("MLB"):
+            continue
+        key = (account_id, code)
+        previous = listings.get(key)
+        if previous is None:
+            campaign_id = str(item.get("campaignId") or "")
+            listings[key] = {**item, "_campaigns": {campaign_id},
+                             "_campaign_data": {campaign_id: {
+                                 "title": str(item.get("campaignName") or item.get("campaign") or "Sem campanha identificada"),
+                                 "investment": item.get("investment"), "adsRevenue": item.get("adsRevenue")}}}
+            continue
+        campaign = str(item.get("campaignId") or "")
+        if campaign in previous["_campaigns"]:
+            for field in ("investment", "adsRevenue"):
+                if previous["_campaign_data"][campaign].get(field) != item.get(field):
+                    previous["_campaign_data"][campaign][field] = None
         else:
-            identity = item.get("code") or item.get("sku") or "sem-anuncio"
-            title = item.get("title") or identity
-        key = (item["account_id"], view, identity)
-        if key not in groups:
-            groups[key] = {"account": item["account"], "account_id": item["account_id"], "code": identity,
-                           "sku": identity if view == "sku" else item.get("sku") or "", "title": title,
-                           "thumbnailUrl": _image_url(item.get("thumbnailUrl")), "codes": [],
-                           "totalRevenue": 0.0, "units": 0.0, "orders": 0.0,
-                           "investment": 0.0, "adsRevenue": 0.0, "visits": 0.0,
-                           "impressions": 0.0, "clicks": 0.0, "members": 0, "visitsKnown": 0}
-        for field in ("totalRevenue", "units", "orders", "investment", "adsRevenue"):
-            groups[key][field] += float(item.get(field) or 0)
-        for field in ("visits", "impressions", "clicks"):
-            groups[key][field] += float(item.get(field) or 0)
-        groups[key]["members"] += 1
-        if str(item.get("code") or "").upper().startswith("MLB") and item["code"] not in groups[key]["codes"]:
-            groups[key]["codes"].append(item["code"])
-        if not groups[key]["thumbnailUrl"]:
-            groups[key]["thumbnailUrl"] = _image_url(item.get("thumbnailUrl"))
-        if item.get("visitsCoverageComplete") is True:
-            groups[key]["visitsKnown"] += 1
-    return sorted(groups.values(), key=lambda row: -row["totalRevenue"])
+            previous["_campaigns"].add(campaign)
+            previous["_campaign_data"][campaign] = {
+                "title": str(item.get("campaignName") or item.get("campaign") or "Sem campanha identificada"),
+                "investment": item.get("investment"), "adsRevenue": item.get("adsRevenue")}
+        for field in ("investment", "adsRevenue"):
+            campaign_values = [row.get(field) for row in previous["_campaign_data"].values()]
+            previous[field] = (sum(float(value) for value in campaign_values)
+                               if all(value is not None for value in campaign_values) else None)
+        # The online cache assigns sales to the first row of an MLB and zeros
+        # subsequent campaign rows. Only that explicitly marked row is the
+        # sales receipt; a conflict between two primary rows remains unknown.
+        for field in ("totalRevenue", "orders", "units"):
+            if previous.get("salesRowPrimary") is True and item.get("salesRowPrimary") is False:
+                continue
+            if previous.get("salesRowPrimary") is False and item.get("salesRowPrimary") is True:
+                previous[field] = item.get(field)
+            elif previous.get(field) != item.get(field):
+                previous[field] = None
+        if item.get("salesRowPrimary") is True:
+            previous["salesRowPrimary"] = True
+
+    for item in listings.values():
+        account_id = int(item["account_id"])
+        code = str(item["code"]).upper()
+        sku = str(item.get("sku") or "").strip()
+        global_id = str(item.get("globalProductId") or "").strip()
+        if sku and item.get("skuIsReference") is not True and global_id:
+            root_key = "product:" + global_id
+            root_title = "Produto comprovado " + sku
+            confidence = "global_product_id"
+        elif sku and item.get("skuIsReference") is not True:
+            root_key = "declared_association:" + sku.casefold()
+            root_title = "Anúncios associados ao SKU declarado " + sku
+            confidence = "sku_text_unverified"
+        elif sku:
+            root_key = "reference:" + sku.casefold()
+            root_title = "Anúncios associados ao SKU de referência " + sku
+            confidence = "last_sale_reference"
+        else:
+            root_key = f"unidentified:{account_id}:{code}"
+            root_title = item.get("title") or code
+            confidence = "listing_only"
+        root = roots_by_key.get(root_key)
+        if root is None:
+            root = node("global", root_key, root_title, confidence=confidence)
+            roots.append(root)
+            roots_by_key[root_key] = root
+        account = str(item.get("account") or account_id)
+        account_node = get_child(root, "account", f"account:{account_id}", account,
+                                 account=account, account_id=account_id)
+        family_id = str(item.get("familyId") or "").strip()
+        family = get_child(account_node, "family", "family:" + (family_id or "none"),
+                           str(item.get("familyName") or family_id or "Sem família cadastrada"),
+                           account=account, account_id=account_id)
+        mlbu_id = str(item.get("userProductId") or "").strip()
+        mlbu = get_child(family, "mlbu", "mlbu:" + (mlbu_id or "none"),
+                         str(item.get("userProductName") or mlbu_id or "Sem MLBU cadastrado"),
+                         account=account, account_id=account_id)
+        leaf = get_child(mlbu, "mlb", "mlb:" + code, str(item.get("title") or code),
+                         account=account, account_id=account_id)
+        leaf.update({field: item.get(field) for field in fields})
+        leaf["code"] = code
+        leaf["sku"] = sku
+        leaf["skuIsReference"] = item.get("skuIsReference") is True
+        leaf["thumbnailUrl"] = _image_url(item.get("thumbnailUrl"))
+        leaf["sources"] = [{"account_id": account_id, "account": account, "codes": [code]}]
+        leaf["visitsKnown"] = item.get("visitsCoverageComplete") is True
+        for campaign_id, campaign_data in item["_campaign_data"].items():
+            campaign_node = get_child(leaf, "campaign", "campaign:" + (campaign_id or "none"),
+                                      campaign_data["title"], account=account, account_id=account_id)
+            campaign_node["investment"] = campaign_data["investment"]
+            campaign_node["adsRevenue"] = campaign_data["adsRevenue"]
+            campaign_node["sources"] = [{"account_id": account_id, "account": account, "codes": [code]}]
+
+    def finish(current):
+        for child in current["children"]:
+            finish(child)
+        if current["children"] and current["level"] != "mlb":
+            for field in fields:
+                values = [child.get(field) for child in current["children"]]
+                current[field] = sum(float(value) for value in values) if all(value is not None for value in values) else None
+            sources = {}
+            for child in current["children"]:
+                for source in child["sources"]:
+                    target = sources.setdefault(source["account_id"], {"account_id": source["account_id"],
+                                                                       "account": source["account"], "codes": []})
+                    for code in source["codes"]:
+                        if code not in target["codes"]:
+                            target["codes"].append(code)
+            current["sources"] = list(sources.values())
+            current["thumbnailUrl"] = next((child["thumbnailUrl"] for child in current["children"]
+                                           if child["thumbnailUrl"]), "")
+            current["visitsKnown"] = all(child.get("visitsKnown") is True for child in current["children"])
+        current["accountCount"] = len(current["sources"])
+        current["children"].sort(key=lambda child: -(child.get("totalRevenue") or 0))
+
+    for root in roots:
+        finish(root)
+    return sorted(roots, key=lambda root: -(root.get("totalRevenue") or 0))
 
 
 def render(accounts, selected_ids, period, projections, failures, view="hibrida", page=1):
@@ -192,8 +342,9 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
     warning = ""
     if not overall_complete:
         names = ", ".join(escape(name) for name in failures)
-        warning = '<div class="alert err">Visão incompleta: {}. Os totais abaixo incluem somente contas com leitura disponível da janela exata; não são o total de todas as contas selecionadas.</div>'.format(
-            "falha em " + names if names else "há dias ou contas sem certificação")
+        reasons = ", ".join(result["reconciliation_issues"]) if result and result["reconciliation_issues"] else ""
+        warning = '<div class="alert err">Visão incompleta: {}. Os totais consolidados não são apresentados como completos.</div>'.format(
+            "falha em " + names if names else ("divergência entre fontes: " + escape(reasons) if reasons else "há dias ou contas sem certificação"))
     cards = chart = table = reconciliation = ""
     if result:
         sums = result["sums"]
@@ -205,16 +356,17 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
             label = str(link["official_store"] or link["nickname"] or link["client_id"])
             reconciliation += '<tr><td>{}</td><td>{} a {}</td><td>{}</td><td>{}</td><td>{}</td></tr>'.format(
                 escape(label), escape(period["dateFrom"]), escape(period["dateTo"]),
-                escape(_money(account["kpis"].get("revenue"))) if exact else "N/D",
-                escape(_money(account["kpis"].get("investment"))) if exact else "N/D",
+                escape(_money(account["kpis"].get("revenue"))) if exact and account["complete"] else "N/D",
+                escape(_money(account["kpis"].get("investment"))) if exact and account["complete"] else "N/D",
                 "Completa" if exact and account["complete"] else "Não certificada")
         reconciliation += '</tbody><tfoot><tr><th>Soma das contas selecionadas</th><th>{} a {}</th><th>{}</th><th>{}</th><th>{}</th></tr></tfoot></table></div></section>'.format(
             escape(period["dateFrom"]), escape(period["dateTo"]),
             escape(_money(sums["revenue"])) if overall_complete else "N/D",
             escape(_money(sums["investment"])) if overall_complete else "N/D",
             "Completa" if overall_complete else "Não certificada")
-        kpi_rows = [
-            ("PRODUTOS ANALISADOS", _number(sums["products"])),
+        if overall_complete:
+            kpi_rows = [
+            ("AGRUPAMENTOS ANALISADOS", _number(sums["products"])),
             ("RECEITA TOTAL", _money(sums["revenue"])),
             ("UNIDADES VENDIDAS", _number(sums["units"])),
             ("PEDIDOS POR ITEM", _number(sums["orders"])),
@@ -236,7 +388,9 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
             ("ROAS ADS", "N/D" if sums["roas"] is None else f'{sums["roas"]:.2f}x'.replace(".", ",")),
             ("INVESTIU SEM VENDA ADS", _number(sums["adsNoSales"])),
             ("VALOR SEM VENDA ADS", _money(sums["investmentNoAdsSales"])),
-        ]
+            ]
+        else:
+            kpi_rows = []
         metric_keys = ("products", "revenue", "units", "orders", "price", "visits",
                        "cancelledOrders", "returnsAmount", "returnsOrdersCount", "adsRevenue",
                        "organicRevenue", "investment", "tacosBaseRevenue", "tacos", "acos",
@@ -252,9 +406,9 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
             chart += '<script type="application/json" id="consolidated-daily">{}</script>'.format(chart_data)
         else:
             chart = '<section class="panel"><h2>Desempenho diário das contas</h2><p>Gráfico N/D: nem todas as contas e datas da seleção estão completas.</p></section>'
-        rows = _group_items(result["items"], view)
-        table = '<section class="panel"><div class="panel-head"><div><h2>Todos os itens — {} ({})</h2><small>Os mesmos códigos em contas diferentes permanecem separados.</small></div></div>'.format(
-            escape(dict(modes)[view]), len(rows))
+        roots = build_identity_tree(result["items"]) if overall_complete else []
+        table = '<section class="panel"><div class="panel-head"><div><h2>Todos os itens — {} ({})</h2><small>Produto/SKU global → conta → família → variação/MLBU → MLB. SKU de referência associa anúncios; não atribui a receita inteira ao SKU.</small></div></div>'.format(
+            escape(dict(modes)[view]), len(roots))
         table += '<div class="toolbar"><span>VISUALIZAR POR</span><nav class="view-modes" id="view-modes">' + "".join(
             '<a data-view="{}" class="{}" href="?{}">{}</a>'.format(mode,
                 'active' if mode == view else '',
@@ -263,24 +417,9 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
                     ("date_from", period["dateFrom"]), ("date_to", period["dateTo"])]), quote=True),
                 escape(title)) for mode, title in modes) + '</nav><label>Buscar conta, anúncio ou SKU <input id="item-search" type="search" placeholder="Buscar na seleção"></label></div>'
         table += '<div class="scroll"><table><thead><tr><th>Produto / agrupamento</th><th>Conta</th><th>MLB / SKU</th><th>Receita</th><th>Pedidos</th><th>Unidades</th><th>Investimento</th><th>Receita Ads</th><th>ROAS</th><th>TACOS</th><th>ACOS</th><th>Visitas</th><th>Detalhe</th></tr></thead><tbody id="item-rows">'
-        page = max(1, min(int(page), max(1, (len(rows) + 99) // 100)))
-        for item in rows[(page - 1) * 100:page * 100]:
-            revenue = float(item.get("totalRevenue") or 0)
-            investment = float(item.get("investment") or 0)
-            ads_revenue = float(item.get("adsRevenue") or 0)
-            tacos = _percent(investment / revenue) if revenue else "N/D"
-            acos = _percent(investment / ads_revenue) if ads_revenue else "N/D"
-            roas = f'{ads_revenue/investment:.2f}x'.replace(".", ",") if investment else "N/D"
-            photo = ('<img class="product-photo" src="{}" alt="">'.format(escape(item["thumbnailUrl"], quote=True))
-                     if item["thumbnailUrl"] else '<span class="product-photo empty">Sem foto</span>')
-            table += '<tr><td><div class="product-name">{}<b>{}</b></div></td><td>{}</td><td>{}<br>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td><button class="detail-open" type="button">Abrir</button></td></tr>'.format(
-                photo, escape(str(item.get("title") or "")), escape(str(item.get("account") or "")),
-                escape(str(item.get("code") or "")), escape(str(item.get("sku") or "")),
-                escape(_money(revenue)), _number(item.get("orders")), _number(item.get("units")),
-                escape(_money(investment)), escape(_money(ads_revenue)), roas, tacos, acos,
-                _number(item.get("visits") if item.get("visitsKnown") == item.get("members") else None))
-        table += '</tbody></table></div><small id="item-count">Página {} de {} · {} linhas, ordenadas por receita.</small>'.format(
-            page, max(1, (len(rows) + 99) // 100), len(rows))
+        page = max(1, min(int(page), max(1, (len(roots) + 99) // 100)))
+        table += '</tbody></table></div><small id="item-count">Página {} de {} · {} agrupamentos, ordenados por receita.</small>'.format(
+            page, max(1, (len(roots) + 99) // 100), len(roots))
         def page_link(number, title):
             query = [("account_id", str(i)) for i in sorted(selected_ids)]
             query.extend((("view", view), ("page", str(number)), ("period", period.get("mode") or "30d")))
@@ -288,8 +427,8 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
                 query.extend((("date_from", period["dateFrom"]), ("date_to", period["dateTo"])))
             return '<a href="?{}">{}</a>'.format(escape(urlencode(query), quote=True), title)
         table += '<nav class="pagination" id="item-pagination">{} {}</nav></section>'.format(page_link(page - 1, "Anterior") if page > 1 else "",
-                                             page_link(page + 1, "Próxima") if page * 100 < len(rows) else "")
-        item_data = json.dumps(result["items"], ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
+                                             page_link(page + 1, "Próxima") if page * 100 < len(roots) else "")
+        item_data = json.dumps(roots, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
         table += '<script type="application/json" id="consolidated-items">{}</script>'.format(item_data)
         table += '<script type="application/json" id="consolidated-period">{}</script>'.format(
             json.dumps({"dateFrom": period["dateFrom"], "dateTo": period["dateTo"]}))
@@ -298,8 +437,9 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
     body{background:#f5f7fb;color:#101828}main{max-width:1440px;margin:0 auto;padding:20px 16px;background:transparent;border:0;border-radius:0;box-shadow:none}
     .accounts{display:flex;flex-wrap:wrap;gap:10px}.account{margin:0;padding:8px;border:1px solid #d9e1ec;border-radius:8px;background:white}.account small{font-weight:normal}.period-picker{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:12px 0}.period-picker label{margin:0}.period-picker select,.period-picker input{display:block;width:auto;min-width:140px;padding:9px;border:1px solid #cfd6e4;border-radius:8px;background:#fff}.period-picker button{margin:0}
     .chart-modes button,.pagination button{width:auto;margin-top:0}.toolbar input[type=search]{width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px}.detail-backdrop[hidden]{display:none}.detail-backdrop{position:fixed;inset:0;background:#10182899;z-index:100;display:grid;place-items:center;padding:15px}.detail-modal{width:min(1050px,96vw);max-height:90vh;overflow:auto;background:#f5f7fb;border-radius:12px}.detail-modal header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#fff;border-bottom:1px solid #d9e1ec}.detail-modal header h2{margin:0;font-size:18px}.detail-modal header small{color:#667085}.detail-modal header button{width:auto;margin:0;background:#fff;color:#102033;border:1px solid #d9e1ec}.detail-content{padding:18px}.detail-chart{height:210px;display:flex;align-items:end;gap:3px;background:#fff;border:1px solid #d9e1ec;border-radius:8px;padding:16px}.detail-chart span{flex:1;min-width:2px;background:#b5a1ed;border-radius:4px 4px 0 0}.detail-summary{margin-top:15px;display:flex;gap:10px;flex-wrap:wrap}.detail-summary span{padding:10px;border:1px solid #d9e1ec;border-radius:8px;background:#fff}
-    .detail-chart{height:auto;display:block;min-height:300px;border:0;padding:0}.detail-chart svg{display:block;width:100%;height:300px}.detail-summary{margin:0 0 15px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.detail-summary span{font-size:12px}.detail-content .panel h3{margin:3px 0 8px;font-size:16px}@media(max-width:700px){.detail-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    .detail-chart{height:auto;display:block;min-height:48px;border:0;padding:0}.detail-chart svg{display:block;width:100%;height:300px}.detail-summary{margin:0 0 15px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.detail-summary span{font-size:12px}.detail-content .panel h3{margin:3px 0 8px;font-size:16px}@media(max-width:700px){.detail-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
     .cards{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin:18px 0}.card,.panel{background:#fff;border:1px solid #d9e1ec;border-radius:9px;padding:14px}.card{min-height:105px}.card small{display:block;color:#52627a;font-size:10px;font-weight:700;letter-spacing:.4px}.card strong{display:block;font-size:21px;margin:7px 0}.comparison{font-size:11px;color:#667085}.panel{margin:10px 0}.panel h2{font-size:16px;margin:3px 0 8px}.panel-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.panel-head small{color:#667085}.chart-modes,.view-modes{display:flex;flex-wrap:wrap;gap:4px}.chart-modes button,.view-modes a{font-size:11px;border:1px solid #d9e1ec;border-radius:6px;padding:7px 9px;background:#fff;color:#102033;text-decoration:none;cursor:pointer}.chart-modes .active,.view-modes .active{background:#102033;color:#fff}.chart-shell{position:relative;margin-top:10px;border:1px solid #d9e1ec;border-radius:10px;background:#fff}.chart-area{min-height:320px}.chart-area svg{display:block;width:100%;height:320px}.chart-grid{stroke:#e4e7ec;stroke-width:1;stroke-dasharray:4 5}.chart-axis{fill:#667085;font-size:11px}.chart-hover-line{stroke:#a29ab8;stroke-dasharray:4 4;visibility:hidden}.chart-hit{fill:transparent;cursor:crosshair}.chart-hit:hover+.chart-hover-line{visibility:visible}.chart-tooltip{position:absolute;z-index:4;min-width:195px;padding:10px 12px;border:1px solid #d0d5dd;border-radius:10px;background:#fff;box-shadow:0 12px 26px #1018282e;font-size:11px;pointer-events:none}.chart-tooltip[hidden],.hierarchy-child-row[hidden]{display:none}.chart-tooltip b{display:block;margin-bottom:5px}.chart-tooltip div{display:flex;justify-content:space-between;gap:15px}.toolbar{margin:16px 0}.toolbar span{font-size:11px;color:#667085;font-weight:700}.toolbar input{display:block;max-width:270px;margin-top:5px}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:12px}th{background:#eef2f7;color:#52627a;text-align:left;font-size:10px}td,th{padding:9px;border-bottom:1px solid #e5eaf1;vertical-align:top}td{white-space:nowrap}td:first-child{white-space:normal;min-width:220px}.product-name{display:flex;align-items:center;gap:9px}.product-photo{width:44px;height:44px;object-fit:contain;border:1px solid #d9e1ec;border-radius:6px;flex:none}.product-photo.empty{display:grid;place-items:center;background:#f1f4f8;color:#667085;font-size:9px}.detail-open,.hierarchy-toggle{width:auto;margin:0;padding:7px 10px;background:#fff;color:#102033;border:1px solid #d9e1ec}.hierarchy-toggle{font-weight:700;min-width:30px}.hierarchy-child-row>td{padding:12px 18px;background:#f8faff}.hierarchy-child-row td:first-child{min-width:0}.hierarchy-group{margin:0 0 12px}.hierarchy-group h3{font-size:12px;margin:8px 0}.hierarchy-table td,.hierarchy-table th{white-space:normal;min-width:0}.hierarchy-table td:first-child{min-width:160px}.pagination{margin:14px 0}.pagination button{margin-right:12px;width:auto}form button{width:auto}input[type=checkbox]{width:auto}@media(max-width:1100px){.cards{grid-template-columns:repeat(3,1fr)}}@media(max-width:700px){.cards{grid-template-columns:repeat(2,1fr)}}
+    .hierarchy-branch{border:1px solid #d9e1ec;border-left:4px solid #496ba5;border-radius:7px;background:#fff;margin:7px 0;padding:9px 12px;white-space:normal}.hierarchy-branch summary{font-weight:700;cursor:pointer}.hierarchy-branch.level-family{border-left-color:#aa75c8;background:#fcf8ff}.hierarchy-branch.level-mlbu{border-left-color:#b7872e;background:#fffaf0}.hierarchy-branch.level-mlb{border-left-color:#23836b;background:#f4fcf9}.hierarchy-nested{padding-left:14px}.hierarchy-metrics{display:flex;flex-wrap:wrap;gap:7px;margin:7px 0;color:#475467;font-size:11px}.hierarchy-metrics span{padding:3px 6px;background:#f3f6fa;border-radius:4px}.hierarchy-leaf{font-size:11px}.hierarchy-branch .detail-open{font-size:11px;padding:5px 8px}.hierarchy-branch details:not([open])>.hierarchy-nested{display:none}@media(max-width:700px){.hierarchy-nested{padding-left:5px}}
     </style>'''
     body = '<h1>Dashboard ADS Mercado Livre — visão consolidada</h1><p>Selecione as contas vinculadas a este cliente. Esta visão é somente leitura e não ocupa um slot ML.</p>'
     body += '<p><a href="/contas">Contas</a> · <a href="/online?confirmed=1">Dashboard individual</a></p>'
@@ -342,35 +482,50 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
       metrics.forEach(function(m){var b=document.createElement('button');b.type='button';b.dataset.metric=m[0];b.textContent=m[1];b.onclick=function(){draw(m[0])};buttons.appendChild(b)});draw('revenue');
     })();
     (function(){var src=document.getElementById('consolidated-items');if(!src)return;
-      var items=JSON.parse(src.textContent),body=document.getElementById('item-rows'),count=document.getElementById('item-count'),pager=document.getElementById('item-pagination'),search=document.getElementById('item-search'),modes=document.getElementById('view-modes');
+      var roots=JSON.parse(src.textContent),body=document.getElementById('item-rows'),count=document.getElementById('item-count'),pager=document.getElementById('item-pagination'),search=document.getElementById('item-search'),modes=document.getElementById('view-modes');
       var mode=(modes.querySelector('.active')||{}).dataset?.view||'hibrida',page=1;
       var backdrop=document.getElementById('detail-backdrop'),close=document.getElementById('detail-close');
-      close.onclick=function(){backdrop.hidden=true};backdrop.onclick=function(e){if(e.target===backdrop)close.click()};
+      close.onclick=function(){detailRequestId++;backdrop.hidden=true};backdrop.onclick=function(e){if(e.target===backdrop)close.click()};
       document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!backdrop.hidden)close.click()});
       function imageUrl(value){try{var u=new URL(value);return ['http:','https:'].includes(u.protocol)?u.href:''}catch(e){return ''}}
       var detailRequestId=0;
       async function openDetail(g){
         var requestId=++detailRequestId;
         backdrop.hidden=false;document.getElementById('detail-title').textContent=g.title;
-        document.getElementById('detail-account').textContent='Conta: '+g.account+' · '+g.codes.join(', ');
+        document.getElementById('detail-account').textContent=g.sources.map(function(s){return s.account+' · '+s.codes.join(', ')}).join(' | ');
         var status=document.getElementById('detail-status'),chart=document.getElementById('detail-chart'),summary=document.getElementById('detail-summary'),tabs=document.getElementById('detail-chart-modes'),tip=document.getElementById('detail-tooltip');
         chart.textContent='';summary.textContent='';tabs.textContent='';tip.hidden=true;
+        if(g.level==='campaign'){status.textContent='Série por campanha N/D: o recibo disponível é por anúncio MLB, não por campanha. Nenhum valor de vendas foi atribuído a esta campanha.';return}
         [['Receita',money(g.totalRevenue)],['Pedidos',fmt(g.orders)],['Unidades',fmt(g.units)],['Investimento Ads',money(g.investment)],['TACOS',pct(g.totalRevenue?g.investment/g.totalRevenue:null)],['ROAS',g.investment?(g.adsRevenue/g.investment).toLocaleString('pt-BR',{maximumFractionDigits:2})+'x':'N/D']].forEach(function(pair){var el=document.createElement('span');el.textContent=pair[0]+': '+pair[1];summary.appendChild(el)});
-        if(!g.codes.length){status.textContent='Série diária N/D: não há código MLB comprovado para este agrupamento.';return}
-        status.textContent='Carregando série diária da conta de origem…';
+        if(!g.sources.length){status.textContent='Série diária N/D: não há código MLB comprovado para este agrupamento.';return}
+        status.textContent='Carregando séries diárias das contas de origem…';
         var period=JSON.parse(document.getElementById('consolidated-period').textContent),from=period.dateFrom,to=period.dateTo;
-        var chunks=[];for(var i=0;i<g.codes.length;i+=50)chunks.push(g.codes.slice(i,i+50));
+        var chunks=[];g.sources.forEach(function(source){for(var i=0;i<source.codes.length;i+=50)chunks.push({account_id:source.account_id,codes:source.codes.slice(i,i+50)})});
         try{
-          var payloads=await Promise.all(chunks.map(async function(codes){var qs=new URLSearchParams({account_id:String(g.account_id),codes:codes.join(','),date_from:from,date_to:to});var response=await fetch('/online/consolidado/item-daily?'+qs,{credentials:'same-origin'});return {codes:codes,data:response.ok?await response.json():{ok:false}}}));
+          var payloads=new Array(chunks.length),next=0;
+          async function worker(){while(next<chunks.length){var index=next++,part=chunks[index],qs=new URLSearchParams({account_id:String(part.account_id),codes:part.codes.join(','),date_from:from,date_to:to}),controller=new AbortController(),timer=setTimeout(function(){controller.abort()},60000);
+            try{var response=await fetch('/online/consolidado/item-daily?'+qs,{credentials:'same-origin',signal:controller.signal}),data=await response.json();payloads[index]={...part,http:response.status,data:data}}
+            catch(error){payloads[index]={...part,http:0,data:{ok:false,error:error.name==='AbortError'?'timeout':'falha_de_rede_ou_resposta_invalida'}}}
+            finally{clearTimeout(timer)}}}
+          await Promise.all([worker(),worker()]);
           if(requestId!==detailRequestId)return;
-          if(payloads.some(function(part){return part.data.ok!==true})){status.textContent='Série diária indisponível. Nenhum zero foi inventado.';return}
+          var failed=payloads.find(function(part){return part.http<200||part.http>=300||part.data.ok!==true});if(failed){status.textContent='Série diária N/D: conta '+failed.account_id+'; '+(failed.http?'HTTP '+failed.http:'sem resposta HTTP')+'; motivo '+(failed.data.error||'resposta indisponível')+'; trace '+(failed.data.trace_id||'sem trace')+'. Nenhum zero foi inventado.';return}
           var first=new Date(from+'T12:00:00Z'),last=new Date(to+'T12:00:00Z'),rows=[];
           for(var day=new Date(first);day<=last;day.setUTCDate(day.getUTCDate()+1))rows.push({date:day.toISOString().slice(0,10),revenue:0,adsRevenue:0,investment:0,units:0,orders:0});
-          var salesComplete=true,adsComplete=true;
-          payloads.forEach(function(part){part.codes.forEach(function(code){var source=new Map((part.data.series[code]||[]).map(function(row){return [row.date,row]}));rows.forEach(function(day){var row=source.get(day.date);if(!row||row.partial||row.salesPresent!==true){salesComplete=false;return}day.revenue+=Number(row.revenue||0);day.orders+=Number(row.orders||0);day.units+=Number(row.units||0);if(row.adsPresent!==true){adsComplete=false;return}day.adsRevenue+=Number(row.adsRevenue||0);day.investment+=Number(row.investment||0)})})});
-          var dailyTotal=rows.reduce(function(sum,row){return sum+row.revenue},0);
-          if(!salesComplete||Math.abs(dailyTotal-g.totalRevenue)>0.01){status.textContent='Série diária N/D: faltam dias ou a soma não confere com a receita do produto neste período.';return}
-          status.textContent=adsComplete?'Série diária da conta de origem para a janela selecionada.':'Vendas diárias completas; métricas diárias de Ads permanecem N/D sem cobertura comprovada.';
+          var salesIssue='',adsIssue='';
+          payloads.forEach(function(part){part.codes.forEach(function(code){var source=new Map((part.data.series[code]||[]).map(function(row){return [row.date,row]}));rows.forEach(function(day){var row=source.get(day.date),coverage=part.data.coverage||{};
+            if(!coverage.sales||coverage.sales[day.date]!==true){salesIssue=salesIssue||('vendas sem recibo: conta '+part.account_id+', '+code+', '+day.date+'; trace '+part.data.trace_id);return}
+            if(row&&row.salesPresent===true){for(var key of ['revenue','orders','units']){if(typeof row[key]!=='number'||!Number.isFinite(row[key])){salesIssue=salesIssue||('valor de vendas inválido: '+code+', '+day.date);return}}day.revenue+=row.revenue;day.orders+=row.orders;day.units+=row.units}
+            if(!coverage.ads||coverage.ads[day.date]!==true){adsIssue=adsIssue||('Ads sem recibo: conta '+part.account_id+', '+code+', '+day.date+'; trace '+part.data.trace_id);return}
+            if(row&&row.adsPresent===true){for(var key of ['adsRevenue','investment']){if(typeof row[key]!=='number'||!Number.isFinite(row[key])){adsIssue=adsIssue||('valor Ads inválido: '+code+', '+day.date);return}}day.adsRevenue+=row.adsRevenue;day.investment+=row.investment}
+          })})});
+          function dailySum(key){return rows.reduce(function(sum,row){return sum+row[key]},0)}
+          if(salesIssue){status.textContent='Série diária N/D: '+salesIssue;return}
+          if(g.totalRevenue==null||Math.abs(dailySum('revenue')-g.totalRevenue)>0.01){status.textContent='Série diária N/D: soma divergente do total do agrupamento ('+money(dailySum('revenue'))+' versus '+money(g.totalRevenue)+').';return}
+          if(g.units==null||Math.abs(dailySum('units')-g.units)>0.01||g.orders==null||Math.abs(dailySum('orders')-g.orders)>0.01){status.textContent='Série diária N/D: unidades ou pedidos divergentes do total do agrupamento.';return}
+          if(!adsIssue&&(!Number.isFinite(g.adsRevenue)||!Number.isFinite(g.investment)||Math.abs(dailySum('adsRevenue')-g.adsRevenue)>0.01||Math.abs(dailySum('investment')-g.investment)>0.01)){adsIssue='soma diária de Ads divergente do total do agrupamento'}
+          var adsComplete=!adsIssue;
+          status.textContent=adsComplete?'Séries certificadas das '+g.accountCount+' conta(s) para a janela selecionada.':'Vendas diárias completas; '+adsIssue;
           var metrics=[['revenue','Faturamento'],['adsRevenue','Receita Ads'],['investment','Investimento'],['roas','ROAS'],['tacos','TACOS'],['units','Unidades'],['orders','Pedidos'],['price','Preço médio']];
           function metricValue(row,key){if(['adsRevenue','investment','roas','tacos'].includes(key)&&!adsComplete)return null;if(key==='roas')return row.investment>0?row.adsRevenue/row.investment:null;if(key==='tacos')return row.revenue>0?row.investment/row.revenue:null;if(key==='price')return row.units>0?row.revenue/row.units:null;return row[key]}
           function display(value,key){if(value==null||!Number.isFinite(value))return 'N/D';if(['revenue','adsRevenue','investment','price'].includes(key))return money(value);if(key==='tacos')return pct(value);if(key==='roas')return value.toLocaleString('pt-BR',{maximumFractionDigits:2})+'x';return fmt(value)}
@@ -391,29 +546,31 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
           metrics.forEach(function(metric){var button=document.createElement('button');button.type='button';button.dataset.metric=metric[0];button.textContent=metric[1];button.onclick=function(){drawDetail(metric[0])};tabs.appendChild(button)});drawDetail('revenue');
         }catch(e){if(requestId===detailRequestId)status.textContent='Série diária indisponível. Nenhum zero foi inventado.'}
       }
-      function num(x){return Number(x)||0}function fmt(x){return num(x).toLocaleString('pt-BR',{maximumFractionDigits:0})}function money(x){return 'R$ '+num(x).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}function pct(x){return x==null?'N/D':(100*x).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'%'}
-      function grouped(){var groups=new Map();items.forEach(function(item){var id=item.code||item.sku||'sem-anuncio',title=item.title||id;
-        if((mode==='familia'||mode==='hibrida')&&item.familyId){id=item.familyId;title=item.familyName||title}
-        else if((mode==='variacao'||mode==='mlbu')&&item.userProductId){id=item.userProductId;title=item.userProductName||title}
-        else if(mode==='campanha'&&item.campaignId){id=item.campaignId;title=item.campaignName||item.campaign||title}
-        else if(mode==='sku'&&item.sku&&!item.skuIsReference){id=item.sku;title=id}
-        var key=String(item.account_id)+'|'+mode+'|'+id,g=groups.get(key);if(!g){g={account:item.account,account_id:item.account_id,code:id,sku:mode==='sku'?id:(item.sku||''),title:title,thumbnailUrl:imageUrl(item.thumbnailUrl),codes:[],children:[],totalRevenue:0,orders:0,units:0,investment:0,adsRevenue:0,visits:0,members:0,visitsKnown:0};groups.set(key,g)}
-        ['totalRevenue','orders','units','investment','adsRevenue','visits'].forEach(function(k){g[k]+=num(item[k])});g.members++;g.children.push(item);if(item.visitsCoverageComplete===true)g.visitsKnown++;if(String(item.code||'').toUpperCase().startsWith('MLB')&&!g.codes.includes(item.code))g.codes.push(item.code);if(!g.thumbnailUrl)g.thumbnailUrl=imageUrl(item.thumbnailUrl)});
-        return Array.from(groups.values()).sort(function(a,b){return b.totalRevenue-a.totalRevenue})}
-      function cell(row,text){var td=document.createElement('td');td.textContent=text;row.appendChild(td)}
-      function childValue(value,format){return value==null?'N/D':format(value)}
-      function appendHierarchy(group,row){var container=document.createElement('td');container.colSpan=13;row.appendChild(container);
-        var variations=new Map();group.children.forEach(function(item){var id=String(item.userProductId||''),entry=variations.get(id);if(!entry){entry={name:item.userProductName||'',items:[]};variations.set(id,entry)}entry.items.push(item)});
-        variations.forEach(function(variation,id){var section=document.createElement('section');section.className='hierarchy-group';var heading=document.createElement('h3');heading.textContent=(id?'MLBU '+id:'Sem MLBU cadastrado')+(variation.name?' · '+variation.name:'')+' · '+variation.items.length+' anúncio(s)';section.appendChild(heading);
-          var scroll=document.createElement('div');scroll.className='scroll';var table=document.createElement('table');table.className='hierarchy-table';var thead=document.createElement('thead'),head=document.createElement('tr');['Anúncio','Conta','Família','SKU','Campanha','Receita','Pedidos','Unidades','Investimento','Receita Ads'].forEach(function(label){var th=document.createElement('th');th.textContent=label;head.appendChild(th)});thead.appendChild(head);table.appendChild(thead);
-          var tbody=document.createElement('tbody');variation.items.forEach(function(item){var child=document.createElement('tr');cell(child,(item.title||'Sem título')+' · '+(item.code||'MLB N/D'));cell(child,item.account||'N/D');cell(child,(item.familyName||'Família N/D')+(item.familyId?' · '+item.familyId:''));cell(child,item.sku?item.sku+(item.skuIsReference?' (referência)':''):'N/D');cell(child,item.campaignName||item.campaign||item.campaignId||'N/D');cell(child,childValue(item.totalRevenue,money));cell(child,childValue(item.orders,fmt));cell(child,childValue(item.units,fmt));cell(child,childValue(item.investment,money));cell(child,childValue(item.adsRevenue,money));tbody.appendChild(child)});table.appendChild(tbody);scroll.appendChild(table);section.appendChild(scroll);container.appendChild(section)})}
-      function draw(){var query=search.value.trim().toLocaleLowerCase('pt-BR'),all=grouped().filter(function(r){return !query||[r.account,r.title,r.code,r.sku].some(function(v){return String(v||'').toLocaleLowerCase('pt-BR').includes(query)})||r.children.some(function(item){return [item.code,item.sku,item.title,item.familyId,item.familyName,item.userProductId,item.userProductName,item.campaignId,item.campaignName].some(function(v){return String(v||'').toLocaleLowerCase('pt-BR').includes(query)})})});
-        var pages=Math.max(1,Math.ceil(all.length/100));page=Math.max(1,Math.min(page,pages));body.textContent='';all.slice((page-1)*100,page*100).forEach(function(g,index){var tr=document.createElement('tr');
-          var td=document.createElement('td'),wrap=document.createElement('div');wrap.className='product-name';var toggle=document.createElement('button'),childRow=document.createElement('tr');toggle.type='button';toggle.className='hierarchy-toggle';toggle.textContent='+';toggle.setAttribute('aria-label','Mostrar anúncios de '+g.title+' na conta '+g.account);toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls','hierarchy-'+index);childRow.id='hierarchy-'+index;childRow.className='hierarchy-child-row';childRow.hidden=true;toggle.onclick=function(){if(!childRow.firstChild)appendHierarchy(g,childRow);childRow.hidden=!childRow.hidden;toggle.textContent=childRow.hidden?'+':'−';toggle.setAttribute('aria-expanded',String(!childRow.hidden))};wrap.appendChild(toggle);var photo=document.createElement(g.thumbnailUrl?'img':'span');photo.className='product-photo'+(g.thumbnailUrl?'':' empty');if(g.thumbnailUrl)photo.src=g.thumbnailUrl;else photo.textContent='Sem foto';wrap.appendChild(photo);var title=document.createElement('b');title.textContent=g.title;wrap.appendChild(title);td.appendChild(wrap);tr.appendChild(td);
-          cell(tr,g.account);cell(tr,g.code+' / '+g.sku);cell(tr,money(g.totalRevenue));cell(tr,fmt(g.orders));cell(tr,fmt(g.units));cell(tr,money(g.investment));cell(tr,money(g.adsRevenue));cell(tr,g.investment?num(g.adsRevenue/g.investment).toLocaleString('pt-BR',{maximumFractionDigits:2})+'x':'N/D');cell(tr,pct(g.totalRevenue?g.investment/g.totalRevenue:null));cell(tr,pct(g.adsRevenue?g.investment/g.adsRevenue:null));cell(tr,g.visitsKnown===g.members?fmt(g.visits):'N/D');var detail=document.createElement('td'),button=document.createElement('button');button.type='button';button.className='detail-open';button.textContent='Abrir';button.onclick=function(){openDetail(g)};detail.appendChild(button);tr.appendChild(detail);body.appendChild(tr);body.appendChild(childRow)});
-        count.textContent='Página '+page+' de '+pages+' · '+all.length+' linhas, ordenadas por receita.';pager.textContent='';
-        if(page>1){var prev=document.createElement('button');prev.type='button';prev.textContent='Anterior';prev.onclick=function(){page--;draw()};pager.appendChild(prev)}
-        if(page<pages){var next=document.createElement('button');next.type='button';next.textContent='Próxima';next.onclick=function(){page++;draw()};pager.appendChild(next)}
+      function fmt(x){return x==null?'N/D':Number(x).toLocaleString('pt-BR',{maximumFractionDigits:0})}
+      function money(x){return x==null?'N/D':'R$ '+Number(x).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+      function pct(x){return x==null||!Number.isFinite(x)?'N/D':(100*x).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'%'}
+      function ratio(a,b){return a==null||b==null||b<=0?null:a/b}
+      function cell(row,value){var td=document.createElement('td');td.textContent=value;row.appendChild(td)}
+      function matches(node,query){return [node.title,node.account,node.code,node.sku,node.key].some(function(value){return String(value||'').toLocaleLowerCase('pt-BR').includes(query)})||node.children.some(function(child){return matches(child,query)})}
+      function makePhoto(node,container){var url=imageUrl(node.thumbnailUrl);var photo=document.createElement(url?'img':'span');photo.className='product-photo'+(url?'':' empty');if(url)photo.src=url;else photo.textContent='Sem foto';container.appendChild(photo)}
+      function detailButton(node){var button=document.createElement('button');button.type='button';button.className='detail-open';button.textContent='Abrir gráfico';button.onclick=function(event){event.stopPropagation();openDetail(node)};return button}
+      function atLevel(nodes,level){var out=[];nodes.forEach(function(node){if(node.level===level)out.push(node);else out.push.apply(out,atLevel(node.children,level))});return out}
+      function visibleNodes(){if(mode==='familia')return atLevel(roots,'family');if(mode==='variacao')return atLevel(roots,'mlbu');if(mode==='mlb')return atLevel(roots,'mlb');if(mode==='campanha')return atLevel(roots,'campaign');return roots}
+      function branch(node,parent){var section=document.createElement('section');section.className='hierarchy-branch level-'+node.level;var header=document.createElement(node.children.length?'details':'div');
+        if(node.children.length){var summary=document.createElement('summary');summary.textContent=({account:'Conta',family:'Família',mlbu:'Variação/MLBU',mlb:'Anúncio MLB'})[node.level]+' · '+node.title+(node.level==='mlb'?' · '+node.code:'');header.appendChild(summary)}
+        else{header.className='hierarchy-leaf';var label=document.createElement('strong');label.textContent=(node.level==='campaign'?'Campanha':'Anúncio MLB')+' · '+node.title+(node.code?' · '+node.code:'');header.appendChild(label)}
+        var metrics=document.createElement('div');metrics.className='hierarchy-metrics';
+        [['Receita',money(node.totalRevenue)],['Pedidos',fmt(node.orders)],['Unidades',fmt(node.units)],['Investimento',money(node.investment)],['Receita Ads',money(node.adsRevenue)],['TACOS',pct(ratio(node.investment,node.totalRevenue))]].forEach(function(pair){var span=document.createElement('span');span.textContent=pair[0]+': '+pair[1];metrics.appendChild(span)});
+        header.appendChild(metrics);header.appendChild(detailButton(node));
+        if(node.children.length){var nested=document.createElement('div');nested.className='hierarchy-nested';node.children.forEach(function(child){branch(child,nested)});header.appendChild(nested)}
+        section.appendChild(header);parent.appendChild(section)}
+      function appendHierarchy(node,row){var container=document.createElement('td');container.colSpan=13;row.appendChild(container);node.children.forEach(function(child){branch(child,container)})}
+      function draw(){var query=search.value.trim().toLocaleLowerCase('pt-BR'),all=visibleNodes().filter(function(node){return !query||matches(node,query)}),pages=Math.max(1,Math.ceil(all.length/100));page=Math.max(1,Math.min(page,pages));body.textContent='';
+        all.slice((page-1)*100,page*100).forEach(function(node,index){var tr=document.createElement('tr'),td=document.createElement('td'),wrap=document.createElement('div');wrap.className='product-name';var childRow=document.createElement('tr');childRow.id='hierarchy-'+index;childRow.className='hierarchy-child-row';childRow.hidden=true;
+          if(node.children.length){var toggle=document.createElement('button');toggle.type='button';toggle.className='hierarchy-toggle';toggle.textContent='+';toggle.setAttribute('aria-label','Mostrar níveis de '+node.title);toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls',childRow.id);toggle.onclick=function(){if(!childRow.firstChild)appendHierarchy(node,childRow);childRow.hidden=!childRow.hidden;toggle.textContent=childRow.hidden?'+':'−';toggle.setAttribute('aria-expanded',String(!childRow.hidden))};wrap.appendChild(toggle)}makePhoto(node,wrap);var title=document.createElement('b');title.textContent=node.title;wrap.appendChild(title);td.appendChild(wrap);tr.appendChild(td);
+          cell(tr,node.level==='global'?node.accountCount+' conta(s)':node.account);cell(tr,node.confidence==='last_sale_reference'?'SKU de referência — associação provisória':node.confidence==='sku_text_unverified'?'SKU declarado — vínculo entre contas não comprovado':node.key);
+          cell(tr,money(node.totalRevenue));cell(tr,fmt(node.orders));cell(tr,fmt(node.units));cell(tr,money(node.investment));cell(tr,money(node.adsRevenue));var roas=ratio(node.adsRevenue,node.investment);cell(tr,roas==null?'N/D':roas.toLocaleString('pt-BR',{maximumFractionDigits:2})+'x');cell(tr,pct(ratio(node.investment,node.totalRevenue)));cell(tr,pct(ratio(node.investment,node.adsRevenue)));cell(tr,node.visitsKnown?fmt(node.visits):'N/D');var detail=document.createElement('td');detail.appendChild(detailButton(node));tr.appendChild(detail);body.appendChild(tr);if(node.children.length)body.appendChild(childRow)});
+        count.textContent='Página '+page+' de '+pages+' · '+all.length+' agrupamentos em '+mode+', ordenados por receita.';pager.textContent='';if(page>1){var prev=document.createElement('button');prev.type='button';prev.textContent='Anterior';prev.onclick=function(){page--;draw()};pager.appendChild(prev)}if(page<pages){var next=document.createElement('button');next.type='button';next.textContent='Próxima';next.onclick=function(){page++;draw()};pager.appendChild(next)}
         Array.from(modes.querySelectorAll('a')).forEach(function(a){a.classList.toggle('active',a.dataset.view===mode)})}
       modes.addEventListener('click',function(e){var a=e.target.closest('a[data-view]');if(!a)return;e.preventDefault();mode=a.dataset.view;page=1;draw()});search.addEventListener('input',function(){page=1;draw()});draw();
     })();</script>'''

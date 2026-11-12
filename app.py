@@ -961,9 +961,9 @@ def _strip_item_daily_series(data: dict) -> None:
 
 def _item_daily_payload(client: str, codes: list[str], date_from: str, date_to: str, partial: bool) -> dict:
     ids = ",".join(codes)
-    sales, _sc, sales_err = _sales_intelligence_fetch_daily_sales(client, date_from, date_to, ids)
-    ads, _ac, ads_err = _sales_intelligence_fetch_daily_ads(client, date_from, date_to, ids)
-    visits, _vc, visits_err = _sales_intelligence_fetch_daily_visits(client, date_from, date_to, ids)
+    sales, sales_coverage, sales_err = _sales_intelligence_fetch_daily_sales(client, date_from, date_to, ids)
+    ads, ads_coverage, ads_err = _sales_intelligence_fetch_daily_ads(client, date_from, date_to, ids)
+    visits, visits_coverage, visits_err = _sales_intelligence_fetch_daily_visits(client, date_from, date_to, ids)
     sources = {"sales": (sales, sales_err), "ads": (ads, ads_err), "visits": (visits, visits_err)}
     trace_id = secrets.token_hex(6)
     if sales_err or ads_err:
@@ -972,7 +972,21 @@ def _item_daily_payload(client: str, codes: list[str], date_from: str, date_to: 
         _trace_item_daily_response(client, codes, date_from, date_to, partial, sources, response)
         return response
     _by_date, series = _daily_series_by_item(sales, ads, visits, partial)
-    response = {"ok": True, "series": {code: series.get(code, []) for code in codes}, "trace_id": trace_id}
+    # The agent omits explicit-zero rows from the sparse financial series. Its
+    # exact, item-filtered daily receipts are required before the UI can render
+    # an absent row as zero. Do not infer coverage from HTTP 200 or row counts.
+    def verified_days(receipts):
+        return {day: receipt.get("complete") is True and not any(
+            receipt.get(key) for key in ("error", "erro", "errors", "source_errors", "coverage_error")
+        ) for day, receipt in receipts.items() if isinstance(receipt, dict)} if isinstance(receipts, dict) else {}
+
+    response = {"ok": True, "series": {code: series.get(code, []) for code in codes},
+                "coverage": {"sales": verified_days(sales_coverage),
+                             "ads": verified_days(ads_coverage),
+                             "visits": {code: receipt.get("complete") is True
+                                        for code, receipt in visits_coverage.items()
+                                        if isinstance(receipt, dict)}},
+                "trace_id": trace_id}
     _trace_item_daily_response(client, codes, date_from, date_to, partial, sources, response)
     return response
 
@@ -1289,6 +1303,7 @@ def _build_online_dashboard_data(client: str, advertiser_id: str = "", date_from
             "priceStatus": price_status,
             "priceUpdatedAt": quote_at if quote_fresh else "",
             "code": code,
+            "salesRowPrimary": not sale_already_counted,
             "title": str(raw.get("title") or "").strip() or sale_title,
             "lastSaleDate": sale_last_date,
             "lastSaleSort": 0,
