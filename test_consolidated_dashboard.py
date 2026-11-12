@@ -217,6 +217,29 @@ class ConsolidatedMathTests(unittest.TestCase):
         self.assertEqual(len(leaf["sources"]), 1)
         self.assertEqual(leaf["sources"][0]["account_id"], leaf["account_id"])
 
+    def test_identity_tree_preserves_price_and_only_complete_seven_day_trends(self):
+        performance = {"date_from": "2026-10-01", "previous_to": "2026-10-07",
+                       "current_from": "2026-10-08", "date_to": "2026-10-14",
+                       "sales": {"complete": True, "previous": 1, "current": 2}}
+        rows = [{"account_id": account_id, "account": f"Conta {account_id}",
+                 "code": f"MLB{account_id}", "sku": "SKU-GLOBAL",
+                 "familyId": f"F{account_id}", "userProductId": f"U{account_id}",
+                 "totalRevenue": revenue, "units": units, "orders": units,
+                 "investment": 1, "adsRevenue": 2, "currentPrice": price,
+                 "lastSaleDate": "2026-10-14", "lastSalePrice": price,
+                 "performance7d": performance if account_id == 1 else {}}
+                for account_id, revenue, units, price in
+                ((1, 120, 2, 60), (2, 210, 3, 70))]
+        root = consolidated.build_identity_tree(rows)[0]
+        self.assertEqual(root["priceMin"], 60)
+        self.assertEqual(root["priceMax"], 70)
+        self.assertIsNone(root["currentPrice"])
+        self.assertEqual(root["avgSalePrice"], 66)
+        self.assertEqual(root["performance7d"], {})
+        accounts = {node["account_id"]: node for node in root["children"]}
+        self.assertEqual(accounts[1]["performance7d"], performance)
+        self.assertEqual(accounts[2]["performance7d"], {})
+
     def test_distinct_global_identity_does_not_merge_same_sku_text(self):
         rows = [{"account_id": account_id, "account": f"A{account_id}",
                  "code": f"MLB{account_id}", "sku": "SAME", "skuIsReference": False,
@@ -373,7 +396,7 @@ class ConsolidatedMathTests(unittest.TestCase):
                                    projections, [])
         for i in range(1, 6):
             self.assertIn(f"Conta {i}</td><td>2026-10-01 a 2026-10-02</td>", page)
-        self.assertIn("<th>R$ 1.500,00</th><th>R$ 150,00</th><th>Completa</th>", page)
+        self.assertIn("<th>R$ 1.500,00</th><th>10</th><th>10</th><th>R$ 150,00</th><th>R$ 150,00</th><th>N/D</th><th>N/D</th><th>Completa</th>", page)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js required for browser comparison test")
     def test_five_previous_periods_are_summed_after_one_transient_failure(self):

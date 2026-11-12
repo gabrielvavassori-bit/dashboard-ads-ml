@@ -77,6 +77,8 @@ class ConsolidatedBrowserTests(unittest.TestCase):
 
     def test_sparse_zero_receipt_draws_real_product_graph_at_every_level(self):
         self._open()
+        self.assertEqual(self.page.locator(".item-table thead th").count(), 16)
+        self.assertIn("Últimos 7 dias", self.page.locator(".item-table thead").inner_text())
         self.page.get_by_role("button", name="Abrir gráfico").first.click()
         self.page.wait_for_function("document.querySelector('#detail-status').textContent.includes('Séries certificadas')")
         self.page.locator("#detail-chart svg").wait_for()
@@ -88,11 +90,11 @@ class ConsolidatedBrowserTests(unittest.TestCase):
         self.page.locator('#view-modes a[data-view="mlb"]').click()
         self.assertIn("Coturno areia 42", self.page.locator("#item-rows > tr").first.inner_text())
         self.page.locator('#view-modes a[data-view="hibrida"]').click()
-        self.page.get_by_role("button", name="Mostrar níveis").click()
-        for label in ("Conta", "Família", "Variação/MLBU", "Anúncio MLB"):
-            self.page.locator("summary").filter(has_text=label).first.click()
+        for level in ("global", "account", "family", "mlbu"):
+            self.page.locator(f"#item-rows tr.level-{level} .hierarchy-toggle").first.click()
+        self.assertEqual(self.page.locator("#item-rows tr.level-mlb td").count(), 16)
         self.assertIn("MLB3923370735", self.page.locator("#item-rows").inner_text())
-        self.page.locator(".level-mlb > details > .detail-open").click()
+        self.page.locator("#item-rows tr.level-mlb .detail-open").click()
         self.page.locator("#detail-chart svg").wait_for()
         self.assertEqual(self.page.locator("#detail-chart svg").count(), 1)
         self.assertIn("LIMA_SHOP_PREMIUM", self.page.locator("#detail-account").inner_text())
@@ -239,9 +241,8 @@ class ConsolidatedBrowserTests(unittest.TestCase):
         self.assertNotIn("CONTA_3", self.page.locator("#item-rows").inner_text())
         self.page.locator("#item-search").fill("4093 AREIA-42")
         self.assertEqual(self.page.locator("#item-rows > tr:not(.hierarchy-child-row)").count(), 1)
-        self.page.get_by_role("button", name="Mostrar níveis").click()
-        for label in ("Conta", "Família", "Variação/MLBU", "Anúncio MLB"):
-            self.page.locator("summary").filter(has_text=label).first.click()
+        for level in ("global", "account", "family", "mlbu"):
+            self.page.locator(f"#item-rows tr.level-{level} .hierarchy-toggle").first.click()
         self.assertIn("CONTA_1", self.page.locator("#item-rows").inner_text())
         self.assertIn("CONTA_2", self.page.locator("#item-rows").inner_text())
         self.page.locator(".level-account .detail-open").first.click()
