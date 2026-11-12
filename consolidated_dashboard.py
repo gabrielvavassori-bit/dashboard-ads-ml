@@ -653,7 +653,7 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
          ['Visitas nos últimos 7 dias',visits7?fmt(visits7.current)+' ('+trend(visits7)+')':'N/D'],
          ['Conversão nos últimos 7 dias',sales7&&visits7&&visits7.current>0&&visits7.previous>0?pct(sales7.current/visits7.current)+' ('+trend({current:sales7.current/visits7.current,previous:sales7.previous/visits7.previous})+')':'N/D'],
          ['Preço atual',currentPrice],['Preço médio vendido',money(g.avgSalePrice)],
-         ['Preço da última venda',money(g.lastSalePrice)],['Data da última venda',g.lastSaleDate||'N/D']]
+         ['Preço da última venda',money(g.lastSalePrice)],['Data da última venda',formatLastSale(g.lastSaleDate)]]
         .forEach(function(pair){var el=document.createElement('span');el.textContent=pair[0]+': '+pair[1];summary.appendChild(el)});
         if(!g.sources.length){status.textContent='Série diária N/D: não há código MLB comprovado para este agrupamento.';return}
         status.textContent='Carregando séries diárias das contas de origem…';
@@ -706,6 +706,7 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
       }
       function fmt(x){return x==null?'N/D':Number(x).toLocaleString('pt-BR',{maximumFractionDigits:0})}
       function money(x){return x==null?'N/D':'R$ '+Number(x).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+      function formatLastSale(value){if(!value)return 'N/D';var text=String(value),dayOnly=/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(text);if(dayOnly)return dayOnly[3]+'/'+dayOnly[2]+'/'+dayOnly[1];var date=new Date(text);return Number.isNaN(date.getTime())?'N/D':new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(date)}
       function pct(x){return x==null||!Number.isFinite(x)?'N/D':(100*x).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'%'}
       function ratio(a,b){return a==null||b==null||b<=0?null:a/b}
       function cell(row,value){var td=document.createElement('td');td.textContent=value;row.appendChild(td)}
@@ -726,7 +727,7 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
         if(node.children.length){var toggle=document.createElement('button'),isOpen=expanded.has(path);toggle.type='button';toggle.className='hierarchy-toggle';toggle.textContent=isOpen?'−':'+';toggle.setAttribute('aria-label',(isOpen?'Ocultar':'Mostrar')+' níveis de '+node.title);toggle.setAttribute('aria-expanded',String(isOpen));toggle.onclick=function(){if(expanded.has(path))expanded.delete(path);else expanded.add(path);draw()};wrap.appendChild(toggle)}
         makePhoto(node,wrap);var label=document.createElement('span'),title=document.createElement('b');title.textContent=node.title;label.appendChild(title);var level=document.createElement('small');level.textContent=({global:'Produto entre contas',account:'Conta',family:'Família',mlbu:'Variação/MLBU',mlb:'Anúncio MLB',campaign:'Campanha'})[node.level];label.appendChild(level);wrap.appendChild(label);td.appendChild(wrap);tr.appendChild(td);
         cell(tr,node.level==='global'?node.accountCount+' conta(s)':node.account);cell(tr,node.level==='global'&&node.confidence==='last_sale_reference'?'SKU de referência — associação provisória':node.level==='global'&&node.confidence==='sku_text_unverified'?'SKU declarado — vínculo não comprovado':node.code||node.sku||node.key);
-        priceCell(tr,node);cell(tr,node.lastSaleDate||'N/D');cell(tr,money(node.totalRevenue));cell(tr,fmt(node.orders));cell(tr,fmt(node.units));cell(tr,money(node.investment));cell(tr,money(node.adsRevenue));var roas=ratio(node.adsRevenue,node.investment);cell(tr,roas==null?'N/D':roas.toLocaleString('pt-BR',{maximumFractionDigits:2})+'x');cell(tr,pct(ratio(node.investment,node.totalRevenue)));cell(tr,pct(ratio(node.investment,node.adsRevenue)));cell(tr,node.visitsKnown?fmt(node.visits):'N/D');performanceCell(tr,node);
+        priceCell(tr,node);cell(tr,formatLastSale(node.lastSaleDate));cell(tr,money(node.totalRevenue));cell(tr,fmt(node.orders));cell(tr,fmt(node.units));cell(tr,money(node.investment));cell(tr,money(node.adsRevenue));var roas=ratio(node.adsRevenue,node.investment);cell(tr,roas==null?'N/D':roas.toLocaleString('pt-BR',{maximumFractionDigits:2})+'x');cell(tr,pct(ratio(node.investment,node.totalRevenue)));cell(tr,pct(ratio(node.investment,node.adsRevenue)));cell(tr,node.visitsKnown?fmt(node.visits):'N/D');performanceCell(tr,node);
         var detail=document.createElement('td');detail.appendChild(detailButton(node));tr.appendChild(detail);fragment.appendChild(tr);
         if(expanded.has(path))node.children.forEach(function(child,index){appendRow(child,path+'/'+index+':'+child.key,depth+1,fragment)})}
       function draw(){var query=search.value.trim().toLocaleLowerCase('pt-BR'),all=visibleNodes().filter(function(node){return !query||matches(node,query)}),pages=Math.max(1,Math.ceil(all.length/100));page=Math.max(1,Math.min(page,pages));body.textContent='';
