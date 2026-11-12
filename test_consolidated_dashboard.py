@@ -217,6 +217,70 @@ class ConsolidatedMathTests(unittest.TestCase):
         self.assertEqual(len(leaf["sources"]), 1)
         self.assertEqual(leaf["sources"][0]["account_id"], leaf["account_id"])
 
+    def test_legacy_listing_skips_unregistered_family_and_mlbu(self):
+        row = {"account_id": 1, "account": "VARIETYSHOP1", "code": "MLB1",
+               "sku": "4093 AREIA- 42", "skuIsReference": True,
+               "totalRevenue": 100, "orders": 2, "units": 2,
+               "investment": 10, "adsRevenue": 30}
+        root = consolidated.build_identity_tree([row])[0]
+        self.assertEqual([child["level"] for child in root["children"]], ["account"])
+        self.assertEqual([child["level"] for child in root["children"][0]["children"]], ["mlb"])
+        self.assertEqual(root["children"][0]["totalRevenue"], 100)
+
+    def test_exact_daily_receipts_supply_listing_visits_and_seven_day_trends(self):
+        from datetime import date, timedelta
+        period = ("2026-10-01", "2026-10-30")
+        rows = [{"date": (date(2026, 10, 1) + timedelta(days=i)).isoformat(),
+                 "partial": False, "orders": 1, "revenue": 10, "visits": 5}
+                for i in range(30)]
+        link = {"id": 1, "client_id": "client", "official_store": "Conta", "nickname": ""}
+        data = {"meta": {"period": {"dateFrom": period[0], "dateTo": period[1]},
+                         "onlineMode": {"complete": True, "periodMatch": True}},
+                "accountDailySeries": rows,
+                "items": [{"code": "MLB1", "totalRevenue": 300, "orders": 30,
+                           "salesCoverageComplete": True, "visitsCoverageComplete": True,
+                           "dailySeries": rows}]}
+        item = consolidated.project_account(link, data)["items"][0]
+        self.assertEqual(item["visits"], 150)
+        self.assertEqual(item["performance7d"]["sales"], {"complete": True, "previous": 7, "current": 7})
+        self.assertEqual(item["performance7d"]["visits"], {"complete": True, "previous": 35, "current": 35})
+        data["items"][0]["totalRevenue"] = 310
+        unverified = consolidated.project_account(link, data)["items"][0]
+        self.assertNotIn("sales", unverified.get("performance7d") or {})
+        data["items"][0]["visitsCoverageComplete"] = False
+        unverified = consolidated.project_account(link, data)["items"][0]
+        self.assertIsNone(unverified["visits"])
+        self.assertNotIn("visits", unverified.get("performance7d") or {})
+
+    def test_seven_day_metrics_require_daily_receipts_or_matching_source_window(self):
+        from datetime import date, timedelta
+        period = ("2026-10-01", "2026-10-30")
+        rows = [{"date": (date(2026, 10, 1) + timedelta(days=i)).isoformat(),
+                 "partial": False, "orders": 1, "revenue": 10, "visits": 5}
+                for i in range(30) if i != 25]
+        link = {"id": 1, "client_id": "client", "official_store": "Conta", "nickname": ""}
+        source = {"date_from": "2026-10-17", "previous_to": "2026-10-23",
+                  "current_from": "2026-10-24", "date_to": "2026-10-30",
+                  "sales": {"complete": True, "previous": 7, "current": 6}}
+        data = {"meta": {"period": {"dateFrom": period[0], "dateTo": period[1]},
+                         "onlineMode": {"complete": True, "periodMatch": True}},
+                "accountDailySeries": rows,
+                "items": [{"code": "MLB1", "totalRevenue": 290, "orders": 29,
+                           "salesCoverageComplete": True, "visitsCoverageComplete": True,
+                           "dailySeries": rows, "performance7d": source}]}
+        item = consolidated.project_account(link, data)["items"][0]
+        self.assertEqual(item["visits"], 145)
+        self.assertEqual(item["performance7d"]["sales"], source["sales"])
+        self.assertNotIn("visits", item["performance7d"])
+        data["items"][0]["performance7d"] = {**source, "date_to": "2026-10-29"}
+        stale = consolidated.project_account(link, data)["items"][0]
+        self.assertNotIn("sales", stale.get("performance7d") or {})
+        data["items"][0]["dailySeries"] = []
+        data["items"][0]["performance7d"] = {}
+        missing = consolidated.project_account(link, data)["items"][0]
+        self.assertIsNone(missing["visits"])
+        self.assertEqual(missing["performance7d"], {})
+
     def test_identity_tree_preserves_price_and_only_complete_seven_day_trends(self):
         performance = {"date_from": "2026-10-01", "previous_to": "2026-10-07",
                        "current_from": "2026-10-08", "date_to": "2026-10-14",
@@ -255,7 +319,7 @@ class ConsolidatedMathTests(unittest.TestCase):
                 "totalRevenue": 100, "orders": 2, "units": 3,
                 "campaignId": "C1", "investment": 10, "adsRevenue": 20}
         rows = [base, {**base, "campaignId": "C2", "investment": 5, "adsRevenue": 9}]
-        leaf = consolidated.build_identity_tree(rows)[0]["children"][0]["children"][0]["children"][0]["children"][0]
+        leaf = consolidated.build_identity_tree(rows)[0]["children"][0]["children"][0]
         self.assertEqual((leaf["totalRevenue"], leaf["orders"], leaf["units"]), (100, 2, 3))
         self.assertEqual((leaf["investment"], leaf["adsRevenue"]), (15, 29))
         self.assertEqual(leaf["sources"][0]["codes"], ["MLB1"])
@@ -267,7 +331,7 @@ class ConsolidatedMathTests(unittest.TestCase):
         other = {**base, "salesRowPrimary": False, "totalRevenue": 0, "orders": 0,
                  "units": 0, "campaignId": "C2", "investment": 5, "adsRevenue": 9}
         roots = consolidated.build_identity_tree([base, other, other])
-        leaf = roots[0]["children"][0]["children"][0]["children"][0]["children"][0]
+        leaf = roots[0]["children"][0]["children"][0]
         self.assertEqual((leaf["totalRevenue"], leaf["investment"], leaf["adsRevenue"]),
                          (100, 15, 29))
 
@@ -279,10 +343,26 @@ class ConsolidatedMathTests(unittest.TestCase):
                      "orders": 0, "units": 0, "campaignId": "C2",
                      "investment": 5, "adsRevenue": 9}
         roots = consolidated.build_identity_tree([primary, secondary])
-        leaf = roots[0]["children"][0]["children"][0]["children"][0]["children"][0]
+        leaf = roots[0]["children"][0]["children"][0]
         self.assertEqual((leaf["totalRevenue"], leaf["orders"], leaf["units"]), (100, 2, 3))
         self.assertEqual((leaf["investment"], leaf["adsRevenue"]), (15, 29))
         self.assertEqual(roots[0]["totalRevenue"], 100)
+
+    def test_primary_receipt_restores_optional_metrics_when_campaign_order_is_reversed(self):
+        primary = {"account_id": 1, "account": "A", "code": "MLB1", "sku": "SKU",
+                   "salesRowPrimary": True, "totalRevenue": 100, "orders": 2, "units": 3,
+                   "campaignId": "C1", "investment": 10, "adsRevenue": 20,
+                   "visits": 15, "visitsCoverageComplete": True,
+                   "performance7d": {"date_to": "2026-10-14", "sales": {"complete": True, "current": 2, "previous": 1}}}
+        secondary = {**primary, "salesRowPrimary": False, "totalRevenue": 0,
+                     "orders": 0, "units": 0, "campaignId": "C2",
+                     "investment": 5, "adsRevenue": 9, "visits": None,
+                     "visitsCoverageComplete": False, "performance7d": {}}
+        leaf = consolidated.build_identity_tree([secondary, primary])[0]["children"][0]["children"][0]
+        self.assertEqual(leaf["totalRevenue"], 100)
+        self.assertEqual(leaf["visits"], 15)
+        self.assertTrue(leaf["visitsKnown"])
+        self.assertEqual(leaf["performance7d"], primary["performance7d"])
 
     def test_conflicting_primary_sales_rows_are_not_silently_added(self):
         primary = {"account_id": 1, "account": "A", "code": "MLB1", "sku": "SKU",

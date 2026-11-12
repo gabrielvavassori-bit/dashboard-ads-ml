@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from html import escape
 import json
+import math
 from urllib.parse import urlencode, urlparse
 
 
@@ -17,11 +18,90 @@ ITEM_FIELDS = ("code", "sku", "skuIsReference", "salesRowPrimary", "globalProduc
                "priceStatus", "performance7d")
 
 
+def _project_item(row, period, certified):
+    """Derive optional listing metrics only from this certified exact-window series."""
+    item = {key: row.get(key) for key in ITEM_FIELDS}
+    try:
+        start, end = (date.fromisoformat(value) for value in period)
+    except (TypeError, ValueError):
+        return item
+    series = row.get("dailySeries")
+    if not certified or not isinstance(series, list):
+        return item
+    days = {}
+    for daily in series:
+        if not isinstance(daily, dict) or daily.get("partial"):
+            return item
+        try:
+            day = date.fromisoformat(str(daily.get("date") or ""))
+        except ValueError:
+            return item
+        if start <= day <= end:
+            if day in days:
+                return item
+            days[day] = daily
+
+    visits_complete = row.get("visitsCoverageComplete") is True
+    if visits_complete and days:
+        values = [daily.get("visits") for daily in days.values()]
+        if all(isinstance(value, (int, float)) and math.isfinite(value) and value >= 0 for value in values):
+            item["visits"] = sum(values)
+        else:
+            visits_complete = False
+    item["visitsCoverageComplete"] = visits_complete
+
+    if (end - start).days < 13:
+        return item
+    current_from, previous_to, previous_from = end - timedelta(days=6), end - timedelta(days=7), end - timedelta(days=13)
+    evidence = {"date_from": previous_from.isoformat(), "previous_to": previous_to.isoformat(),
+                "current_from": current_from.isoformat(), "date_to": end.isoformat()}
+
+    original = item.get("performance7d")
+    if isinstance(original, dict) and all(original.get(key) == value for key, value in evidence.items()):
+        for metric in ("sales", "visits"):
+            entry = original.get(metric)
+            if (isinstance(entry, dict) and entry.get("complete") is True
+                    and all(isinstance(entry.get(key), (int, float)) and math.isfinite(entry[key])
+                            and entry[key] >= 0 for key in ("previous", "current"))):
+                evidence[metric] = entry
+
+    def seven_day(field):
+        if any(day not in days for day in (previous_from + timedelta(days=i) for i in range(14))):
+            return None
+        values = [daily.get(field) for day, daily in days.items() if previous_from <= day <= end]
+        if not all(isinstance(value, (int, float)) and math.isfinite(value) and value >= 0 for value in values):
+            return None
+        return {"complete": True,
+                "previous": sum(daily[field] for day, daily in days.items() if previous_from <= day <= previous_to),
+                "current": sum(daily[field] for day, daily in days.items() if current_from <= day <= end)}
+
+    if row.get("salesCoverageComplete") is True:
+        orders = [daily.get("orders") for daily in days.values()]
+        revenues = [daily.get("revenue") for daily in days.values()]
+        if (all(isinstance(value, (int, float)) and math.isfinite(value) and value >= 0 for value in orders + revenues)
+                and isinstance(row.get("orders"), (int, float))
+                and isinstance(row.get("totalRevenue"), (int, float))
+                and abs(sum(orders) - row["orders"]) < 0.001
+                and abs(sum(revenues) - row["totalRevenue"]) < 0.011):
+            sales = seven_day("orders")
+            if sales is not None:
+                evidence["sales"] = sales
+    if visits_complete:
+        visits = seven_day("visits")
+        if visits is not None:
+            evidence["visits"] = visits
+    item["performance7d"] = evidence if "sales" in evidence or "visits" in evidence else {}
+    return item
+
+
 def project_account(account, dashboard):
     """Keep only the fields needed by the virtual view; never retain raw cache."""
     meta = dashboard.get("meta") or {}
     online = meta.get("onlineMode") or {}
     period = meta.get("period") or {}
+    exact_period = (period.get("dateFrom"), period.get("dateTo"))
+    certified = bool(online.get("complete")) and bool(online.get("periodMatch")) and all(
+        not row.get("partial", True) for row in dashboard.get("accountDailySeries") or [])
     label = account["official_store"] or account["nickname"] or account["client_id"]
     official = dashboard.get("accountMetrics") or {}
     visits_complete = (official.get("visits", {}).get("complete") is True) or (bool(dashboard.get("items")) and all(
@@ -29,9 +109,8 @@ def project_account(account, dashboard):
     )
     return {
         "id": int(account["id"]), "label": str(label), "client_id": str(account["client_id"]),
-        "period": (period.get("dateFrom"), period.get("dateTo")),
-        "complete": bool(online.get("complete")) and bool(online.get("periodMatch"))
-                    and all(not row.get("partial", True) for row in dashboard.get("accountDailySeries") or []),
+        "period": exact_period,
+        "complete": certified,
         "kpis": {key: dashboard.get("kpis", {}).get(key) for key in
                  (*SUM_FIELDS, "products", "organicRevenue", "returnsAmount", "returnsAvailable",
                   "returnsOrdersCount", "returnsOrdersAvailable", "returnsObservedPartial",
@@ -43,9 +122,7 @@ def project_account(account, dashboard):
         "daily": [{**{key: row.get(key) for key in ("date", *DAILY_FIELDS, "partial")},
                    "visits": row.get("visits") if visits_complete else None}
                   for row in dashboard.get("accountDailySeries") or []],
-        "items": [{key: row.get(key) for key in
-                   ITEM_FIELDS}
-                  for row in dashboard.get("items") or []],
+        "items": [_project_item(row, exact_period, certified) for row in dashboard.get("items") or []],
     }
 
 
@@ -246,6 +323,10 @@ def build_identity_tree(items):
             elif previous.get(field) != item.get(field):
                 previous[field] = None
         if item.get("salesRowPrimary") is True:
+            if previous.get("salesRowPrimary") is False:
+                for field in ("visits", "visitsCoverageComplete", "lastSaleDate", "lastSalePrice",
+                              "currentPrice", "priceStatus", "performance7d"):
+                    previous[field] = item.get(field)
             previous["salesRowPrimary"] = True
 
     for item in listings.values():
@@ -279,14 +360,15 @@ def build_identity_tree(items):
                                  account=account, account_id=account_id)
         family_id = str(item.get("familyId") or "").strip()
         family_name = str(item.get("familyName") or "").strip()
-        parent = get_child(account_node, "family", "family:" + (family_id or family_name or code),
-                           family_name or family_id or "Família não cadastrada", account=account,
-                           account_id=account_id)
+        parent = account_node
+        if family_id or family_name:
+            parent = get_child(parent, "family", "family:" + (family_id or family_name),
+                               family_name or family_id, account=account, account_id=account_id)
         mlbu_id = str(item.get("userProductId") or "").strip()
         mlbu_name = str(item.get("userProductName") or "").strip()
-        parent = get_child(parent, "mlbu", "mlbu:" + (mlbu_id or mlbu_name or code),
-                           mlbu_name or mlbu_id or "MLBU não cadastrado", account=account,
-                           account_id=account_id)
+        if mlbu_id or mlbu_name:
+            parent = get_child(parent, "mlbu", "mlbu:" + (mlbu_id or mlbu_name),
+                               mlbu_name or mlbu_id, account=account, account_id=account_id)
         leaf = get_child(parent, "mlb", "mlb:" + code, str(item.get("title") or code),
                          account=account, account_id=account_id)
         leaf.update({field: item.get(field) for field in fields})
@@ -349,7 +431,7 @@ def build_identity_tree(items):
                     current["lastSalePrice"] = latest_prices.pop()
             performances = [child.get("performance7d") or {} for child in current["children"]]
             window_keys = ("date_from", "previous_to", "current_from", "date_to")
-            if performances and all(p.get("date_to") and all(p.get(k) == performances[0].get(k)
+            if performances and all(all(p.get(k) for k in window_keys) and all(p.get(k) == performances[0].get(k)
                                    for k in window_keys) for p in performances):
                 current["performance7d"] = {key: performances[0][key] for key in window_keys}
                 for metric in ("sales", "visits"):
