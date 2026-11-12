@@ -428,6 +428,11 @@ class ConsolidatedMathTests(unittest.TestCase):
         self.assertIn('id="detail-backdrop"', page)
         self.assertIn('id="detail-chart-modes"', page)
         self.assertIn('id="detail-tooltip"', page)
+        self.assertIn("['Visitas',g.visitsKnown?fmt(g.visits):'N/D']", page)
+        self.assertIn("['Vendas nos últimos 7 dias'", page)
+        self.assertIn("['Conversão nos últimos 7 dias'", page)
+        self.assertIn("['Preço da última venda'", page)
+        self.assertIn("['Data da última venda'", page)
         self.assertIn("['revenue','Faturamento']", page)
         self.assertIn("['investment','Investimento']", page)
         self.assertIn("['tacos','TACOS']", page)
@@ -451,6 +456,27 @@ class ConsolidatedMathTests(unittest.TestCase):
                 if script.lstrip().startswith("(function") or script.lstrip().startswith("(async function"):
                     result = subprocess.run(["node", "--check"], input=script, text=True, capture_output=True, encoding="utf-8")
                     self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js required for hierarchy mode test")
+    def test_missing_family_and_mlbu_still_show_legacy_mlb_in_each_mode(self):
+        page = consolidated.render(
+            [{"id": 1, "client_id": "a", "official_store": "Conta A", "nickname": ""}],
+            {1}, {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+            [self.account(1, 100, 10)], [],
+        )
+        function = re.search(r"function atLevel\(nodes,level\).*?(?=function visibleNodes)", page, re.S)
+        self.assertIsNotNone(function)
+        harness = function.group(0) + '''
+        const legacy={level:'mlb',key:'MLB1',children:[]};
+        const withFamily={level:'family',key:'F1',children:[{level:'mlbu',key:'U1',children:[{level:'mlb',key:'MLB2',children:[]}]}]};
+        const roots=[{level:'global',key:'SKU',children:[
+          {level:'account',key:'A',children:[legacy]},
+          {level:'account',key:'B',children:[withFamily]}]}];
+        function keys(level){return atLevel(roots,level).map(row=>row.key).sort().join(',')}
+        if(keys('family')!=='F1,MLB1'||keys('mlbu')!=='MLB1,U1'||keys('mlb')!=='MLB1,MLB2'||keys('campaign')!=='MLB1,MLB2')process.exitCode=1;
+        '''
+        result = subprocess.run(["node"], input=harness, text=True, capture_output=True, encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_uncertified_account_is_not_presented_as_certified_total(self):
         accounts = [
