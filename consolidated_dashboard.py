@@ -642,7 +642,19 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
         var status=document.getElementById('detail-status'),chart=document.getElementById('detail-chart'),summary=document.getElementById('detail-summary'),tabs=document.getElementById('detail-chart-modes'),tip=document.getElementById('detail-tooltip');
         chart.textContent='';summary.textContent='';tabs.textContent='';tip.hidden=true;
         if(g.level==='campaign'){status.textContent='Série por campanha N/D: o recibo disponível é por anúncio MLB, não por campanha. Nenhum valor de vendas foi atribuído a esta campanha.';return}
-        [['Receita',money(g.totalRevenue)],['Pedidos',fmt(g.orders)],['Unidades',fmt(g.units)],['Investimento Ads',money(g.investment)],['TACOS',pct(g.totalRevenue?g.investment/g.totalRevenue:null)],['ROAS',g.investment?(g.adsRevenue/g.investment).toLocaleString('pt-BR',{maximumFractionDigits:2})+'x':'N/D']].forEach(function(pair){var el=document.createElement('span');el.textContent=pair[0]+': '+pair[1];summary.appendChild(el)});
+        var currentPrice=g.currentPrice!=null?money(g.currentPrice):(g.priceMin!=null&&g.priceMax!=null?money(g.priceMin)+' a '+money(g.priceMax):'N/D');
+        var sales7=metric7d(g,'sales'),visits7=metric7d(g,'visits');
+        [['Receita',money(g.totalRevenue)],['Pedidos',fmt(g.orders)],['Unidades',fmt(g.units)],
+         ['Investimento Ads',money(g.investment)],['Receita Ads',money(g.adsRevenue)],
+         ['TACOS',pct(ratio(g.investment,g.totalRevenue))],['ACOS',pct(ratio(g.investment,g.adsRevenue))],
+         ['ROAS',ratio(g.adsRevenue,g.investment)==null?'N/D':ratio(g.adsRevenue,g.investment).toLocaleString('pt-BR',{maximumFractionDigits:2})+'x'],
+         ['Visitas',g.visitsKnown?fmt(g.visits):'N/D'],
+         ['Vendas nos últimos 7 dias',sales7?fmt(sales7.current)+' ('+trend(sales7)+')':'N/D'],
+         ['Visitas nos últimos 7 dias',visits7?fmt(visits7.current)+' ('+trend(visits7)+')':'N/D'],
+         ['Conversão nos últimos 7 dias',sales7&&visits7&&visits7.current>0&&visits7.previous>0?pct(sales7.current/visits7.current)+' ('+trend({current:sales7.current/visits7.current,previous:sales7.previous/visits7.previous})+')':'N/D'],
+         ['Preço atual',currentPrice],['Preço médio vendido',money(g.avgSalePrice)],
+         ['Preço da última venda',money(g.lastSalePrice)],['Data da última venda',g.lastSaleDate||'N/D']]
+        .forEach(function(pair){var el=document.createElement('span');el.textContent=pair[0]+': '+pair[1];summary.appendChild(el)});
         if(!g.sources.length){status.textContent='Série diária N/D: não há código MLB comprovado para este agrupamento.';return}
         status.textContent='Carregando séries diárias das contas de origem…';
         var period=JSON.parse(document.getElementById('consolidated-period').textContent),from=period.dateFrom,to=period.dateTo;
@@ -700,7 +712,7 @@ def render(accounts, selected_ids, period, projections, failures, view="hibrida"
       function matches(node,query){return [node.title,node.account,node.code,node.sku,node.key].some(function(value){return String(value||'').toLocaleLowerCase('pt-BR').includes(query)})||node.children.some(function(child){return matches(child,query)})}
       function makePhoto(node,container){var url=imageUrl(node.thumbnailUrl);var photo=document.createElement(url?'img':'span');photo.className='product-photo'+(url?'':' empty');if(url)photo.src=url;else photo.textContent='Sem foto';container.appendChild(photo)}
       function detailButton(node){var button=document.createElement('button');button.type='button';button.className='detail-open';button.textContent='Abrir gráfico';button.onclick=function(event){event.stopPropagation();openDetail(node)};return button}
-      function atLevel(nodes,level){var out=[];nodes.forEach(function(node){if(node.level===level)out.push(node);else out.push.apply(out,atLevel(node.children,level))});return out}
+      function atLevel(nodes,level){var out=[];nodes.forEach(function(node){if(node.level===level)out.push(node);else if(node.children.length)out.push.apply(out,atLevel(node.children,level));else if(node.level==='mlb')out.push(node)});return out}
       function visibleNodes(){if(mode==='familia')return atLevel(roots,'family');if(mode==='variacao')return atLevel(roots,'mlbu');if(mode==='mlb')return atLevel(roots,'mlb');if(mode==='campanha')return atLevel(roots,'campaign');return roots}
       var expanded=new Set(),period=JSON.parse(document.getElementById('consolidated-period').textContent);
       function metric7d(node,key){var performance=node.performance7d||{},value=performance[key];return performance.date_to===period.dateTo&&value&&value.complete===true&&Number.isFinite(value.current)&&Number.isFinite(value.previous)?value:null}
