@@ -21,7 +21,8 @@ class ConsolidatedMathTests(unittest.TestCase):
                  "adsRevenue": 15, "units": 1, "partial": not complete},
             ],
             "items": [{"code": f"MLB{account_id}", "sku": "MESMO-SKU", "title": "Produto",
-                       "totalRevenue": revenue, "investment": investment, "units": 2, "orders": 2}],
+                       "totalRevenue": revenue, "investment": investment, "adsRevenue": 30,
+                       "units": 2, "orders": 2}],
         }
 
     def test_combines_only_exact_window_and_uses_weighted_tacos(self):
@@ -31,9 +32,9 @@ class ConsolidatedMathTests(unittest.TestCase):
         self.assertEqual(result["sums"]["revenue"], 400)
         self.assertAlmostEqual(result["sums"]["tacos"], 70 / 400)
         self.assertEqual([row["revenue"] for row in result["chart"]], [200, 200])
-        self.assertEqual(len(consolidated._group_items(result["items"], "sku")), 2)
+        self.assertEqual(len(consolidated.build_identity_tree(result["items"])), 1)
 
-    def test_hybrid_groups_family_but_keeps_unrelated_listings_separate(self):
+    def test_missing_sku_does_not_invent_global_family_identity(self):
         items = [
             {"account_id": 1, "account": "A", "familyId": "F1", "familyName": "Familia",
              "code": "MLB1", "totalRevenue": 10},
@@ -43,9 +44,10 @@ class ConsolidatedMathTests(unittest.TestCase):
              "code": "MLB3", "totalRevenue": 30},
             {"account_id": 1, "account": "A", "code": "MLB4", "totalRevenue": 40},
         ]
-        groups = consolidated._group_items(items, "hibrida")
-        self.assertEqual(len(groups), 3)
-        self.assertEqual(sorted(row["totalRevenue"] for row in groups), [30, 30, 40])
+        roots = consolidated.build_identity_tree(items)
+        self.assertEqual(len(roots), 4)
+        self.assertEqual(sorted(row["totalRevenue"] for row in roots), [10, 20, 30, 40])
+        self.assertTrue(all(row["confidence"] == "listing_only" for row in roots))
 
     def test_missing_day_or_partial_account_never_certifies_chart(self):
         partial = self.account(2, 300, 60, complete=False)
@@ -95,7 +97,7 @@ class ConsolidatedMathTests(unittest.TestCase):
         self.assertIn("17,50%", page)
         self.assertIn("116,67%", page)
         self.assertIn("0,86x", page)
-        self.assertEqual(len(consolidated._group_items(first["items"] + second["items"], "sku")), 2)
+        self.assertEqual(len(consolidated.build_identity_tree(first["items"] + second["items"])), 1)
 
     def test_unknown_visits_never_become_zero(self):
         first = self.account(1, 100, 10)
@@ -180,70 +182,134 @@ class ConsolidatedMathTests(unittest.TestCase):
         sums = consolidated.combine([first, unknown], "2026-10-01", "2026-10-02")["sums"]
         self.assertIsNone(sums["returnsObservedAmount"])
 
-    def test_account_namespace_applies_to_every_grouping(self):
+    def test_account_namespace_applies_below_global_parent(self):
         items = [
             {"account_id": 1, "account": "A", "code": "MLB1", "sku": "SKU",
              "familyId": "F", "userProductId": "U", "campaignId": "C", "totalRevenue": 10},
             {"account_id": 2, "account": "B", "code": "MLB1", "sku": "SKU",
              "familyId": "F", "userProductId": "U", "campaignId": "C", "totalRevenue": 20},
         ]
-        for mode in ("hibrida", "familia", "variacao", "mlb", "sku", "campanha"):
-            self.assertEqual(len(consolidated._group_items(items, mode)), 2, mode)
+        roots = consolidated.build_identity_tree(items)
+        self.assertEqual(len(roots), 1)
+        self.assertEqual({child["account_id"] for child in roots[0]["children"]}, {1, 2})
+        self.assertEqual(roots[0]["totalRevenue"], 30)
 
-    @unittest.skipUnless(shutil.which("node"), "Node.js required for hierarchy behavior test")
-    def test_hierarchy_reveals_only_source_account_listings_without_fetch(self):
-        links = [
-            {"id": 1, "client_id": "variety", "official_store": "VARIETYSHOP1", "nickname": ""},
-            {"id": 2, "client_id": "lima", "official_store": "LIMA_SHOP_PREMIUM", "nickname": ""},
+    def test_global_sku_parent_then_account_family_mlbu_mlb(self):
+        rows = [
+            {"account_id": 1, "account": "VARIETYSHOP1", "code": "MLB5001816208",
+             "sku": "4093 AREIA- 42", "skuIsReference": True,
+             "familyId": "F1", "userProductId": "MLBU1", "title": "Anúncio A",
+             "totalRevenue": 100, "orders": 2, "units": 2, "investment": 10, "adsRevenue": 30},
+            {"account_id": 2, "account": "LIMA_SHOP_PREMIUM", "code": "MLB3923370735",
+             "sku": "4093 AREIA- 42", "skuIsReference": True,
+             "familyId": "F2", "userProductId": "MLBU2", "title": "Anúncio B",
+             "totalRevenue": 200, "orders": 3, "units": 3, "investment": 20, "adsRevenue": 40},
         ]
-        first, second = self.account(1, 100, 10), self.account(2, 200, 20)
-        first["items"] = [
-            {"code": "MLB5001816208", "sku": "4093 AREIA- 42", "familyId": "F1",
-             "familyName": "Família de teste", "userProductId": "MLBU1", "title": "Anúncio A",
-             "totalRevenue": 40, "orders": 1, "units": 1},
-            {"code": "MLB5001816209", "sku": "4093 AREIA- 42", "familyId": "F1",
-             "familyName": "Família de teste", "userProductId": "MLBU2", "title": "Anúncio B",
-             "totalRevenue": 60, "orders": 1, "units": 1},
-        ]
-        second["items"] = [
-            {"code": "MLB3923370735", "sku": "4093 AREIA- 42", "familyId": "F1",
-             "familyName": "Família de teste", "userProductId": "MLBU3", "title": "Anúncio C",
-             "totalRevenue": 200, "orders": 2, "units": 2},
-        ]
-        projections = [
-            {**first, "label": "VARIETYSHOP1"},
-            {**second, "label": "LIMA_SHOP_PREMIUM"},
-        ]
-        page = consolidated.render(links, {1, 2},
-                                   {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
-                                   projections, [])
-        self.assertIn("className='hierarchy-toggle'", page)
-        self.assertIn("if(!childRow.firstChild)appendHierarchy(g,childRow)", page)
-        script = re.search(r"function grouped\(\).*?function draw\(\)", page, re.S).group(0).split("function draw()")[0]
-        payload = json.loads(re.search(r'<script type="application/json" id="consolidated-items">(.*?)</script>', page, re.S).group(1))
-        harness = f"""
-          var items={json.dumps(payload)},mode='hibrida';
-          function num(x){{return Number(x)||0}}
-          function fmt(x){{return String(x)}}
-          function money(x){{return String(x)}}
-          function imageUrl(x){{return x||''}}
-          var fetch=function(){{throw Error('hierarchy must not fetch')}};
-          var document={{createElement:function(tag){{return {{tag:tag,children:[],appendChild:function(x){{this.children.push(x);this.firstChild=this.children[0]}},set textContent(x){{this.text=x}}}}}}}};
-          {script}
-          var groups=grouped();
-          if(groups.length!==2)throw Error('account groups mixed');
-          var variety=groups.find(function(g){{return g.account_id===1}});
-          var lima=groups.find(function(g){{return g.account_id===2}});
-          if(variety.totalRevenue!==100||lima.totalRevenue!==200)throw Error('totals changed');
-          if(variety.children.length!==2||lima.children.length!==1)throw Error('children mixed');
-          var row=document.createElement('tr');appendHierarchy(variety,row);
-          function collect(node){{return [node.text||'',...(node.children||[]).map(collect)].join(' ')}}
-          var text=collect(row);
-          for(var value of ['MLBU1','MLBU2','MLB5001816208','MLB5001816209','4093 AREIA- 42','VARIETYSHOP1']){{if(!text.includes(value))throw Error('missing '+value)}}
-          if(text.includes('MLB3923370735')||text.includes('LIMA_SHOP_PREMIUM'))throw Error('other account leaked');
-        """
-        result = subprocess.run(["node"], input=harness, text=True, capture_output=True, encoding="utf-8")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        roots = consolidated.build_identity_tree(rows)
+        self.assertEqual(len(roots), 1)
+        self.assertEqual(roots[0]["confidence"], "last_sale_reference")
+        self.assertEqual(roots[0]["totalRevenue"], 300)
+        self.assertEqual(roots[0]["accountCount"], 2)
+        self.assertEqual({child["account"] for child in roots[0]["children"]},
+                         {"VARIETYSHOP1", "LIMA_SHOP_PREMIUM"})
+        leaf = roots[0]["children"][0]["children"][0]["children"][0]["children"][0]
+        self.assertEqual(leaf["level"], "mlb")
+        self.assertEqual(len(leaf["sources"]), 1)
+        self.assertEqual(leaf["sources"][0]["account_id"], leaf["account_id"])
+
+    def test_distinct_global_identity_does_not_merge_same_sku_text(self):
+        rows = [{"account_id": account_id, "account": f"A{account_id}",
+                 "code": f"MLB{account_id}", "sku": "SAME", "skuIsReference": False,
+                 "globalProductId": product_id, "totalRevenue": 10,
+                 "orders": 1, "units": 1, "investment": 1, "adsRevenue": 1}
+                for account_id, product_id in ((1, "product-1"), (2, "product-2"))]
+        roots = consolidated.build_identity_tree(rows)
+        self.assertEqual(len(roots), 2)
+        self.assertEqual({root["key"] for root in roots}, {"product:product-1", "product:product-2"})
+
+    def test_duplicate_ads_campaign_does_not_duplicate_sales(self):
+        base = {"account_id": 1, "account": "A", "code": "MLB1", "sku": "SKU",
+                "totalRevenue": 100, "orders": 2, "units": 3,
+                "campaignId": "C1", "investment": 10, "adsRevenue": 20}
+        rows = [base, {**base, "campaignId": "C2", "investment": 5, "adsRevenue": 9}]
+        leaf = consolidated.build_identity_tree(rows)[0]["children"][0]["children"][0]["children"][0]["children"][0]
+        self.assertEqual((leaf["totalRevenue"], leaf["orders"], leaf["units"]), (100, 2, 3))
+        self.assertEqual((leaf["investment"], leaf["adsRevenue"]), (15, 29))
+        self.assertEqual(leaf["sources"][0]["codes"], ["MLB1"])
+
+    def test_repeated_campaign_after_another_does_not_erase_ads_totals(self):
+        base = {"account_id": 1, "account": "A", "code": "MLB1", "sku": "SKU",
+                "totalRevenue": 100, "orders": 2, "units": 3, "salesRowPrimary": True,
+                "campaignId": "C1", "investment": 10, "adsRevenue": 20}
+        other = {**base, "salesRowPrimary": False, "totalRevenue": 0, "orders": 0,
+                 "units": 0, "campaignId": "C2", "investment": 5, "adsRevenue": 9}
+        roots = consolidated.build_identity_tree([base, other, other])
+        leaf = roots[0]["children"][0]["children"][0]["children"][0]["children"][0]
+        self.assertEqual((leaf["totalRevenue"], leaf["investment"], leaf["adsRevenue"]),
+                         (100, 15, 29))
+
+    def test_online_cache_zeroes_second_campaign_sales_without_losing_primary_receipt(self):
+        primary = {"account_id": 1, "account": "A", "code": "MLB1", "sku": "SKU",
+                   "salesRowPrimary": True, "totalRevenue": 100, "orders": 2, "units": 3,
+                   "campaignId": "C1", "investment": 10, "adsRevenue": 20}
+        secondary = {**primary, "salesRowPrimary": False, "totalRevenue": 0,
+                     "orders": 0, "units": 0, "campaignId": "C2",
+                     "investment": 5, "adsRevenue": 9}
+        roots = consolidated.build_identity_tree([primary, secondary])
+        leaf = roots[0]["children"][0]["children"][0]["children"][0]["children"][0]
+        self.assertEqual((leaf["totalRevenue"], leaf["orders"], leaf["units"]), (100, 2, 3))
+        self.assertEqual((leaf["investment"], leaf["adsRevenue"]), (15, 29))
+        self.assertEqual(roots[0]["totalRevenue"], 100)
+
+    def test_conflicting_primary_sales_rows_are_not_silently_added(self):
+        primary = {"account_id": 1, "account": "A", "code": "MLB1", "sku": "SKU",
+                   "salesRowPrimary": True, "totalRevenue": 100, "orders": 2, "units": 3,
+                   "campaignId": "C1", "investment": 10, "adsRevenue": 20}
+        conflict = {**primary, "totalRevenue": 80, "campaignId": "C2"}
+        roots = consolidated.build_identity_tree([primary, conflict])
+        self.assertIsNone(roots[0]["totalRevenue"])
+
+    def test_missing_optional_metric_is_not_zero_and_null_daily_blocks_complete(self):
+        account = self.account(1, 100, 10)
+        account["daily"][1]["revenue"] = None
+        result = consolidated.combine([account], "2026-10-01", "2026-10-02")
+        self.assertFalse(result["complete"])
+        self.assertIsNone(result["chart"][1]["revenue"])
+        for key in ("organicRevenue", "adsNoSales", "investmentNoAdsSales", "visits"):
+            self.assertIsNone(result["sums"][key])
+
+    def test_five_and_two_account_subsets_exclude_unselected_accounts(self):
+        accounts = [self.account(i, i * 100, i * 10) for i in range(1, 6)]
+        full = consolidated.combine(accounts, "2026-10-01", "2026-10-02")
+        subset = consolidated.combine(accounts[:2], "2026-10-01", "2026-10-02")
+        three = consolidated.combine(accounts[1:4], "2026-10-01", "2026-10-02")
+        self.assertEqual(full["sums"]["revenue"], 1500)
+        self.assertEqual(subset["sums"]["revenue"], 300)
+        self.assertEqual(three["sums"]["revenue"], 900)
+        self.assertEqual(full["sums"]["orders"], 10)
+        self.assertEqual(subset["sums"]["orders"], 4)
+        self.assertEqual({item["account_id"] for item in subset["items"]}, {1, 2})
+        self.assertEqual({item["account_id"] for item in three["items"]}, {2, 3, 4})
+
+    def test_item_or_daily_mismatch_blocks_certified_aggregate(self):
+        item_mismatch = self.account(1, 100, 10)
+        item_mismatch["items"][0]["totalRevenue"] = 90
+        result = consolidated.combine([item_mismatch], "2026-10-01", "2026-10-02")
+        self.assertFalse(result["complete"])
+        self.assertIn("itens_divergentes_revenue", result["reconciliation_issues"])
+
+        daily_mismatch = self.account(1, 100, 10)
+        daily_mismatch["daily"][0]["revenue"] = 45
+        result = consolidated.combine([daily_mismatch], "2026-10-01", "2026-10-02")
+        self.assertFalse(result["complete"])
+        self.assertIn("serie_divergente_revenue", result["reconciliation_issues"])
+
+    def test_unreconciled_item_field_does_not_become_zero(self):
+        account = self.account(1, 100, 10)
+        account["items"][0]["adsRevenue"] = None
+        result = consolidated.combine([account], "2026-10-01", "2026-10-02")
+        self.assertFalse(result["complete"])
+        self.assertIn("itens_sem_adsRevenue", result["reconciliation_issues"])
 
     def test_photo_detail_and_period_stay_on_consolidated_page(self):
         accounts = [{"id": 1, "client_id": "a", "official_store": "Conta A", "nickname": ""}]
@@ -255,21 +321,22 @@ class ConsolidatedMathTests(unittest.TestCase):
                                    [first], [])
         self.assertIn('name="period"', page)
         self.assertIn('value="custom" selected', page)
-        self.assertIn('src="https://example.com/product.jpg"', page)
+        self.assertIn('https://example.com/product.jpg', page)
         self.assertIn('id="detail-backdrop"', page)
         self.assertIn('id="detail-chart-modes"', page)
         self.assertIn('id="detail-tooltip"', page)
         self.assertIn("['revenue','Faturamento']", page)
         self.assertIn("['investment','Investimento']", page)
         self.assertIn("['tacos','TACOS']", page)
-        self.assertIn('salesComplete=false', page)
-        self.assertIn('adsComplete=false', page)
+        self.assertIn('coverage.sales[day.date]!==true', page)
+        self.assertIn('coverage.ads[day.date]!==true', page)
         self.assertIn('id="chart-tooltip"', page)
         self.assertIn("points:segment.join(' ')", page)
         self.assertIn("r.tacosBaseRevenue>0?r.investment/r.tacosBaseRevenue", page)
         self.assertIn("tip.appendChild(line)", page)
         self.assertIn('/online/consolidado/item-daily?', page)
-        self.assertIn('Math.abs(dailyTotal-g.totalRevenue)>0.01', page)
+        self.assertIn("Math.abs(dailySum('revenue')-g.totalRevenue)>0.01", page)
+        self.assertIn("Math.abs(dailySum('adsRevenue')-g.adsRevenue)>0.01", page)
         self.assertIn('"account_id":1', page)
         self.assertNotIn('src="javascript:', page)
         self.assertIn('Conferência por conta', page)
