@@ -433,6 +433,21 @@ class ConsolidatedMathTests(unittest.TestCase):
         self.assertIn("['Conversão nos últimos 7 dias'", page)
         self.assertIn("['Preço da última venda'", page)
         self.assertIn("['Data da última venda'", page)
+        self.assertIn('formatLastSale(g.lastSaleDate)', page)
+        self.assertIn('formatLastSale(node.lastSaleDate)', page)
+        if shutil.which('node'):
+            formatter = page.split('function formatLastSale(value){', 1)[1].splitlines()[0]
+            script = ('function formatLastSale(value){' + formatter + '\n'
+                      + 'console.log(JSON.stringify(['
+                      + 'formatLastSale("2026-10-14"),'
+                      + 'formatLastSale("2026-11-10T02:25:00.000-04:00"),'
+                      + 'formatLastSale(null)]))')
+            values = json.loads(subprocess.run(['node', '-e', script], capture_output=True,
+                                               text=True, check=True).stdout)
+            self.assertEqual(values[0], '14/10/2026')
+            self.assertIn('10/11/2026', values[1])
+            self.assertIn('03:25', values[1])
+            self.assertEqual(values[2], 'N/D')
         self.assertIn("['revenue','Faturamento']", page)
         self.assertIn("['investment','Investimento']", page)
         self.assertIn("['tacos','TACOS']", page)
