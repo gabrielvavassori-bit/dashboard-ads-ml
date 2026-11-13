@@ -100,6 +100,36 @@ ML_LINK_ATTACH_SECRET = (
     or os.environ.get("DASH_ADS_INTERNAL_SECRET")
     or os.environ.get("COMPETITIVE_WORKER_SECRET", "")
 ).strip()
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
+RESET_EMAIL_FROM = os.environ.get("RESET_EMAIL_FROM", "").strip()
+
+
+def _send_password_reset_email(recipient: str, token: str) -> bool:
+    """A Resend acceptance is not proof of inbox delivery; never log the link."""
+    if not RESEND_API_KEY or not RESET_EMAIL_FROM or not APP_PUBLIC_URL.startswith("https://"):
+        return False
+    link = _absolute_app_url(f"/redefinir-senha?token={quote(token, safe='')}")
+    body = json.dumps({
+        "from": RESET_EMAIL_FROM,
+        "to": [recipient],
+        "subject": "Redefinir acesso ao Dash Ads",
+        "html": (
+            "<p>Para criar ou redefinir sua senha, abra este link de uso unico "
+            "(valido por 30 minutos):</p><p><a href=\""
+            + _html.escape(link, quote=True) + "\">Redefinir senha</a></p>"
+            "<p>Se voce nao solicitou isto, ignore esta mensagem.</p>"
+        ),
+    }).encode("utf-8")
+    request = Request("https://api.resend.com/emails", data=body, method="POST", headers={
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json",
+    })
+    try:
+        with urlopen(request, timeout=10) as response:
+            answer = json.load(response)
+            return response.status in (200, 201, 202) and bool(answer.get("id"))
+    except (HTTPError, URLError, TimeoutError, ValueError):
+        return False
 ONLINE_TZ = ZoneInfo("America/Sao_Paulo")
 ONLINE_CACHE_PENDING_PREFIX = "__ONLINE_CACHE_PENDING__:"
 ONLINE_CACHE_INTEGRITY_PREFIX = "__ONLINE_CACHE_INTEGRITY__:"
@@ -3385,6 +3415,22 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/cadastrar":
                 _send_html(self, templates.render_register())
                 return
+            if path == "/redefinir-senha":
+                reset_token = (parse_qs(url.query or "").get("token", [""])[0] or "").strip()
+                _send_html(self, templates.render_password_reset(reset_token, valid=db.password_reset_token_valid(reset_token)))
+                return
+            if path == "/internal/ml-link/intent":
+                supplied = self.headers.get("X-Internal-Secret", "")
+                if not ML_LINK_ATTACH_SECRET or not supplied or not secrets.compare_digest(supplied, ML_LINK_ATTACH_SECRET):
+                    _send_json(self, {"ok": False}, 401)
+                    return
+                bridge_state = (parse_qs(url.query or "").get("bridge_state", [""])[0] or "").strip()
+                row = db.get_ml_link_state(bridge_state) if bridge_state else None
+                if not row or row["expires_at"] < db.now() or row["used_at"]:
+                    _send_json(self, {"ok": False}, 404)
+                    return
+                _send_json(self, {"ok": True, "mode": row["mode"], "expected_client_id": row["expected_client_id"], "expected_ml_user_id": row["expected_ml_user_id"]})
+                return
             if path == "/admin/login":
                 _send_html(self, templates.render_admin_login())
                 return
@@ -3862,9 +3908,20 @@ class Handler(BaseHTTPRequestHandler):
                 if slot_number < 1 or slot_number > int(user["ml_slot_limit"] or 1):
                     _send_html(self, templates.render_error_page("Este slot ainda nao foi liberado pelo administrador."), 403)
                     return
+                mode = str(qs.get("mode", ["new"])[0] or "new").strip()
+                if mode not in {"new", "reconnect", "replace"}:
+                    _send_html(self, templates.render_error_page("Modo de vinculo invalido."), 400)
+                    return
+                existing = db.get_ml_account_by_slot(user["id"], slot_number)
+                if (mode == "new" and existing) or (mode in {"reconnect", "replace"} and not existing):
+                    _send_html(self, templates.render_error_page("O estado deste slot mudou. Atualize a pagina."), 409)
+                    return
                 bridge_state = f"mlink-{secrets.token_hex(16)}"
                 db.save_ml_link_state(
                     bridge_state, user["id"], return_to=return_to, slot_number=slot_number,
+                    mode=mode,
+                    expected_client_id=str(existing["client_id"] or "") if existing else "",
+                    expected_ml_user_id=str(existing["ml_user_id"] or "") if existing else "",
                 )
                 connect_url = (
                     f"{AGENTE_ML_BASE_URL}/conectar-conta?"
@@ -3882,12 +3939,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not bridge_state:
                     _redirect(self, "/?info=ativacao-invalida")
                     return
+                state_row = db.get_ml_link_state(bridge_state)
+                if state_row and state_row["user_id"] != user["id"]:
+                    _send_html(self, templates.render_error_page("A vinculacao desta conta nao pertence a sua sessao atual."), 403)
+                    return
                 state_row = db.consume_ml_link_state(bridge_state)
                 if not state_row:
                     _send_html(self, templates.render_error_page("Nao consegui concluir a vinculacao da conta Mercado Livre."), 400)
-                    return
-                if state_row["user_id"] != user["id"]:
-                    _send_html(self, templates.render_error_page("A vinculacao desta conta nao pertence a sua sessao atual."), 403)
                     return
                 account = db.get_ml_account_by_slot(user["id"], state_row["slot_number"])
                 if account:
@@ -3951,6 +4009,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/cadastrar":
                 self._post_register()
+                return
+            if path == "/redefinir-senha":
+                self._post_password_reset()
                 return
             if path == "/gerar":
                 self._post_gerar()
@@ -4079,45 +4140,45 @@ class Handler(BaseHTTPRequestHandler):
     def _post_register(self):
         form = _parse_form(self)
         email = (form.get("email", "") or "").strip().lower()
-        password = form.get("password", "") or ""
-        password2 = form.get("password2", "") or ""
-        if not email or not password:
-            _send_html(self, templates.render_register("Preencha todos os campos.", email=email), 400)
-            return
-        if password != password2:
-            _send_html(self, templates.render_register("As senhas nao conferem.", email=email), 400)
-            return
-        if len(password) < 6:
-            _send_html(self, templates.render_register("A senha precisa ter pelo menos 6 caracteres.", email=email), 400)
+        if not email or "@" not in email or len(email) > 254:
+            _send_html(self, templates.render_register("Informe um email valido.", email=email), 400)
             return
         user = db.get_user_by_email(email)
-        if not user:
-            _send_html(self, templates.render_register(
-                "Nao encontramos esse email. Use exatamente o mesmo email da sua compra na Eduzz.", email=email
-            ), 404)
+        if user and auth.user_is_active(user):
+            token = secrets.token_urlsafe(32)
+            if not db.save_password_reset_token(user["id"], token):
+                _send_html(self, templates.render_register("Limite de solicitacoes atingido. Tente novamente mais tarde.", email=email), 429)
+                return
+            if not _send_password_reset_email(email, token):
+                db.cancel_password_reset_token(token)
+                db.log_audit(user["id"], "password_reset.send_failed", "", _client_ip(self))
+                _send_html(self, templates.render_register("O envio do email esta indisponivel. Nenhuma senha foi alterada.", email=email), 503)
+                return
+            db.log_audit(user["id"], "password_reset.accepted_by_provider", "", _client_ip(self))
+        _send_html(self, templates.render_register(info="Se a conta estiver ativa, o link foi solicitado ao provedor de email. Confira a caixa de entrada e spam."))
+
+    def _post_password_reset(self):
+        form = _parse_form(self)
+        token = str(form.get("token") or "").strip()
+        password = form.get("password", "") or ""
+        password2 = form.get("password2", "") or ""
+        if not db.password_reset_token_valid(token):
+            _send_html(self, templates.render_password_reset(token, False), 400)
             return
-        if not auth.user_is_active(user):
-            _send_html(self, templates.render_register(
-                "Sua assinatura nao esta ativa no momento. Verifique seu pagamento na Eduzz.", email=email
-            ), 403)
-            return
-        if user["password_hash"]:
-            _send_html(self, templates.render_register(
-                "Ja existe uma senha cadastrada para esse email. Use a tela de login. "
-                "Se voce esqueceu sua senha, fale com o suporte para resetar.", email=email
-            ), 409)
+        if password != password2:
+            db.record_password_reset_attempt(token)
+            _send_html(self, templates.render_password_reset(token, db.password_reset_token_valid(token), "As senhas nao conferem."), 400)
             return
         try:
             pwd_hash = auth.hash_password(password)
         except ValueError as exc:
-            _send_html(self, templates.render_register(str(exc), email=email), 400)
+            db.record_password_reset_attempt(token)
+            _send_html(self, templates.render_password_reset(token, db.password_reset_token_valid(token), str(exc)), 400)
             return
-        db.set_password(user["id"], pwd_hash)
-        db.log_audit(user["id"], "register.ok", "", _client_ip(self))
-        # ja loga o cliente
-        token = auth.new_session_token()
-        db.create_session(user["id"], token, _client_ip(self), self.headers.get("User-Agent", "")[:200])
-        _redirect(self, "/", set_cookie=auth.make_set_cookie(token))
+        if not db.redeem_password_reset_token(token, pwd_hash):
+            _send_html(self, templates.render_password_reset(token, False), 400)
+            return
+        _send_html(self, templates.render_login(info="Senha redefinida. Entre novamente; as sessoes anteriores foram encerradas."))
 
     def _post_gerar(self):
         user, _ = _current_user(self)
@@ -4208,23 +4269,23 @@ class Handler(BaseHTTPRequestHandler):
         if not bridge_state:
             _send_json(self, {"ok": False, "message": "bridge_state obrigatorio"}, 400)
             return
-        state_row = db.get_ml_link_state(bridge_state)
-        if not state_row or state_row["expires_at"] < db.now():
-            _send_json(self, {"ok": False, "message": "bridge_state expirado ou inexistente"}, 400)
+        client_id = str(payload.get("client_id") or "").strip()
+        ml_user_id = str(payload.get("ml_user_id") or "").strip()
+        if not client_id or not ml_user_id:
+            _send_json(self, {"ok": False, "message": "identidade ML obrigatoria"}, 400)
             return
-        account_id = db.upsert_user_ml_link(
-            state_row["user_id"],
-            client_id=str(payload.get("client_id") or "").strip(),
-            ml_user_id=str(payload.get("ml_user_id") or "").strip(),
-            nickname=str(payload.get("nickname") or "").strip(),
-            official_store=str(payload.get("official_store") or "").strip(),
-            advertiser_id=str(payload.get("advertiser_id") or "").strip(),
-            seller_id=str(payload.get("seller_id") or "").strip(),
-            site_id=str(payload.get("site_id") or "").strip(),
-            status="active",
-            slot_number=state_row["slot_number"],
-        )
-        db.mark_ml_link_state_attached(bridge_state)
+        try:
+            account_id, state_row = db.attach_ml_link_from_state(
+                bridge_state, client_id=client_id, ml_user_id=ml_user_id,
+                nickname=str(payload.get("nickname") or "").strip(),
+                official_store=str(payload.get("official_store") or "").strip(),
+                advertiser_id=str(payload.get("advertiser_id") or "").strip(),
+                seller_id=str(payload.get("seller_id") or "").strip(),
+                site_id=str(payload.get("site_id") or "").strip(), status="active",
+            )
+        except ValueError as exc:
+            _send_json(self, {"ok": False, "message": str(exc)}, 409)
+            return
         db.log_audit(state_row["user_id"], "ml_link.ok", str(payload.get("client_id") or ""), _client_ip(self))
         beta_synced = _sync_beta_user_if_enabled(state_row["user_id"])
         _send_json(self, {
@@ -4596,9 +4657,21 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, IndexError):
             _send_html(self, templates.render_error_page("ID invalido."), 400)
             return
-        db.reset_user_password(user_id)
-        db.log_audit(user_id, "admin.reset_password", admin["email"], _client_ip(self))
-        _redirect(self, "/admin?info=Senha%20resetada%20com%20sucesso")
+        user = db.get_user_by_id(user_id)
+        if not user or not user["email"]:
+            _send_html(self, templates.render_error_page("Cliente ou email cadastrado nao encontrado."), 404)
+            return
+        token = secrets.token_urlsafe(32)
+        if not db.save_password_reset_token(user_id, token):
+            _send_html(self, templates.render_error_page("Limite de solicitacoes atingido. Nenhuma senha foi alterada."), 429)
+            return
+        if not _send_password_reset_email(user["email"], token):
+            db.cancel_password_reset_token(token)
+            db.log_audit(user_id, "admin.password_reset.send_failed", "", _client_ip(self))
+            _send_html(self, templates.render_error_page("O provedor de email nao aceitou a mensagem. Nenhuma senha foi alterada."), 503)
+            return
+        db.log_audit(user_id, "admin.password_reset.accepted_by_provider", "", _client_ip(self))
+        _redirect(self, "/admin?info=Link%20solicitado%20ao%20provedor%20de%20email%3B%20confirme%20a%20entrega")
 
     def _post_admin_manual_access(self):
         admin, _ = _current_admin(self)

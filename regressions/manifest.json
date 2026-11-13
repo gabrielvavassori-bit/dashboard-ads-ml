@@ -466,6 +466,17 @@
   "file_globs": ["app.py", "gerar_dashboard_ads_ml.py", "test_operational_availability.py", "test_promotions_guide_lookup.py"],
   "invariant": "Preco de MLB sem SKU exige cotacao oficial com origem e horario recentes, inclusive quando veio da coleta principal; sem ela, N/D. Familia/UPID preserva leitura propria. Margem bruta usa custo conhecido e atribuicao comprovada; quando vendas sao apenas do MLB, so usa media se todos os SKUs da variacao possuem o mesmo custo, nunca atribui vendas arbitrariamente ao SKU de referencia.",
   "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_operational_availability.OperationalAvailabilityTests.test_legacy_multi_sku_price_requires_fresh_quote_and_family_is_unchanged", "test_promotions_guide_lookup.PromotionsGuideLookupTests.test_historical_gross_profit_uses_saved_sku_cost_without_attributing_mlb_sales_to_variation"], "blocking": true}]
+},
+{
+  "id": "REGRESSION-058",
+  "title": "Reconexao ML e reset de senha preservam identidade e prova de posse",
+  "severity": "CRITICA",
+  "components": ["mercado_livre_oauth", "client_link", "password_reset"],
+  "domains": ["oauth", "client_isolation", "account_access"],
+  "tags": ["existing_client", "same_ml_user", "atomic_link", "single_use_reset", "no_email_only_password"] ,
+  "file_globs": ["app.py", "db.py", "templates.py", "test_integrations.py"],
+  "invariant": "Reconexao nao cria conta duplicada nem troca usuario ML; vinculo e consumo do state sao atomicos. Reset administrativo exige prova de posse por link curto de uso unico enviado ao email cadastrado, limita tentativas e invalida sessoes; falha de envio nunca declara sucesso.",
+  "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_integrations.HTTPRouteTests.test_internal_ml_link_attach_and_finish_flow", "test_integrations.HTTPRouteTests.test_reconnect_rejects_wrong_ml_identity_without_replacing_slot", "test_integrations.HTTPRouteTests.test_ml_attach_rolls_back_slot_when_state_commit_fails", "test_integrations.HTTPRouteTests.test_password_reset_is_single_use_expires_and_invalidates_sessions", "test_integrations.HTTPRouteTests.test_password_reset_invalid_attempts_lock_link"], "blocking": true}]
 }
 ]
 }

@@ -81,31 +81,43 @@ def render_login(error: str = "", info: str = "", email: str = "", return_to: st
       <button type="submit">Entrar</button>
     </form>
     <p class="hint" style="margin-top:18px">
-      Primeira vez? <a href="/cadastrar">Crie sua senha</a><br>
-      Esqueceu a senha? Entre em contato com o suporte.
+      Primeira vez? <a href="/cadastrar">Solicite um link para criar sua senha</a><br>
+      Esqueceu a senha? <a href="/cadastrar">Solicite um link para redefini-la</a>.
     </p>
     """
     return _layout("Entrar", body)
 
 
-def render_register(error: str = "", email: str = "") -> str:
+def render_register(error: str = "", email: str = "", info: str = "") -> str:
     err_html = f'<div class="alert err">{_html.escape(error)}</div>' if error else ""
+    info_html = f'<div class="alert ok">{_html.escape(info)}</div>' if info else ""
     body = f"""
-    <h1>Criar senha de acesso</h1>
-    <p>Use o mesmo email que voce informou na compra da Eduzz. So conseguimos criar uma senha para emails com assinatura ativa.</p>
-    {err_html}
+    <h1>Criar ou redefinir senha</h1>
+    <p>Enviaremos um link de uso unico ao email cadastrado. Conhecer o endereco nao permite criar uma senha.</p>
+    {err_html}{info_html}
     <form method="post" action="/cadastrar">
       <label>Email da compra</label>
       <input type="email" name="email" required value="{_html.escape(email)}" autocomplete="email">
-      <label>Nova senha (minimo 6 caracteres)</label>
-      <input type="password" name="password" required minlength="6" autocomplete="new-password">
-      <label>Confirme a senha</label>
-      <input type="password" name="password2" required minlength="6" autocomplete="new-password">
-      <button type="submit">Criar senha</button>
+      <button type="submit">Enviar link</button>
     </form>
     <p class="hint" style="margin-top:18px"><a href="/login">Voltar para entrar</a></p>
     """
     return _layout("Cadastrar", body)
+
+
+def render_password_reset(token: str, valid: bool, error: str = "") -> str:
+    if not valid:
+        return _layout("Redefinir senha", '<h1>Link invalido ou expirado</h1><p>Solicite outro link na <a href="/cadastrar">pagina de acesso</a>.</p>')
+    err_html = f'<div class="alert err">{_html.escape(error)}</div>' if error else ""
+    body = f"""
+    <h1>Redefinir senha</h1>{err_html}
+    <form method="post" action="/redefinir-senha">
+      <input type="hidden" name="token" value="{_html.escape(token, quote=True)}">
+      <label>Nova senha</label><input type="password" name="password" required minlength="6" autocomplete="new-password">
+      <label>Confirme a senha</label><input type="password" name="password2" required minlength="6" autocomplete="new-password">
+      <button type="submit">Salvar nova senha</button>
+    </form>"""
+    return _layout("Redefinir senha", body)
 
 
 def render_ml_account_selector(user_name: str, accounts, selected_account_id=None, return_to: str = "/", slot_limit: int = 1) -> str:
@@ -130,7 +142,7 @@ def render_ml_account_selector(user_name: str, accounts, selected_account_id=Non
         replacement_html = (
             f'<div class="hint">Substituicao bloqueada ate {time.strftime("%d/%m/%Y", time.localtime(locked_until))}.</div>'
             if locked_until > int(time.time()) else
-            f'<a href="/ml-link/start?slot={slot_number}&amp;return_to={_html.escape(return_to, quote=True)}" style="font-size:13px">Substituir conta via OAuth</a>'
+            f'<a href="/ml-link/start?slot={slot_number}&amp;mode=reconnect&amp;return_to={_html.escape(return_to, quote=True)}" style="font-size:13px">Reconectar esta conta via OAuth</a>'
         )
         cards.append(f"""
         <form method="post" action="/contas/select" style="border:1px solid {'#1e5fbf' if selected else '#d9e1ec'};border-radius:12px;padding:16px;margin-top:12px">

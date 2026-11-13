@@ -145,6 +145,19 @@ CREATE TABLE IF NOT EXISTS ml_link_states (
     created_at  INTEGER NOT NULL,
     attached_at INTEGER,
     used_at     INTEGER,
+    mode        TEXT NOT NULL DEFAULT 'new',
+    expected_client_id TEXT NOT NULL DEFAULT '',
+    expected_ml_user_id TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    used_at INTEGER,
+    attempts INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -336,6 +349,12 @@ def init_db():
                 conn.execute("ALTER TABLE ml_link_states ADD COLUMN attached_at INTEGER")
             if "slot_number" not in ml_state_columns:
                 conn.execute("ALTER TABLE ml_link_states ADD COLUMN slot_number INTEGER NOT NULL DEFAULT 1")
+            for column in ("mode", "expected_client_id", "expected_ml_user_id"):
+                if column not in ml_state_columns:
+                    default = "new" if column == "mode" else ""
+                    conn.execute(
+                        f"ALTER TABLE ml_link_states ADD COLUMN {column} TEXT NOT NULL DEFAULT '{default}'"
+                    )
             session_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(sessions)")
             }
@@ -940,6 +959,7 @@ def upsert_user_ml_link(
     slot_number: int = 1,
     admin_granted: bool = False,
     allow_replacement: bool = False,
+    _conn=None,
 ):
     slot_number = int(slot_number or 1)
     if slot_number < 1 or slot_number > 5:
@@ -947,7 +967,7 @@ def upsert_user_ml_link(
     client_id = (client_id or "").strip()
     if not client_id:
         raise ValueError("client_id obrigatorio")
-    conn = get_conn()
+    conn = _conn or get_conn()
     try:
         ts = now()
         user = conn.execute(
@@ -1066,7 +1086,8 @@ def upsert_user_ml_link(
                 )
         return account_id
     finally:
-        conn.close()
+        if _conn is None:
+            conn.close()
 
 
 def mark_user_ml_link_disconnected(user_id: int, account_id=None):
@@ -1205,6 +1226,93 @@ def reset_user_password(user_id: int):
         conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
     finally:
         conn.close()
+
+
+def save_password_reset_token(user_id: int, token: str, ttl_seconds: int = 1800) -> bool:
+    """Stores only a digest; at most three requests per account per hour."""
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    ts = now()
+    with _lock:
+        conn = get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            recent = conn.execute(
+                "SELECT COUNT(*) FROM password_reset_tokens WHERE user_id=? AND created_at>?",
+                (user_id, ts - 3600),
+            ).fetchone()[0]
+            if recent >= 3:
+                conn.execute("ROLLBACK")
+                return False
+            conn.execute(
+                "INSERT INTO password_reset_tokens(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)",
+                (digest, user_id, ts + ttl_seconds, ts),
+            )
+            conn.execute("COMMIT")
+            return True
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def cancel_password_reset_token(token: str) -> None:
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    conn = get_conn()
+    try:
+        conn.execute("UPDATE password_reset_tokens SET used_at=? WHERE token_hash=? AND used_at IS NULL", (now(), digest))
+    finally:
+        conn.close()
+
+
+def password_reset_token_valid(token: str) -> bool:
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT expires_at,used_at,attempts FROM password_reset_tokens WHERE token_hash=?", (digest,)
+        ).fetchone()
+        return bool(row and row["used_at"] is None and row["expires_at"] >= now() and row["attempts"] < 5)
+    finally:
+        conn.close()
+
+
+def record_password_reset_attempt(token: str) -> None:
+    """Count invalid form submissions without logging or storing the raw token."""
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    conn = get_conn()
+    try:
+        conn.execute(
+            """UPDATE password_reset_tokens SET attempts=attempts+1
+               WHERE token_hash=? AND used_at IS NULL AND expires_at>=? AND attempts<5""",
+            (digest, now()),
+        )
+    finally:
+        conn.close()
+
+
+def redeem_password_reset_token(token: str, password_hash: str) -> bool:
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with _lock:
+        conn = get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM password_reset_tokens WHERE token_hash=?", (digest,)).fetchone()
+            if not row or row["used_at"] is not None or row["expires_at"] < now() or row["attempts"] >= 5:
+                conn.execute("ROLLBACK")
+                return False
+            ts = now()
+            conn.execute("UPDATE password_reset_tokens SET attempts=attempts+1,used_at=? WHERE token_hash=?", (ts, digest))
+            conn.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?", (password_hash, ts, row["user_id"]))
+            conn.execute("DELETE FROM sessions WHERE user_id=?", (row["user_id"],))
+            conn.execute("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL", (ts, row["user_id"]))
+            conn.execute("COMMIT")
+            return True
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
 
 # ---------- SESSIONS ----------
@@ -1429,7 +1537,12 @@ def save_ml_link_state(
     return_to: str = "/online",
     ttl_seconds: int = 900,
     slot_number: int = 1,
+    mode: str = "new",
+    expected_client_id: str = "",
+    expected_ml_user_id: str = "",
 ):
+    if mode not in {"new", "reconnect", "replace"}:
+        raise ValueError("modo de vinculo invalido")
     state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
     conn = get_conn()
     try:
@@ -1437,9 +1550,11 @@ def save_ml_link_state(
         conn.execute("DELETE FROM ml_link_states WHERE expires_at < ?", (ts,))
         conn.execute(
             """INSERT OR REPLACE INTO ml_link_states
-               (state_hash, user_id, slot_number, return_to, expires_at, created_at, attached_at, used_at)
-               VALUES (?,?,?,?,?,?,NULL,NULL)""",
-            (state_hash, user_id, int(slot_number), return_to or "/online", ts + ttl_seconds, ts),
+               (state_hash, user_id, slot_number, return_to, expires_at, created_at,
+                attached_at, used_at, mode, expected_client_id, expected_ml_user_id)
+               VALUES (?,?,?,?,?,?,NULL,NULL,?,?,?)""",
+            (state_hash, user_id, int(slot_number), return_to or "/online", ts + ttl_seconds, ts,
+             mode, expected_client_id, expected_ml_user_id),
         )
     finally:
         conn.close()
@@ -1455,6 +1570,54 @@ def get_ml_link_state(state: str):
             (state_hash,),
         )
         return cur.fetchone()
+    finally:
+        conn.close()
+
+
+def attach_ml_link_from_state(state: str, *, client_id: str, ml_user_id: str, **profile):
+    """Vincula o slot e consome a autorizacao de ponte na mesma transacao."""
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    conn = get_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT * FROM ml_link_states WHERE state_hash=?", (state_hash,)
+        ).fetchone()
+        if not row or row["expires_at"] < now() or row["used_at"] or row["attached_at"]:
+            raise ValueError("bridge_state expirado ou inexistente")
+        existing = conn.execute(
+            "SELECT * FROM user_ml_accounts WHERE user_id=? AND slot_number=?",
+            (row["user_id"], row["slot_number"]),
+        ).fetchone()
+        mode = row["mode"] or "new"
+        if mode == "reconnect":
+            expected_client = row["expected_client_id"] or ""
+            expected_ml_user = row["expected_ml_user_id"] or ""
+            if (not existing or not expected_client or not expected_ml_user
+                    or existing["client_id"] != expected_client
+                    or existing["ml_user_id"] != expected_ml_user
+                    or client_id != expected_client or ml_user_id != expected_ml_user):
+                raise ValueError("identidade da conta reconectada nao confere")
+        elif mode == "new":
+            if existing:
+                raise ValueError("slot ja ocupado; use reconexao")
+        elif mode != "replace" or not existing:
+            raise ValueError("modo de vinculo invalido")
+        account_id = upsert_user_ml_link(
+            row["user_id"], client_id=client_id, ml_user_id=ml_user_id,
+            slot_number=row["slot_number"], _conn=conn, **profile,
+        )
+        updated = conn.execute(
+            "UPDATE ml_link_states SET attached_at=? WHERE state_hash=? AND attached_at IS NULL AND used_at IS NULL",
+            (now(), state_hash),
+        )
+        if updated.rowcount != 1:
+            raise ValueError("bridge_state ja utilizado")
+        conn.execute("COMMIT")
+        return account_id, row
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
     finally:
         conn.close()
 

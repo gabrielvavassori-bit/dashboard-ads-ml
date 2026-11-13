@@ -1529,6 +1529,79 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertEqual(raised.exception.headers.get("Location"), "/online?confirmed=1")
         raised.exception.close()
 
+    def test_reconnect_rejects_wrong_ml_identity_without_replacing_slot(self):
+        user_id, _ = self._login_cookie("reconnect-identity@example.com")
+        db.upsert_user_ml_link(user_id, "conquistadistribuidora-6806", "1463556806")
+        state = "reconnect-wrong-identity"
+        db.save_ml_link_state(
+            state, user_id, mode="reconnect",
+            expected_client_id="conquistadistribuidora-6806",
+            expected_ml_user_id="1463556806",
+        )
+        def attach(ml_user_id):
+            return Request(
+                f"{self.base_url}/internal/ml-link/attach",
+                data=json.dumps({"bridge_state": state, "client_id": "conquistadistribuidora-6806",
+                                 "ml_user_id": ml_user_id}).encode(),
+                headers={"Content-Type": "application/json",
+                         "X-Internal-Secret": os.environ["ML_LINK_ATTACH_SECRET"]},
+                method="POST",
+            )
+        with self.assertRaises(HTTPError) as raised:
+            urlopen(attach("another-seller"), timeout=5)
+        self.assertEqual(raised.exception.code, 409)
+        raised.exception.close()
+        self.assertIsNone(db.get_ml_link_state(state)["attached_at"])
+        with urlopen(attach("1463556806"), timeout=5) as response:
+            self.assertEqual(response.status, 200)
+        conn = db.get_conn()
+        try:
+            rows = conn.execute("SELECT * FROM user_ml_accounts WHERE user_id=?", (user_id,)).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["ml_user_id"], "1463556806")
+
+    def test_ml_attach_rolls_back_slot_when_state_commit_fails(self):
+        user_id, _ = self._login_cookie("attach-atomic@example.com")
+        state = "attach-atomic-state"
+        db.save_ml_link_state(state, user_id)
+        original = db.upsert_user_ml_link
+        def fail_after_write(*args, **kwargs):
+            original(*args, **kwargs)
+            raise ValueError("simulated state failure")
+        with patch.object(db, "upsert_user_ml_link", side_effect=fail_after_write):
+            with self.assertRaisesRegex(ValueError, "simulated state failure"):
+                db.attach_ml_link_from_state(state, client_id="new-client", ml_user_id="123")
+        self.assertIsNone(db.get_ml_account_by_slot(user_id, 1))
+        self.assertIsNone(db.get_ml_link_state(state)["attached_at"])
+
+    def test_password_reset_is_single_use_expires_and_invalidates_sessions(self):
+        user_id, cookie = self._login_cookie("reset-single-use@example.com")
+        expired = "expired-reset-token"
+        self.assertTrue(db.save_password_reset_token(user_id, expired, ttl_seconds=-1))
+        self.assertFalse(db.password_reset_token_valid(expired))
+        token = "valid-reset-token"
+        self.assertTrue(db.save_password_reset_token(user_id, token))
+        new_hash = auth.hash_password("NovaSenha123!")
+        self.assertTrue(db.redeem_password_reset_token(token, new_hash))
+        self.assertFalse(db.redeem_password_reset_token(token, new_hash))
+        self.assertFalse(db.password_reset_token_valid(token))
+        conn = db.get_conn()
+        try:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM sessions WHERE user_id=?", (user_id,)).fetchone()[0], 0)
+        finally:
+            conn.close()
+
+    def test_password_reset_invalid_attempts_lock_link(self):
+        user_id, _ = self._login_cookie("reset-attempts@example.com")
+        token = "attempt-limit-token"
+        self.assertTrue(db.save_password_reset_token(user_id, token))
+        for _ in range(5):
+            db.record_password_reset_attempt(token)
+        self.assertFalse(db.password_reset_token_valid(token))
+        self.assertFalse(db.redeem_password_reset_token(token, auth.hash_password("NovaSenha123!")))
+
     def test_admin_can_create_manual_access_with_expiration(self):
         admin_cookie = self._admin_cookie()
         payload = urlencode({
