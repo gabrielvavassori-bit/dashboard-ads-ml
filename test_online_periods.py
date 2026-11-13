@@ -1,5 +1,7 @@
 import unittest
 import json
+import shutil
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -320,6 +322,42 @@ class OnlinePeriodTests(unittest.TestCase):
             "def _build_online_dashboard_data", 1
         )[1].split("def _build_online_beta_payload", 1)[0]
         self.assertNotIn('"refresh_metadata": "1"', online_builder)
+
+    def test_family_and_mlbu_abc_use_full_account_revenue_independently(self):
+        if not shutil.which("node"):
+            self.skipTest("Node.js is required to execute the dashboard classifier")
+        period = {"dateFrom": "2026-10-01", "dateTo": "2026-10-30"}
+        html = render_dashboard({
+            "meta": {"onlineMode": {"enabled": True, "onlinePeriod": period}},
+            "onlineBeta": {"enabled": True, "requestedPeriod": period},
+            "items": [],
+        })
+        classifier = "function abcByAccountGroups" + html.split("function abcByAccountGroups", 1)[1].split(
+            "const accountGroupAbc", 1
+        )[0]
+        script = classifier + """
+const families = [
+  {familyId:'F1', children:[{totalRevenue:60}, {totalRevenue:25}]},
+  {familyId:'F2', children:[{totalRevenue:15}]}
+];
+const mlbus = [
+  {parentId:'U1', children:[{totalRevenue:60}]},
+  {parentId:'U2', children:[{totalRevenue:25}]},
+  {parentId:'U3', children:[{totalRevenue:15}]}
+];
+console.log(JSON.stringify({
+  family:[...abcByAccountGroups(families, 'familyId')],
+  mlbu:[...abcByAccountGroups(mlbus, 'parentId')]
+}));
+"""
+        result = subprocess.run(["node", "-e", script], text=True, capture_output=True, check=True)
+        classes = json.loads(result.stdout)
+        self.assertEqual(dict(classes["family"]), {"F1": "B", "F2": "C"})
+        self.assertEqual(dict(classes["mlbu"]), {"U1": "A", "U2": "B", "U3": "C"})
+        self.assertIn("abcByAccountGroups(splitByFamily(DATA.items || []), 'familyId')", html)
+        self.assertIn("abcByAccountGroups(splitByMlbu(DATA.items || []), 'parentId')", html)
+        self.assertIn("groupedAbcBadge('FAMÍLIA', accountGroupAbc.family", html)
+        self.assertIn("groupedAbcBadge('MLBU', accountGroupAbc.mlbu.get(String(item.detailId || '')))", html)
 
     def test_campaign_reading_has_search_and_two_way_sorting_for_its_rows(self):
         source = Path(__file__).with_name("gerar_dashboard_ads_ml.py").read_text(encoding="utf-8")
