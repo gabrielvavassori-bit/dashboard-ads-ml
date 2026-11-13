@@ -468,7 +468,7 @@
   "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_operational_availability.OperationalAvailabilityTests.test_legacy_multi_sku_price_requires_fresh_quote_and_family_is_unchanged", "test_promotions_guide_lookup.PromotionsGuideLookupTests.test_historical_gross_profit_uses_saved_sku_cost_without_attributing_mlb_sales_to_variation"], "blocking": true}]
 },
 {
-  "id": "REGRESSION-058",
+  "id": "REGRESSION-079",
   "title": "Reconexao ML e reset de senha preservam identidade e prova de posse",
   "severity": "CRITICA",
   "components": ["mercado_livre_oauth", "client_link", "password_reset"],
