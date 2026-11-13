@@ -5694,7 +5694,7 @@ def render_dashboard(data):
         <td>${{productImageWithToggle(item, key, expanded, 'MLBU', 'mlbu')}}</td>
         <td><span class="code">${{safe(item.sku || '(sem SKU)')}}</span><div class="muted">Variação / produto</div></td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(item.parentId)}}</span>${{copyButton(item.parentId, 'MLBU')}}</div><div class="title">Resumo consolidado de ${{num(item.optionCount)}} condições</div></td>
-        <td><span class="summary-chip">MLBU</span></td>
+        <td>${{groupedAbcBadge('MLBU', accountGroupAbc.mlbu.get(String(item.detailId || '')))}}</td>
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div>${{campaignConfigInline(item)}}</td>
         <td class="text-cell">${{safe(item.parentId)}} · ${{num(item.optionCount)}} opcao(oes)<div class="muted">${{safe(item.catalogLabel)}}</div></td>
         <td class="num">${{currentOfferPrice(item) ? brl(currentOfferPrice(item)) : '-'}}<div class="muted">preço no snapshot Ads; não é consulta da promoção ativa</div><div class="muted">${{item.lastSalePrice ? 'ultima venda: ' + brl(item.lastSalePrice) : ''}}</div>${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
@@ -5709,7 +5709,7 @@ def render_dashboard(data):
         <td>${{productImageWithToggle(item, key, expanded, 'família', 'family')}}</td>
         <td><span class="code">${{safe(familyLabel)}}</span><div class="muted">Família do produto</div></td>
         <td class="text-cell"><div class="copyline"><span class="code">${{safe(group.familyId)}}</span>${{copyButton(group.familyId, 'Família')}}</div><div class="title">Resumo de ${{num(variationCount)}} variação(ões) e ${{num(group.children.length)}} condição(ões)</div></td>
-        <td><span class="summary-chip">FAMÍLIA</span></td>
+        <td>${{groupedAbcBadge('FAMÍLIA', accountGroupAbc.family.get(String(group.familyId || '')))}}</td>
         <td class="text-cell">${{num(item.campaignCount)}} campanha(s) Ads<div class="muted">campanhas individuais preservadas</div></td>
         <td class="text-cell">${{num(variationCount)}} MLBU(s)<div class="muted">${{num(group.children.length)}} MLB(s)</div></td>
         <td class="num">${{item.lastPrice ? brl(item.lastPrice) : '-'}}${{priceMetaLine(item, 'media vendida')}}<div class="muted">${{item.lastSaleDate ? safe(formatLastSaleDate(item.lastSaleDate)) : ''}}</div></td>
@@ -5758,6 +5758,29 @@ def render_dashboard(data):
         groups.get(key).children.push(item);
       }});
       return [...groups.values()];
+    }}
+    function abcByAccountGroups(groups, idField) {{
+      const ranked = groups.map(group => ({{
+        id: String(group[idField] || ''),
+        revenue: group.children.reduce((sum, item) => sum + (Number(item.totalRevenue) || 0), 0)
+      }})).sort((a, b) => b.revenue - a.revenue);
+      const total = ranked.reduce((sum, group) => sum + group.revenue, 0);
+      const classes = new Map();
+      let cumulative = 0;
+      for (const group of ranked) {{
+        cumulative += group.revenue;
+        if (group.id) classes.set(group.id, total ? (cumulative / total <= 0.80 ? 'A' : cumulative / total <= 0.95 ? 'B' : 'C') : 'C');
+      }}
+      return classes;
+    }}
+    const accountGroupAbc = {{
+      family: abcByAccountGroups(splitByFamily(DATA.items || []), 'familyId'),
+      mlbu: abcByAccountGroups(splitByMlbu(DATA.items || []), 'parentId')
+    }};
+    function groupedAbcBadge(label, value) {{
+      return value
+        ? `<span class="${{abcClass(value)}}" title="Curva ABC pelo faturamento do grupo no período, comparada com todos os grupos deste nível na conta; independente do filtro atual">${{safe(label)}} ${{value}}</span>`
+        : `<span class="summary-chip">${{safe(label)}} N/D</span>`;
     }}
     function splitHybrid(rows) {{
       const groups = new Map();
