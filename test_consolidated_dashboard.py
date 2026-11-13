@@ -99,6 +99,18 @@ class ConsolidatedMathTests(unittest.TestCase):
         self.assertIn("0,86x", page)
         self.assertEqual(len(consolidated.build_identity_tree(first["items"] + second["items"])), 1)
 
+    def test_product_table_scrolls_inside_a_bounded_frame_with_first_column_fixed(self):
+        page = consolidated.render(
+            [{"id": 1, "client_id": "a", "official_store": "Conta A", "nickname": "A"}],
+            {1}, {"mode": "custom", "dateFrom": "2026-10-01", "dateTo": "2026-10-02"},
+            [self.account(1, 100, 10)], [],
+        )
+        self.assertIn('class="scroll hierarchy-scroll" role="region" tabindex="0"', page)
+        self.assertIn('.hierarchy-scroll{max-width:100%;max-height:min(65vh,640px);overflow:auto;', page)
+        self.assertIn('.item-table th:first-child,.item-table td:first-child{position:sticky;left:0;', page)
+        self.assertIn('.item-table th:first-child{z-index:3;background:#eef2f7}', page)
+        self.assertIn('.item-table tbody tr.hierarchy-child-row{background:#f8faff}', page)
+
     def test_unknown_visits_never_become_zero(self):
         first = self.account(1, 100, 10)
         second = self.account(2, 300, 60)
