@@ -205,8 +205,28 @@ def _parse_multipart(handler):
 def _send_html(handler, html: str, status: int = 200, set_cookie: str | list[str] | tuple[str, ...] | None = None):
     html = _inject_admin_impersonation_banner(handler, html)
     data = html.encode("utf-8")
+    # The online dashboards embed large product tables.  Compress the exact
+    # same HTML before writing it to the socket so a slow client does not hold
+    # the only rendering slot while tens of MB are transferred.
+    accepts_gzip = False
+    for encoding in handler.headers.get("Accept-Encoding", "").split(","):
+        name, *parameters = encoding.strip().lower().split(";")
+        if name != "gzip":
+            continue
+        quality = next((part.strip()[2:] for part in parameters if part.strip().startswith("q=")), "1")
+        try:
+            accepts_gzip = float(quality) > 0
+        except ValueError:
+            accepts_gzip = False
+        break
+    compressed = accepts_gzip and len(data) >= 64 * 1024
+    if compressed:
+        data = gzip.compress(data, compresslevel=1)
     handler.send_response(status)
     handler.send_header("Content-Type", "text/html; charset=utf-8")
+    handler.send_header("Vary", "Accept-Encoding")
+    if compressed:
+        handler.send_header("Content-Encoding", "gzip")
     handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
     handler.send_header("Pragma", "no-cache")
     handler.send_header("X-Content-Type-Options", "nosniff")
