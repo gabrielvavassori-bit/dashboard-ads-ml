@@ -1306,6 +1306,10 @@ def redeem_password_reset_token(token: str, password_hash: str) -> bool:
             conn.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?", (password_hash, ts, row["user_id"]))
             conn.execute("DELETE FROM sessions WHERE user_id=?", (row["user_id"],))
             conn.execute("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL", (ts, row["user_id"]))
+            conn.execute(
+                "INSERT INTO audit_log (user_id, action, detail, ip, created_at) VALUES (?,?,?,?,?)",
+                (row["user_id"], "password_reset.redeemed", "", "", ts),
+            )
             conn.execute("COMMIT")
             return True
         except Exception:
