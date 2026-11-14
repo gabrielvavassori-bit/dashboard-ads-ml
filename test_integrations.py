@@ -1665,6 +1665,10 @@ class HTTPRouteTests(unittest.TestCase):
             self.assertIn(b"Senha redefinida", response.read())
         self.assertFalse(db.password_reset_token_valid(token))
         self.assertIsNone(db.get_session(old_cookie.split("=", 1)[1]))
+        self.assertEqual(
+            [entry["action"] for entry in db.list_recent_audit_for_user(user_id)].count("password_reset.redeemed"),
+            1,
+        )
 
         opener = self._no_redirect_opener()
         for password, expected_status in (("123456", 401), ("NovaSenha123!", 302)):
