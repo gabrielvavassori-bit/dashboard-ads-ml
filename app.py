@@ -123,6 +123,9 @@ def _send_password_reset_email(recipient: str, token: str) -> bool:
     request = Request("https://api.resend.com/emails", data=body, method="POST", headers={
         "Authorization": f"Bearer {RESEND_API_KEY}",
         "Content-Type": "application/json",
+        # Cloudflare rejects urllib's default Python-urllib user agent (1010).
+        # The same request from this service is accepted with this explicit UA.
+        "User-Agent": "curl/8.0",
     })
     try:
         with urlopen(request, timeout=10) as response:

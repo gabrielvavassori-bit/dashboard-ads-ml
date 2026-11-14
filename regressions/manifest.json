@@ -476,7 +476,7 @@
   "tags": ["existing_client", "same_ml_user", "atomic_link", "single_use_reset", "no_email_only_password"] ,
   "file_globs": ["app.py", "db.py", "templates.py", "test_integrations.py"],
   "invariant": "Reconexao nao cria conta duplicada nem troca usuario ML; vinculo e consumo do state sao atomicos. Reset administrativo exige prova de posse por link curto de uso unico enviado ao email cadastrado, limita tentativas e invalida sessoes; falha de envio nunca declara sucesso.",
-  "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_integrations.HTTPRouteTests.test_internal_ml_link_attach_and_finish_flow", "test_integrations.HTTPRouteTests.test_reconnect_rejects_wrong_ml_identity_without_replacing_slot", "test_integrations.HTTPRouteTests.test_ml_attach_rolls_back_slot_when_state_commit_fails", "test_integrations.HTTPRouteTests.test_password_reset_is_single_use_expires_and_invalidates_sessions", "test_integrations.HTTPRouteTests.test_password_reset_invalid_attempts_lock_link"], "blocking": true}]
+  "protections": [{"command": ["{python}", "-m", "unittest", "-v", "test_integrations.HTTPRouteTests.test_internal_ml_link_attach_and_finish_flow", "test_integrations.HTTPRouteTests.test_reconnect_rejects_wrong_ml_identity_without_replacing_slot", "test_integrations.HTTPRouteTests.test_ml_attach_rolls_back_slot_when_state_commit_fails", "test_integrations.HTTPRouteTests.test_password_reset_is_single_use_expires_and_invalidates_sessions", "test_integrations.HTTPRouteTests.test_password_reset_invalid_attempts_lock_link", "test_integrations.PasswordResetEmailTransportTests.test_resend_request_uses_accepted_user_agent"], "blocking": true}]
 }
 ]
 }
