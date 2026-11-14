@@ -65,6 +65,33 @@ class DashAdsBridgeResponseTests(unittest.TestCase):
         self.assertIn("content_type=text/html", error)
 
 
+class PasswordResetEmailTransportTests(unittest.TestCase):
+    def test_resend_request_uses_accepted_user_agent(self):
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, *_args):
+                return b'{"id":"test-email-id"}'
+
+        def send(request, timeout):
+            self.assertEqual(request.get_header("User-agent"), "curl/8.0")
+            self.assertEqual(request.get_method(), "POST")
+            self.assertEqual(timeout, 10)
+            return Response()
+
+        with patch.object(app, "RESEND_API_KEY", "test-key"), \
+             patch.object(app, "RESET_EMAIL_FROM", "Test <test@example.com>"), \
+             patch.object(app, "APP_PUBLIC_URL", "https://example.com"), \
+             patch.object(app, "urlopen", side_effect=send):
+            self.assertTrue(app._send_password_reset_email("recipient@example.com", "test-token"))
+
+
 
 def signed(payload):
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
