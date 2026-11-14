@@ -1629,6 +1629,68 @@ class HTTPRouteTests(unittest.TestCase):
         self.assertFalse(db.password_reset_token_valid(token))
         self.assertFalse(db.redeem_password_reset_token(token, auth.hash_password("NovaSenha123!")))
 
+    def test_password_reset_http_flow_changes_login_and_invalidates_old_session(self):
+        email = "reset-http-flow@example.com"
+        user_id, old_cookie = self._login_cookie(email)
+        captured = []
+
+        def capture_email(recipient, token):
+            captured.append((recipient, token))
+            return True
+
+        with patch.object(app, "_send_password_reset_email", side_effect=capture_email):
+            request = Request(
+                f"{self.base_url}/cadastrar",
+                data=urlencode({"email": email}).encode(),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            with urlopen(request, timeout=5) as response:
+                self.assertEqual(response.status, 200)
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0][0], email)
+        token = captured[0][1]
+
+        with urlopen(f"{self.base_url}/redefinir-senha?{urlencode({'token': token})}", timeout=5) as response:
+            self.assertIn(b"Salvar nova senha", response.read())
+
+        request = Request(
+            f"{self.base_url}/redefinir-senha",
+            data=urlencode({"token": token, "password": "NovaSenha123!", "password2": "NovaSenha123!"}).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with urlopen(request, timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            self.assertIn(b"Senha redefinida", response.read())
+        self.assertFalse(db.password_reset_token_valid(token))
+        self.assertIsNone(db.get_session(old_cookie.split("=", 1)[1]))
+
+        opener = self._no_redirect_opener()
+        for password, expected_status in (("123456", 401), ("NovaSenha123!", 302)):
+            request = Request(
+                f"{self.base_url}/login",
+                data=urlencode({"email": email, "password": password}).encode(),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            try:
+                response = opener.open(request, timeout=5)
+            except HTTPError as exc:
+                response = exc
+            self.assertEqual(response.status, expected_status)
+            response.close()
+
+        request = Request(
+            f"{self.base_url}/redefinir-senha",
+            data=urlencode({"token": token, "password": "OutraSenha123!", "password2": "OutraSenha123!"}).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with self.assertRaises(HTTPError) as raised:
+            urlopen(request, timeout=5)
+        self.assertEqual(raised.exception.code, 400)
+
     def test_admin_can_create_manual_access_with_expiration(self):
         admin_cookie = self._admin_cookie()
         payload = urlencode({
